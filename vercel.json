@@ -8,6 +8,16 @@
       "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/:path*"
     }
   ],
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 16 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",

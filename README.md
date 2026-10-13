@@ -28,6 +28,7 @@
 - **מסד נתונים**: Supabase Postgres. כל הטבלאות מוגנות ב-RLS שבודק את קוד הצוות שנשלח בכותרת `x-team-code`. טריגרים כותבים את יומן הפעילות וההתראות. הסכמה המלאה: [`supabase/schema.sql`](supabase/schema.sql).
 - **אחסון**: Vercel. ב-`vercel.json` יש rewrite מ-`/sb/*` ל-Supabase, כך שהדפדפן מדבר רק עם אותו דומיין.
 - **PWA**: `manifest.webmanifest` ו-`sw.js` (קבצי האפליקציה זמינים גם בלי רשת; הנתונים תמיד חיים).
+- **שמירה על המסד ער**: Supabase בתוכנית החינמית משהה פרויקט אחרי שבוע בלי מספיק פעילות. שתי משימות cron ב-`vercel.json` קוראות כל יום ל-`api/keepalive.js`, שמריץ כמה שאילתות קלות דרך `/sb`. אפשר לפתוח את https://cto-tasks.vercel.app/api/keepalive כבדיקת בריאות: `"ok": true` אומר שהאתר, הפרוקסי והמסד עובדים.
 
 ```
 index.html            מעטפת + import map
@@ -37,6 +38,7 @@ app/api.js            לקוח REST ל-Supabase + מסד מדומה לבדיקו
 app/ui.js             רכיבים משותפים
 app/views/*.js        המסכים
 app/styles.css        עיצוב (בהיר/כהה, RTL, מובייל מתחת ל-900px)
+api/keepalive.js      בדיקת בריאות שרצה פעמיים ביום ושומרת את המסד ער
 ```
 
 ## פיתוח מקומי
@@ -50,4 +52,4 @@ npx http-server -c-1 .
 
 ## פריסה
 
-הפרויקט ב-Vercel הוא `cto-tasks` (סטטי, בלי framework ובלי build). כל פריסה מעלה את הקבצים כמו שהם.
+הפרויקט ב-Vercel הוא `cto-tasks` (סטטי, בלי framework ובלי build, חוץ מהפונקציה ב-`api/`). כל פריסה מעלה את הקבצים כמו שהם. משימות ה-cron רצות רק בפריסת הייצור.
