@@ -1,61 +1,59 @@
-// Weekly report for the senior level: progress, risks, blockers and requests for help, as plain text to copy or email.
+// The weekly report to the senior level: one fixed page (spec). The tool drafts it from the data only; the commander writes
+// the bottom line and sends it personally. It is never sent automatically.
 import { useState } from 'preact/hooks';
-import { getState, visibleTasks, person, toast } from '../store.js';
-import { html, Icon, Modal } from '../ui.js';
-import { HEALTH_BY, isOverdue, isStuck, weekStart, weekEnd, shortDate, ymd, daysSince } from '../util.js';
+import { getState, visibleTasks, person } from '../store.js';
+import { html, Icon, Modal, copyText } from '../ui.js';
+import {
+  liveProjects, projectLine, openDecisions, significant, commanderOf, commitmentWhen, counterpartOf, fromWhom, STAGE,
+} from '../model.js';
+import { HEALTH_BY, isStuck, weekStart, weekEnd, shortDate, ymd, workdaysUntil } from '../util.js';
+
+// Nothing marked as possibly classified, and nobody's private items.
+const clean = (x) => !x.flagged && !x.private;
 
 export function buildWeeklyReport(s = getState()) {
-  const tasks = visibleTasks(s).filter((t) => !t.private);
   const ws = weekStart();
-  const we = weekEnd();
+  const tasks = visibleTasks(s).filter(clean);
+  const projects = liveProjects(s).filter(clean);
+  const active = projects.filter((p) => (p.stage || 'active') === 'active');
+  const proposed = projects.filter((p) => p.stage === 'proposed');
+  const decided = s.decisions.filter((d) => clean(d) && d.status === 'decided' && d.decided_at && ymd(new Date(d.decided_at)) >= ws)
+    .sort((a, b) => a.decided_at.localeCompare(b.decided_at));
+  const openD = openDecisions(s).filter(clean);
   const doneWeek = tasks.filter((t) => t.status === 'done' && t.done_at && ymd(new Date(t.done_at)) >= ws);
-  const open = tasks.filter((t) => t.status !== 'done');
-  const stuck = open.filter(isStuck);
-  const late = open.filter(isOverdue);
-  const name = (id) => person(id)?.name || 'ללא אחראי';
-  const year = new Date().getFullYear();
+  const commitments = s.commitments.filter((c) => clean(c) && c.status === 'open' && c.due);
+  const weOwe = commitments.filter((c) => c.direction === 'we_owe' && workdaysUntil(c.due) <= 5).sort((a, b) => a.due.localeCompare(b.due));
+  const theyLate = commitments.filter((c) => c.direction === 'they_owe' && workdaysUntil(c.due) < 0).sort((a, b) => a.due.localeCompare(b.due));
+  const title = (x) => x.d?.title || x.t?.title || x.c?.title || x.p?.name || '';
+  const risks = significant(s).filter((x) => x.type !== 'commitment' && clean(x.d || x.t || x.p || {}));
+  const help = tasks.filter((t) => t.status !== 'done' && isStuck(t) && !person(t.blocked_by_person)?.is_team);
+
   const L = [];
-  L.push('דוח שבועי: צוות CTO');
-  L.push(`שבוע ${shortDate(ws)} עד ${shortDate(we)}/${year}`);
+  L.push(`במספרים: ${active.length} פרויקטים פעילים${proposed.length ? `, ${proposed.length} מחכים להחלטה על פתיחה` : ''}. `
+    + `${decided.length} החלטות התקבלו השבוע ו-${openD.length} פתוחות. ${doneWeek.length} מטלות ומשימות הושלמו השבוע.`);
   L.push('');
-  L.push(`בשורה אחת: ${s.projects.length} פרויקטים פעילים, ${doneWeek.length} משימות הושלמו השבוע, ${stuck.length} חסמים פתוחים, ${late.length} משימות באיחור.`);
-  L.push('');
-  L.push('התקדמות לפי פרויקט');
-  s.projects.forEach((p) => {
-    const pt = tasks.filter((t) => t.project_id === p.id);
-    const done = pt.filter((t) => t.status === 'done').length;
-    const dw = doneWeek.filter((t) => t.project_id === p.id).length;
-    const health = HEALTH_BY[p.health]?.label || '';
-    L.push(`• ${p.name} (${health}): ${done}/${pt.length} הושלמו${dw ? `, ${dw} מהן השבוע` : ''}${p.target_date ? `. יעד ${shortDate(p.target_date)}` : ''}.`);
-    if (p.health_note) L.push(`  ${p.health_note}`);
+  L.push('הפרויקטים');
+  projects.forEach((p) => {
+    const state = p.stage === 'proposed' ? STAGE.proposed.label : HEALTH_BY[p.health]?.label || '';
+    L.push(`• ${p.name} (${state}): ${projectLine(p, s).text}`);
   });
-  if (doneWeek.length) {
+  if (!projects.length) L.push('• אין פרויקטים פעילים');
+  if (decided.length) {
     L.push('');
-    L.push('הושלם השבוע');
-    doneWeek.slice(0, 15).forEach((t) => L.push(`• ${t.title} (${name(t.owner_id)})`));
-    if (doneWeek.length > 15) L.push(`• ועוד ${doneWeek.length - 15}`);
+    L.push('החלטות שהתקבלו השבוע');
+    decided.forEach((d) => L.push(`• ${d.title} ← ${d.chosen_label}${d.rationale ? `. ${d.rationale}` : ''}`));
   }
-  const risky = s.projects.filter((p) => p.health && p.health !== 'on_track');
-  if (risky.length || late.length) {
+  if (weOwe.length || theyLate.length) {
     L.push('');
-    L.push('סיכונים');
-    risky.forEach((p) => L.push(`• ${p.name}: ${HEALTH_BY[p.health]?.label}${p.health_note ? `. ${p.health_note}` : ''}`));
-    late.slice(0, 10).forEach((t) => L.push(`• באיחור: ${t.title} (${name(t.owner_id)}, יעד ${shortDate(t.due)})`));
+    L.push('התחייבויות לגורמים חיצוניים');
+    weOwe.forEach((c) => L.push(`• התחייבנו כלפי ${counterpartOf(c)}: ${c.title}, ${commitmentWhen(c)}`));
+    theyLate.forEach((c) => L.push(`• מחכים ${fromWhom(counterpartOf(c))}: ${c.title}, ${commitmentWhen(c)}`));
   }
-  if (stuck.length) {
+  if (risks.length) {
     L.push('');
-    L.push('חסמים');
-    stuck.forEach((t) => {
-      const by = person(t.blocked_by_person);
-      const since = daysSince(t.updated_at || t.created_at);
-      L.push(`• ${t.title} (${name(t.owner_id)})${by ? `, מחכה ל${by.name}` : ''}${t.blocked_reason ? `: ${t.blocked_reason}` : ''}${since ? `. ${since} ימים` : ''}`);
-    });
+    L.push('סיכונים וחסמים');
+    risks.forEach((x) => L.push(`• ${title(x)}: ${x.why}`));
   }
-  // Help requests: blockers that the team cannot clear on its own (an outside person, or no person named).
-  const help = stuck.filter((t) => {
-    const by = person(t.blocked_by_person);
-    return !by || !by.is_team;
-  });
   L.push('');
   L.push('בקשות לעזרה');
   if (help.length) help.forEach((t) => L.push(`• ${t.title}${t.blocked_reason ? `: ${t.blocked_reason}` : ''}`));
@@ -64,17 +62,33 @@ export function buildWeeklyReport(s = getState()) {
 }
 
 export function ReportModal() {
-  const [text, setText] = useState(() => buildWeeklyReport());
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(text); toast('הדוח הועתק'); } catch (e) { toast('לא הצלחתי להעתיק. אפשר לסמן את הטקסט ולהעתיק ידנית.', { kind: 'error' }); }
-  };
-  const mail = `mailto:?subject=${encodeURIComponent('דוח שבועי: צוות CTO')}&body=${encodeURIComponent(text)}`;
+  const s = getState();
+  const cmd = commanderOf(s);
+  const [bottom, setBottom] = useState('');
+  const [body, setBody] = useState(() => buildWeeklyReport());
+  const ws = weekStart();
+  const full = [
+    'דוח שבועי: צוות CTO',
+    `שבוע ${shortDate(ws)} עד ${shortDate(weekEnd())}/${new Date().getFullYear()}`,
+    '',
+    `השורה התחתונה: ${bottom.trim() || '…'}`,
+    '',
+    body.trim(),
+    '',
+    `הטיוטה הוכנה מהנתונים בכלי. השורה התחתונה: ${cmd?.name || 'המפקד'}.`,
+  ].join('\n');
+  const mail = `mailto:?subject=${encodeURIComponent('דוח שבועי: צוות CTO')}&body=${encodeURIComponent(full)}`;
   return html`<${Modal} title="דוח שבועי לדרג הבכיר" wide>
-    <p class="muted small">נוצר אוטומטית מהנתונים בכלי (בלי משימות פרטיות). אפשר לערוך לפני השליחה.</p>
-    <textarea class="report-text" value=${text} rows=${18} onInput=${(e) => setText(e.currentTarget.value)} aria-label="טקסט הדוח"></textarea>
+    <p class="muted small">טיוטה מהנתונים בכלי, בלי פריטים פרטיים ובלי פריטים שסומנו כחשודים. השורה התחתונה והשליחה הן של ${cmd?.name || 'המפקד'}, והדוח לא נשלח אף פעם אוטומטית.</p>
+    <label class="lbl" for="rp-bottom">השורה התחתונה</label>
+    <textarea id="rp-bottom" class="input area" rows="2" value=${bottom} onInput=${(e) => setBottom(e.currentTarget.value)}
+      placeholder="בשורה או שתיים: מה הדרג הבכיר צריך לדעת השבוע"></textarea>
+    <label class="lbl" for="rp-body">הטיוטה</label>
+    <textarea id="rp-body" class="report-text" value=${body} rows=${16} onInput=${(e) => setBody(e.currentTarget.value)}></textarea>
     <div class="form-actions">
-      <button type="button" class="btn btn-primary" onClick=${copy}><${Icon} name="copy" size=${16} />העתקה</button>
+      <button type="button" class="btn btn-primary" onClick=${() => copyText(full, 'הדוח הועתק')}><${Icon} name="copy" size=${16} />העתקה</button>
       <a class="btn" href=${mail}><${Icon} name="message" size=${16} />פתיחה במייל</a>
+      ${!bottom.trim() ? html`<span class="muted small hint-inline">השורה התחתונה עוד ריקה.</span>` : null}
     </div>
   <//>`;
 }

@@ -3,9 +3,10 @@ import { h } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
 import {
-  getState, set, useStore, openMenu, closeMenu, dismissToast, updateTask, openTask, person, project, closeModal,
+  getState, set, useStore, openMenu, closeMenu, dismissToast, updateTask, openTask, person, project, closeModal, toast,
 } from './store.js';
-import { STATUSES, STATUS, PRIORITIES, PRIORITY, HEALTH, HEALTH_BY, dueLabel, isOverdue, personColor, initials } from './util.js';
+import { STATUSES, STATUS, PRIORITIES, PRIORITY, HEALTH, HEALTH_BY, dueLabel, isOverdue, personColor, initials, ageOf } from './util.js';
+import { HTYPE, isClaude, isAgent } from './model.js';
 
 export const html = htm.bind(h);
 
@@ -44,6 +45,24 @@ const ICONS = {
   link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   report: '<path d="M6 3.5h9l3 3v14H6z"/><path d="M9 11h6M9 14.5h6M9 18h3"/>',
   copy: '<rect x="8.5" y="8.5" width="11" height="12" rx="1.5"/><path d="M15.5 8.5V5a1.5 1.5 0 0 0-1.5-1.5H6A1.5 1.5 0 0 0 4.5 5v9A1.5 1.5 0 0 0 6 15.5h2.5"/>',
+  inbox: '<path d="M3.5 13.5 6 5.5h12l2.5 8"/><path d="M3.5 13.5V19h17v-5.5h-5a3.5 3.5 0 0 1-7 0z"/>',
+  decision: '<path d="M12 3v18"/><path d="M12 5.5h6.5l2.5 2.5-2.5 2.5H12"/><path d="M12 13H5.5L3 15.5 5.5 18H12"/>',
+  swap: '<path d="M4 8h14.5l-3.5-3.5"/><path d="M20 16H5.5L9 19.5"/>',
+  bulb: '<path d="M9.5 18h5M10.5 21h3"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/>',
+  shield: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5 7.5-9.5V6z"/>',
+  shieldCheck: '<path d="M12 3 4.5 6v5.5c0 4.5 3.2 8.3 7.5 9.5 4.3-1.2 7.5-5 7.5-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/>',
+  file: '<path d="M6.5 3.5h7l4 4v13h-11z"/><path d="M13.5 3.5v4h4"/>',
+  plug: '<path d="M9 3v5M15 3v5"/><path d="M6.5 8h11v3a5.5 5.5 0 0 1-11 0z"/><path d="M12 16.5V21"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16 7l2.5 2.5M14 9l2 2"/>',
+  card: '<rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>',
+  gauge: '<path d="M4.5 17.5a8.5 8.5 0 1 1 15 0"/><path d="m12 13.5 4-4.5"/><circle cx="12" cy="14" r="1.2" fill="currentColor"/>',
+  sparkle: '<path d="M11 3.5c.6 4.2 2.8 6.4 7 7-4.2.6-6.4 2.8-7 7-.6-4.2-2.8-6.4-7-7 4.2-.6 6.4-2.8 7-7z"/><path d="M18.5 15.5c.3 1.6 1.1 2.4 2.5 2.7-1.4.3-2.2 1.1-2.5 2.7-.3-1.6-1.1-2.4-2.5-2.7 1.4-.3 2.2-1.1 2.5-2.7z"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  undo: '<path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H15a5 5 0 0 1 0 10h-3"/>',
+  alert: '<path d="M12 4 2.5 20h19z"/><path d="M12 10v4.5M12 17.5v.01"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  external: '<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
 };
 export function Icon({ name, size = 18, cls = '' }) {
   return html`<svg class=${'ic ' + cls} width=${size} height=${size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -73,16 +92,28 @@ export function pickStatus(t, id) {
   if ((id === 'blocked' || id === 'waiting') && !t.blocked_by_person && !t.blocked_reason) openTask(t.id);
 }
 
+// The people a task, decision or commitment can be given to: the team first, then everyone else (never Claude).
+export function humanPeople() {
+  return getState().people.filter((p) => !isAgent(p)).sort((a, b) => (b.is_team - a.is_team) || (a.sort ?? 999) - (b.sort ?? 999));
+}
+export function pickPerson(anchor, { selected, onPick, none, include = humanPeople() }) {
+  openMenu(anchor, [
+    ...include.map((x) => ({ id: x.id, label: x.name, person: x })),
+    ...(none ? [{ id: '', label: none }] : []),
+  ], (id) => onPick(id || null), selected || '');
+}
+
+// Who a task is with. A Claude task shows Claude working for the accountable person; the menu changes that person.
 export function OwnerButton({ t, size = 24 }) {
+  if (isClaude(t)) {
+    const acc = person(t.accountable_id || t.created_by);
+    const onClick = (e) => { e.stopPropagation(); pickPerson(e.currentTarget, { selected: acc?.id, onPick: (id) => id && updateTask(t.id, { accountable_id: id }) }); };
+    return html`<button type="button" class="owner-btn is-claude" onClick=${onClick} title=${`Claude מבצע, באחריות ${acc?.name || 'אדם'}`}
+      aria-label=${'משימת Claude באחריות ' + (acc?.name || 'אדם')}>
+      <span class="claude-mark" aria-hidden="true"><${Icon} name="sparkle" size=${13} /></span><${Avatar} p=${acc} size=${size} /><span class="owner-name">${acc ? acc.name : 'ללא'}</span></button>`;
+  }
   const p = person(t.owner_id);
-  const onClick = (e) => {
-    e.stopPropagation();
-    const people = getState().people;
-    openMenu(e.currentTarget, [
-      ...people.map((x) => ({ id: x.id, label: x.name, person: x })),
-      { id: '', label: 'ללא אחראי' },
-    ], (id) => updateTask(t.id, { owner_id: id || null }), t.owner_id || '');
-  };
+  const onClick = (e) => { e.stopPropagation(); pickPerson(e.currentTarget, { selected: t.owner_id, none: 'ללא אחראי', onPick: (id) => updateTask(t.id, { owner_id: id }) }); };
   return html`<button type="button" class="owner-btn" onClick=${onClick} aria-label=${'אחראי: ' + (p?.name || 'ללא')}>
     <${Avatar} p=${p} size=${size} /><span class="owner-name">${p ? p.name : 'ללא'}</span></button>`;
 }
@@ -99,14 +130,14 @@ export function PriorityButton({ t, compact }) {
 
 export function FocusStar({ t }) {
   return html`<button type="button" class=${'star' + (t.focus ? ' on' : '')} aria-pressed=${t.focus ? 'true' : 'false'}
-    title=${t.focus ? 'בפוקוס' : 'סמן כפוקוס'} aria-label="פוקוס"
+    title=${t.focus ? 'בפוקוס' : 'סימון כפוקוס'} aria-label="פוקוס"
     onClick=${(e) => { e.stopPropagation(); updateTask(t.id, { focus: !t.focus }); }}><${Icon} name="star" size=${16} /></button>`;
 }
 
-export function DueButton({ t, field = 'due', empty = 'תאריך', onSave, label = 'תאריך יעד' }) {
+export function DueButton({ t, field = 'due', empty = 'תאריך', onSave, label = 'תאריך יעד', late }) {
   const ref = useRef();
   const val = t[field];
-  const overdue = field === 'due' && isOverdue(t);
+  const overdue = late !== undefined ? late : field === 'due' && isOverdue(t);
   return html`<span class=${'due' + (overdue ? ' overdue' : '') + (val ? '' : ' empty')} onClick=${(e) => e.stopPropagation()}>
     <${Icon} name="calendar" size=${14} />
     <span>${val ? dueLabel(val) : empty}</span>
@@ -143,16 +174,92 @@ export function Empty({ icon = 'check', title, children }) {
   return html`<div class="empty"><${Icon} name=${icon} size=${26} /><strong>${title}</strong>${children ? html`<p>${children}</p>` : null}</div>`;
 }
 
-// Generic task row used in lists (mine, team, blockers).
+// How long something has been waiting for a person. Past 48 hours it escalates, so it turns red.
+export function AgeChip({ at, prefix = 'מחכה', title }) {
+  if (!at) return null;
+  const a = ageOf(at);
+  return html`<span class=${'age age-' + a.level} title=${title || (a.level === 'bad' ? 'מחכה יותר מ-48 שעות' : 'כמה זמן זה מחכה')}>
+    <${Icon} name="clock" size=${13} />${prefix ? prefix + ' ' : ''}${a.label}</span>`;
+}
+
+// The fixed reminder next to every place people write: classified information never enters the tool.
+export function BlmsNote({ text }) {
+  return html`<p class="blms-note"><${Icon} name="shieldCheck" size=${15} />${text || 'בלמ״ס בלבד. מידע מסווג לא נכנס לכלי.'}</p>`;
+}
+
+// A small segmented switch.
+export function Seg({ value, options, onChange, label }) {
+  return html`<div class="seg" role="tablist" aria-label=${label}>
+    ${options.map((o) => html`<button type="button" role="tab" key=${o.id} aria-selected=${value === o.id ? 'true' : 'false'} class=${value === o.id ? 'on' : ''}
+      onClick=${() => onChange(o.id)}>${o.icon ? html`<${Icon} name=${o.icon} size=${16} />` : null}${o.label}${o.count ? html`<span class="seg-n">${o.count}</span>` : null}</button>`)}
+  </div>`;
+}
+
+export async function copyText(text, done = 'הועתק') {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(done);
+    return true;
+  } catch (e) {
+    toast('לא הצלחתי להעתיק. אפשר לסמן את הטקסט ולהעתיק ידנית.', { kind: 'error' });
+    return false;
+  }
+}
+
+// A button for a step that is hard to take back: the first tap asks, the second tap does it.
+export function ConfirmButton({ label, confirm = 'לחיצה נוספת לאישור', onConfirm, cls = 'btn sm', icon }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return undefined;
+    const id = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(id);
+  }, [armed]);
+  return html`<button type="button" class=${cls + (armed ? ' armed' : '')}
+    onClick=${(e) => { e.stopPropagation(); if (armed) { setArmed(false); onConfirm(); } else setArmed(true); }}>
+    ${icon ? html`<${Icon} name=${icon} size=${15} />` : null}${armed ? confirm : label}</button>`;
+}
+
+// A label that turns into an input on click (project name, one-line fields).
+export function InlineText({ value, onSave, cls, placeholder }) {
+  const [v, setV] = useState(value || '');
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return html`<button type="button" class=${'inline-text ' + (cls || '') + (value ? '' : ' muted')} onClick=${() => { setV(value || ''); setEditing(true); }}>${value || placeholder}</button>`;
+  }
+  const done = () => { setEditing(false); if ((v || '').trim() !== (value || '')) onSave((v || '').trim()); };
+  return html`<input class=${'inline-input ' + (cls || '')} value=${v} autoFocus aria-label=${placeholder} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${done}
+    onKeyDown=${(e) => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setV(value || ''); setEditing(false); } }} />`;
+}
+
+// A textarea that grows with its text and saves when it loses focus.
+export function AutoText({ value, onSave, placeholder, cls, rows = 1, id, label, readOnly }) {
+  const [v, setV] = useState(value || '');
+  const ref = useRef();
+  useEffect(() => setV(value || ''), [value]);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+  }, [v]);
+  const commit = () => { if ((v || '') !== (value || '')) onSave(v); };
+  return html`<textarea ref=${ref} id=${id} class=${cls} rows=${rows} value=${v} placeholder=${placeholder} aria-label=${label || placeholder}
+    readOnly=${readOnly} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${commit}
+    onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey && cls === 'title-input') { e.preventDefault(); e.currentTarget.blur(); } }}></textarea>`;
+}
+
+// Generic task row used in lists (home, team, blockers, projects).
 export function TaskRow({ t, showProject = true, showOwner = true, extra }) {
   const subtasks = getState().checklist.filter((c) => c.task_id === t.id);
   const doneSub = subtasks.filter((c) => c.done).length;
-  return html`<div class=${'trow' + (t.status === 'done' ? ' is-done' : '') + (t._pending ? ' is-pending' : '')}
+  const ht = !isClaude(t) && t.htype && t.htype !== 'general' ? HTYPE[t.htype] : null;
+  return html`<div class=${'trow' + (t.status === 'done' ? ' is-done' : '') + (t._pending ? ' is-pending' : '') + (isClaude(t) ? ' is-claude' : '')}
     onClick=${() => openTask(t.id)} role="button" tabindex="0" onKeyDown=${(e) => { if (e.key === 'Enter') openTask(t.id); }}>
     <${StatusPill} t=${t} />
     <div class="trow-main">
       <div class="trow-title">${t.private ? html`<${Icon} name="lock" size=${13} cls="muted" />` : null}${t.title}</div>
       <div class="trow-meta">
+        ${t.flagged ? html`<span class="flag-chip"><${Icon} name="alert" size=${12} />חשוד</span>` : null}
+        ${ht ? html`<span class="htype-chip"><${Icon} name=${ht.icon} size=${13} />${ht.label}</span>` : null}
+        ${isClaude(t) && !showOwner ? html`<span class="claude-chip"><${Icon} name="sparkle" size=${12} />Claude</span>` : null}
         ${showProject && t.project_id ? html`<${ProjectChip} id=${t.project_id} />` : null}
         ${subtasks.length ? html`<span class="meta-item"><${Icon} name="checklist" size=${13} />${doneSub}/${subtasks.length}</span>` : null}
         ${extra || null}
@@ -180,7 +287,7 @@ export function MenuLayer() {
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', onScroll); };
   }, [m]);
   if (!m) return null;
-  const W = 230;
+  const W = 240;
   const H = Math.min(m.items.length * 40 + 12, 380);
   let left = m.rect.right - W;
   left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
@@ -209,21 +316,21 @@ export function Toasts() {
     ${s.toasts.map((t) => html`<div class=${'toast ' + t.kind} key=${t.id}>
       <span>${t.text}</span>
       ${t.action ? html`<button type="button" onClick=${() => { dismissToast(t.id); t.action.run(); }}>${t.action.label}</button>` : null}
-      <button type="button" class="toast-x" aria-label="סגור" onClick=${() => dismissToast(t.id)}><${Icon} name="x" size=${14} /></button>
+      <button type="button" class="toast-x" aria-label="סגירה" onClick=${() => dismissToast(t.id)}><${Icon} name="x" size=${14} /></button>
     </div>`)}
   </div>`;
 }
 
-export function Modal({ title, children, onClose = closeModal, wide }) {
+export function Modal({ title, children, onClose = closeModal, wide, cls = '' }) {
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape' && !getState().menu && !getState().guardAsk) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   return html`<div class="overlay" onClick=${onClose}>
-    <div class=${'modal' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()}>
+    <div class=${'modal' + (wide ? ' wide' : '') + (cls ? ' ' + cls : '')} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()}>
       <header class="modal-head"><h2>${title}</h2>
-        <button type="button" class="icon-btn" aria-label="סגור" onClick=${onClose}><${Icon} name="x" /></button></header>
+        <button type="button" class="icon-btn" aria-label="סגירה" onClick=${onClose}><${Icon} name="x" /></button></header>
       <div class="modal-body">${children}</div>
     </div>
   </div>`;
@@ -271,7 +378,7 @@ export function MentionInput({ id, value, onInput, placeholder }) {
     else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pick(options[Math.min(sel, options.length - 1)]); }
   };
   return html`<div class="mention-wrap">
-    <input ref=${ref} id=${id} value=${value} placeholder=${placeholder} autocomplete="off"
+    <input ref=${ref} id=${id} value=${value} placeholder=${placeholder} aria-label=${placeholder} autocomplete="off"
       onInput=${(e) => { setSel(0); onInput(e.currentTarget.value); }} onKeyDown=${onKeyDown} />
     ${options.length ? html`<ul class="mention-menu" role="listbox">${options.map((p, i) => html`<li key=${p.id}>
       <button type="button" role="option" aria-selected=${i === sel ? 'true' : 'false'} class=${i === sel ? 'sel' : ''}

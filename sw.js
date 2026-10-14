@@ -1,11 +1,14 @@
 // Offline shell: the app's own files come from the network first and fall back to the cache.
 // API calls (/sb/...) and cross-origin requests are never cached, so data is always live.
-const CACHE = 'cto-tasks-v1';
+const CACHE = 'cto-tasks-v2';
 const SHELL = [
   '/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon.svg',
   '/app/styles.css', '/app/main.js', '/app/config.js', '/app/api.js', '/app/util.js', '/app/store.js', '/app/ui.js',
+  '/app/model.js', '/app/guard.js', '/app/activity.js', '/app/export.js', '/app/newitem.js',
   '/app/task-drawer.js', '/app/quickadd.js', '/app/lib/preact.js', '/app/lib/hooks.js', '/app/lib/htm.js',
-  '/app/views/auth.js', '/app/views/overview.js', '/app/views/mine.js', '/app/views/team.js', '/app/views/projects.js', '/app/views/blockers.js', '/app/views/daily.js', '/app/views/report.js',
+  '/app/views/auth.js', '/app/views/home.js', '/app/views/command.js', '/app/views/decisions.js', '/app/views/commitments.js',
+  '/app/views/overview.js', '/app/views/mine.js', '/app/views/team.js', '/app/views/projects.js', '/app/views/blockers.js',
+  '/app/views/daily.js', '/app/views/weekly.js', '/app/views/report.js', '/app/views/settings.js',
 ];
 
 self.addEventListener('install', (e) => {
