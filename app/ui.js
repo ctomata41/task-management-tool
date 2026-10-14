@@ -7,6 +7,7 @@ import {
 } from './store.js';
 import { STATUSES, STATUS, PRIORITIES, PRIORITY, HEALTH, HEALTH_BY, dueLabel, isOverdue, personColor, initials, ageOf } from './util.js';
 import { HTYPE, isClaude, isAgent } from './model.js';
+import { useLayer, useThumb, haptic } from './motion.js';
 
 export const html = htm.bind(h);
 
@@ -88,6 +89,7 @@ export function StatusPill({ t, readOnly, size }) {
 }
 // Choosing "blocked"/"waiting" opens the task so the person can say who or what is blocking.
 export function pickStatus(t, id) {
+  if (id === 'done' && t.status !== 'done') haptic('success');
   updateTask(t.id, { status: id });
   if ((id === 'blocked' || id === 'waiting') && !t.blocked_by_person && !t.blocked_reason) openTask(t.id);
 }
@@ -187,9 +189,12 @@ export function BlmsNote({ text }) {
   return html`<p class="blms-note"><${Icon} name="shieldCheck" size=${15} />${text || 'בלמ״ס בלבד. מידע מסווג לא נכנס לכלי.'}</p>`;
 }
 
-// A small segmented switch.
+// A small segmented switch. The selected background slides to a new choice.
 export function Seg({ value, options, onChange, label }) {
-  return html`<div class="seg" role="tablist" aria-label=${label}>
+  const ref = useRef();
+  useThumb(ref);
+  return html`<div class="seg" role="tablist" aria-label=${label} ref=${ref}>
+    <span class="seg-thumb" aria-hidden="true"></span>
     ${options.map((o) => html`<button type="button" role="tab" key=${o.id} aria-selected=${value === o.id ? 'true' : 'false'} class=${value === o.id ? 'on' : ''}
       onClick=${() => onChange(o.id)}>${o.icon ? html`<${Icon} name=${o.icon} size=${16} />` : null}${o.label}${o.count ? html`<span class="seg-n">${o.count}</span>` : null}</button>`)}
   </div>`;
@@ -287,14 +292,25 @@ export function MenuLayer() {
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', onScroll); };
   }, [m]);
   if (!m) return null;
+  return html`<${Menu} key=${`${Math.round(m.rect.top)}:${Math.round(m.rect.left)}:${m.items.length}`} m=${m} />`;
+}
+
+// A menu grows out of the control that opened it.
+function Menu({ m }) {
+  const root = useRef();
+  const panel = useRef();
+  useLayer(root, panel, { kind: 'menu' });
+  const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
   const W = 240;
-  const H = Math.min(m.items.length * 40 + 12, 380);
+  const H = Math.min(m.items.length * row + 12, 380);
   let left = m.rect.right - W;
   left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
   let top = m.rect.bottom + 6;
   if (top + H > window.innerHeight - 8) top = Math.max(8, m.rect.top - 6 - H);
-  return html`<div class="menu-backdrop" onClick=${closeMenu} onScroll=${closeMenu}>
-    <div class="menu" role="menu" style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px`} onClick=${(e) => e.stopPropagation()}>
+  const ox = Math.round(Math.min(W, Math.max(0, m.rect.left + m.rect.width / 2 - left)));
+  const oy = top >= m.rect.bottom ? 0 : H;
+  return html`<div class="menu-backdrop" ref=${root} onClick=${closeMenu} onScroll=${closeMenu}>
+    <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()}>
       ${m.items.map((it) => html`<button type="button" role="menuitem" class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '')}
         onClick=${() => { closeMenu(); m.onPick(it.id); }}>
         ${it.person ? html`<${Avatar} p=${it.person} size=${22} />` : null}
@@ -313,22 +329,32 @@ export function Toasts() {
   const s = useStore();
   if (!s.toasts.length) return null;
   return html`<div class="toasts" role="status" aria-live="polite">
-    ${s.toasts.map((t) => html`<div class=${'toast ' + t.kind} key=${t.id}>
-      <span>${t.text}</span>
-      ${t.action ? html`<button type="button" onClick=${() => { dismissToast(t.id); t.action.run(); }}>${t.action.label}</button>` : null}
-      <button type="button" class="toast-x" aria-label="סגירה" onClick=${() => dismissToast(t.id)}><${Icon} name="x" size=${14} /></button>
-    </div>`)}
+    ${s.toasts.map((t) => html`<${Toast} key=${t.id} t=${t} />`)}
+  </div>`;
+}
+function Toast({ t }) {
+  const ref = useRef();
+  useLayer(ref, ref, { kind: 'toast' });
+  return html`<div class=${'toast ' + t.kind} ref=${ref}>
+    <span>${t.text}</span>
+    ${t.action ? html`<button type="button" onClick=${() => { dismissToast(t.id); t.action.run(); }}>${t.action.label}</button>` : null}
+    <button type="button" class="toast-x" aria-label="סגירה" onClick=${() => dismissToast(t.id)}><${Icon} name="x" size=${14} /></button>
   </div>`;
 }
 
+// A sheet from the bottom on phones (drag it down to close), a dialog that grows out of what was tapped on wide screens.
 export function Modal({ title, children, onClose = closeModal, wide, cls = '' }) {
+  const root = useRef();
+  const panel = useRef();
+  useLayer(root, panel, { kind: 'modal', onClose });
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape' && !getState().menu && !getState().guardAsk) onClose(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-  return html`<div class="overlay" onClick=${onClose}>
-    <div class=${'modal' + (wide ? ' wide' : '') + (cls ? ' ' + cls : '')} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()}>
+  return html`<div class="overlay" ref=${root} onClick=${onClose}>
+    <div class=${'modal' + (wide ? ' wide' : '') + (cls ? ' ' + cls : '')} ref=${panel} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()}>
+      <div class="grabber" aria-hidden="true"></div>
       <header class="modal-head"><h2>${title}</h2>
         <button type="button" class="icon-btn" aria-label="סגירה" onClick=${onClose}><${Icon} name="x" /></button></header>
       <div class="modal-body">${children}</div>

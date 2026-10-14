@@ -1,6 +1,6 @@
 // Side panel (desktop) / full sheet (phone) for one task: a מטלה a person does, or a Claude task done for an accountable
 // person (spec). Every field, the review step for Claude's work, the checklist, comments and history.
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   useStore, getState, updateTask, archiveTask, closeTask, addChecklistItem, toggleChecklistItem, removeChecklistItem,
   loadComments, addComment, person, openMenu, approveTask, returnTask, openDecision, flagItem, isCommand,
@@ -14,6 +14,7 @@ import { HTYPES, HTYPE, isClaude, reviewerOf, liveProjects } from './model.js';
 import { activityWhat } from './activity.js';
 import { taskBrief } from './export.js';
 import { timeAgo } from './util.js';
+import { useLayer, haptic } from './motion.js';
 
 function ReviewBox({ t }) {
   const my = getState().auth?.me;
@@ -33,6 +34,19 @@ function ReviewBox({ t }) {
         <button type="button" class="btn btn-primary sm" onClick=${() => approveTask(t)}><${Icon} name="check" size=${15} />אישור וסגירה</button>
         <button type="button" class="btn sm" onClick=${() => setReturning(true)}><${Icon} name="undo" size=${15} />החזרה לתיקון</button>
       </div>`}
+  </div>`;
+}
+
+// A side panel on wide screens; on phones a sheet that can be dragged down to close.
+function DrawerLayer({ claude, children }) {
+  const root = useRef();
+  const panel = useRef();
+  useLayer(root, panel, { kind: 'drawer', onClose: closeTask });
+  return html`<div class="drawer-wrap" ref=${root} onClick=${closeTask}>
+    <aside class=${'drawer' + (claude ? ' is-claude' : '')} ref=${panel} role="dialog" aria-modal="true" aria-label=${claude ? 'משימת Claude' : 'מטלה'} onClick=${(e) => e.stopPropagation()}>
+      <div class="grabber" aria-hidden="true"></div>
+      ${children}
+    </aside>
   </div>`;
 }
 
@@ -83,8 +97,7 @@ export function TaskDrawer() {
     });
   };
 
-  return html`<div class="drawer-wrap" onClick=${closeTask}>
-    <aside class=${'drawer' + (claude ? ' is-claude' : '')} role="dialog" aria-modal="true" aria-label=${claude ? 'משימת Claude' : 'מטלה'} onClick=${(e) => e.stopPropagation()}>
+  return html`<${DrawerLayer} claude=${claude}>
       <header class="drawer-head">
         <${StatusPill} t=${t} size="lg" />
         ${claude ? html`<span class="claude-chip"><${Icon} name="sparkle" size=${13} />משימת Claude</span>` : null}
@@ -159,7 +172,7 @@ export function TaskDrawer() {
           <h3>שלבים ${items.length ? html`<span class="count">${items.filter((i) => i.done).length}/${items.length}</span>` : null}</h3>
           <ul class="checklist">
             ${items.map((it) => html`<li key=${it.id} class=${it.done ? 'done' : ''}>
-              <button type="button" class="cbox" role="checkbox" aria-checked=${it.done ? 'true' : 'false'} aria-label=${it.title} onClick=${() => toggleChecklistItem(it)}>${it.done ? html`<${Icon} name="check" size=${13} />` : null}</button>
+              <button type="button" class="cbox" role="checkbox" aria-checked=${it.done ? 'true' : 'false'} aria-label=${it.title} onClick=${() => { if (!it.done) haptic('success'); toggleChecklistItem(it); }}>${it.done ? html`<${Icon} name="check" size=${13} />` : null}</button>
               <span>${it.title}</span>
               <button type="button" class="icon-btn sm" aria-label="הסרה" onClick=${() => removeChecklistItem(it)}><${Icon} name="x" size=${14} /></button>
             </li>`)}
@@ -197,6 +210,5 @@ export function TaskDrawer() {
 
         <p class="meta-foot">${creator ? `נפתחה על ידי ${creator.name} · ` : ''}${t.created_at ? timeAgo(t.created_at) : ''}</p>
       </div>
-    </aside>
-  </div>`;
+  <//>`;
 }

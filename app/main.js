@@ -1,7 +1,7 @@
 // App shell: routing, navigation (sidebar on desktop, tab bar and a "more" sheet on phones), notifications, search,
 // the בלמ״ס declaration and the sensitive-word question.
 import { render } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   useStore, init, me, visibleTasks, openTask, openModal, closeModal, openDecision, markRead, markAllRead, person, isCommand,
   getState, set, declare, switchUser, answerGuard, loadAll,
@@ -25,6 +25,7 @@ import { ReportModal } from './views/report.js';
 import { SettingsPanel } from './views/settings.js';
 import { waitingFor, canSee, liveProjects, commitmentLate, visibleCommitments, STAGE } from './model.js';
 import { timeAgo, STATUS } from './util.js';
+import { useLayer } from './motion.js';
 
 function useHash() {
   const [hash, setHash] = useState(location.hash);
@@ -152,13 +153,16 @@ function MoreSheet({ s, tabs }) {
 
 // The sensitive-word question: shown above everything, before anything is saved.
 function GuardDialog({ g }) {
+  const root = useRef();
+  const panel = useRef();
+  useLayer(root, panel, { kind: 'alert' });
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); answerGuard('edit'); } };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
-  return html`<div class="overlay top">
-    <div class="modal guard" role="alertdialog" aria-modal="true" aria-labelledby="guard-t" aria-describedby="guard-d">
+  return html`<div class="overlay top alert" ref=${root}>
+    <div class="modal guard" ref=${panel} role="alertdialog" aria-modal="true" aria-labelledby="guard-t" aria-describedby="guard-d">
       <header class="modal-head"><h2 id="guard-t"><${Icon} name="shield" size=${18} />רגע לפני ששומרים</h2></header>
       <div class="modal-body">
         <p id="guard-d">${g.hits === 1 ? 'בטקסט יש מילה' : `בטקסט יש ${g.hits} מילים`} מרשימת המילים הרגישות של הצוות. מידע מסווג לא נכנס לכלי.</p>
@@ -322,6 +326,20 @@ function App() {
 }
 
 render(html`<${App} />`, document.getElementById('app'));
+
+// How far the page is scrolled, for the bars: at the top they are clear and the page's large title leads; once content
+// passes under them they turn to glass, and on phones the title moves up into the bar.
+let scrollQueued = false;
+const markScroll = () => {
+  scrollQueued = false;
+  const y = window.scrollY;
+  const v = y > 44 ? '2' : y > 2 ? '1' : '0';
+  if (document.documentElement.dataset.scroll !== v) document.documentElement.dataset.scroll = v;
+};
+window.addEventListener('scroll', () => { if (!scrollQueued) { scrollQueued = true; requestAnimationFrame(markScroll); } }, { passive: true });
+markScroll();
+// iOS shows :active (the press highlight) only on pages that listen for touches.
+document.addEventListener('touchstart', () => {}, { passive: true });
 
 // The browser honours autofocus only once per page, so a field that appears later (a modal, an inline editor) gets focus here.
 new MutationObserver((records) => {

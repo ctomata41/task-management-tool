@@ -15,6 +15,7 @@ import {
 import { dueLabel, timeAgo, shortDate, today } from '../util.js';
 import { decisionBrief } from '../export.js';
 import { activityLine } from '../activity.js';
+import { haptic } from '../motion.js';
 
 export function KindChip({ kind }) {
   const k = DECISION_KIND[kind] || DECISION_KIND.direction;
@@ -57,7 +58,7 @@ export function DecisionCard({ d, compact = false, showProject = true }) {
     setBusy(true);
     const saved = await decide(d, { key: picked === 'other' ? null : picked, label, rationale: why });
     setBusy(false);
-    if (saved) { setPicked(null); setWhy(''); setOther(''); }
+    if (saved) { haptic('success'); setPicked(null); setWhy(''); setOther(''); }
   };
 
   const more = (e) => {
