@@ -1,9 +1,11 @@
 // "היום": what needs this person now, and what Claude did while they were away. Nothing here is typed in by hand:
 // every line comes from what the Claude sessions reported, from the calendar, or from a decision someone made.
+import { useState } from 'preact/hooks';
 import { html, Icon, ClaudeMark, Ring } from '../ui.js';
 import { DecisionCard, HumanTaskRow, OutputCard, AgentRow, MeetingAsk, EventRow } from '../parts.js';
 import {
   useStore, person, myDecisions, myHumanTasks, myMeetingAsks, myOutputs, myAgents, bottlenecks, project, hoursLabel, openSheet,
+  requestChanges, approveOutput, closeSheet,
 } from '../store.js';
 
 function greeting() {
@@ -21,6 +23,7 @@ export function Today() {
   const fresh = outs.filter((o) => o.fresh);
   const ags = myAgents();
   const running = ags.filter((a) => a.state === 'run');
+  const ivLeft = Object.entries(s.interviews).map(([pid, iv]) => [pid, iv.questions.filter((q) => !(s.answers[pid] || {})[q.id]).length]).filter(([, n]) => n);
   const waiting = ags.filter((a) => a.state === 'wait');
   const blocking = tasks.filter((t) => t.blocks).length + decs.filter((d) => d.agent).length;
   const todayEv = s.events.filter((e) => new Date(e.start).toDateString() === new Date().toDateString()).sort((a, b) => a.start.localeCompare(b.start));
@@ -64,38 +67,45 @@ export function Today() {
 
         <section id="sec-out" class="sec">
           <div class="sec-head"><h2>תוצרים</h2><a class="link" href="#/outputs">הכל</a></div>
-          <div class="ostrip">${outs.slice(0, 6).map((o) => html`<${OutputCard} key=${o.id} o=${o} />`)}</div>
+          ${outs.length ? html`<div class="ostrip">${outs.slice(0, 6).map((o) => html`<${OutputCard} key=${o.id} o=${o} />`)}</div>`
+            : html`<div class="empty2 quiet"><${ClaudeMark} size=${22} />${s.connector.ready ? 'תוצרים יופיעו כאן לבד כש-Claude יעלה אותם דרך המחבר' : 'תוצרים יופיעו כאן לבד אחרי שהחיבור ל-Claude יופעל'}</div>`}
         </section>
 
         <section class="sec">
           <div class="sec-head"><h2>הסוכנים שלך</h2><span class="muted small">מתעדכן לבד</span></div>
-          <div class="group">${ags.filter((a) => a.state !== 'done').map((a) => html`<${AgentRow} key=${a.id} a=${a} />`)}</div>
+          ${ags.some((a) => a.state !== 'done') ? html`<div class="group">${ags.filter((a) => a.state !== 'done').map((a) => html`<${AgentRow} key=${a.id} a=${a} />`)}</div>`
+            : html`<div class="empty2 quiet"><${ClaudeMark} size=${22} />אין סשנים פעילים. <button type="button" class="link" onClick=${() => openSheet('claude')}>להפעיל את Claude</button></div>`}
         </section>
       </div>
 
       <aside class="col-side">
-        <section class="card side-card">
+        ${s.gcal ? html`<section class="card side-card">
           <div class="sec-head"><h2>היום ביומן</h2><span class="gsync"><span class="gdot"></span>Google</span></div>
           <div class="evlist">${todayEv.map((e) => html`<${EventRow} key=${e.id} e=${e} />`)}</div>
           <a class="link" href="#/calendar">כל השבוע</a>
-        </section>
+        </section>` : null}
         ${meets.length ? html`<section class="card side-card">
           <div class="sec-head"><h2>פגישות לקבוע</h2></div>
           ${meets.map((m) => html`<${MeetingAsk} key=${m.id} m=${m} />`)}
         </section>` : null}
         <section class="card side-card">
           <div class="sec-head"><h2>צווארי בקבוק</h2><a class="link" href="#/insights">ניתוח</a></div>
-          ${bn.length ? bn.map((b, i) => html`<div class="bn-row">
+          ${bn.length ? bn.map((b, i) => html`<div class="bn-row" key=${b.id}>
             <span class="bn-n">${i + 1}</span>
             <div class="grow"><strong>${b.title}</strong>
               <span class="muted small">${person(b.owner).name} · ${project(b.project).name} · ${hoursLabel(Date.now() - new Date(b.since).getTime())}${b.stops ? ' · עוצר סוכן' : ''}</span></div>
           </div>`) : html`<p class="muted">אין צווארי בקבוק כרגע</p>`}
         </section>
-        <button type="button" class="card iv-promo" onClick=${() => { location.hash = '#/interview'; }}>
+        ${ivLeft.length ? html`<button type="button" class="card iv-promo" onClick=${() => { location.hash = `#/interview/${ivLeft[0][0]}`; }}>
           <${ClaudeMark} size=${34} />
-          <div class="grow"><strong>Claude רוצה להתייעץ</strong><span class="muted small">3 שאלות על פלטפורמת הצוות, בערך 2 דקות</span></div>
+          <div class="grow"><strong>Claude רוצה להתייעץ</strong><span class="muted small">${ivLeft[0][1]} שאלות על ${project(ivLeft[0][0]).name}, בערך ${Math.max(1, Math.round(ivLeft[0][1] * 0.7))} דקות</span></div>
           <${Icon} name="chevronLeft" />
-        </button>
+        </button>` : null}
+        ${s.mode === 'live' && !s.connector.enabled ? html`<button type="button" class="card iv-promo" onClick=${() => openSheet('connect')}>
+          <span class="hrow-ic"><${Icon} name="plug" size=${20} /></span>
+          <div class="grow"><strong>חיבור ל-Claude</strong><span class="muted small">${s.connector.ready ? 'מוכן, ומחכה להפעלה לצוות' : 'עוד לא הותקן'}. כאן רואים איך זה עובד</span></div>
+          <${Icon} name="chevronLeft" />
+        </button>` : null}
       </aside>
     </div>
   </div>`;
@@ -112,11 +122,20 @@ export function Outputs() {
 
 export function OutputSheetBody({ id }) {
   const s = useStore();
+  const [note, setNote] = useState('');
   const o = s.outputs.find((x) => x.id === id);
   if (!o) return null;
   return html`<div class="osheet">
     <${OutputCard} o=${o} wide />
-    <p class="muted small">בפלטפורמה האמיתית התוצר נפתח כאן ישירות: סרטון מתנגן, מסמך נקרא, ואפליקציה נפתחת בתצוגה מקדימה.</p>
+    ${o.feedback ? html`<p class="sumbox"><strong>ההערות שנשלחו</strong> ${o.feedback}</p>` : null}
+    ${o.review && s.mode === 'live' ? html`<label class="lbl" for="o-note">מה לשנות</label>
+      <textarea id="o-note" class="input area" rows="3" placeholder="מה לתקן, להוסיף או להוריד" value=${note} onInput=${(e) => setNote(e.target.value)}></textarea>
+      <div class="form-actions">
+        <button type="button" class="btn btn-primary" disabled=${!note.trim()} onClick=${() => { requestChanges(o.id, note.trim()); closeSheet(); }}><${Icon} name="send" size=${15} />שליחה ל-Claude</button>
+        <button type="button" class="btn" onClick=${() => { approveOutput(o.id); closeSheet(); }}><${Icon} name="check" size=${15} />אישור כמו שזה</button>
+      </div>
+      <p class="muted small">Claude מקבל את ההערות בפעם הבאה שהסשן בודק מה השתנה, וממשיך לעבוד עליהן.</p>` : null}
+    ${s.mode === 'demo' ? html`<p class="muted small">בפלטפורמה האמיתית התוצר נפתח כאן ישירות: סרטון מתנגן, מסמך נקרא, ואפליקציה נפתחת בתצוגה מקדימה.</p>` : null}
     <div class="form-actions">
       <button type="button" class="btn" onClick=${() => openSheet('launch', { project: o.project, tool: 'doc', title: `שיפור: ${o.title}` })}><${Icon} name="edit" size=${15} />לבקש שינוי מ-Claude</button>
       <button type="button" class="btn" onClick=${() => openSheet('launch', { project: o.project, tool: 'deck', title: `מצגת מתוך: ${o.title}` })}><${Icon} name="grid" size=${15} />להפוך למצגת</button>

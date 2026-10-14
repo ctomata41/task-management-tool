@@ -1,11 +1,14 @@
-// The prototype's state: in memory, seeded from data.js. A small "live" loop stands in for Claude reporting through the
-// connector: running sessions move forward on their own, and a finished one drops its output into "היום".
+// The state of the control center. Two modes:
+// - demo: in memory, seeded from data.js. A small loop stands in for Claude reporting, so sessions move on their own.
+// - live: the team's real data (live.js loads it and polls). Every action updates the screen at once and then calls
+//   the matching write in live.js through `remote`; a failed write shows a toast and the next refresh puts things back.
 import { useEffect, useState } from 'preact/hooks';
 import * as seed from './data.js';
 import { haptic } from '../app/motion.js';
 
 const clone = (x) => JSON.parse(JSON.stringify(x));
 let state = {
+  mode: 'demo',
   me: 'yahali',
   people: seed.people,
   projects: seed.projects,
@@ -21,6 +24,8 @@ let state = {
   toasts: [],
   sheet: null, // { kind, ...props }
   gcal: true,
+  weekly: seed.weekly,
+  connector: { ready: false, enabled: false },
 };
 const subs = new Set();
 export const getState = () => state;
@@ -35,8 +40,10 @@ export function useStore() {
 }
 
 // ---------- lookups ----------
-export const person = (id) => state.people.find((p) => p.id === id);
-export const project = (id) => state.projects.find((p) => p.id === id);
+const NOBODY = { id: null, name: 'לא שובץ', role: '', color: '#8e8e93' };
+const NOWHERE = { id: null, name: 'בלי פרויקט', color: '#8e8e93', lead: null, partners: [], milestones: [], goal: '' };
+export const person = (id) => state.people.find((p) => p.id === id) || NOBODY;
+export const project = (id) => state.projects.find((p) => p.id === id) || (id ? undefined : NOWHERE);
 export const agent = (id) => state.agents.find((a) => a.id === id);
 export const isMine = (p, me = state.me) => p.lead === me || p.partners.includes(me);
 export const myProjects = () => state.projects.filter((p) => isMine(p));
@@ -52,8 +59,9 @@ export const projectAgents = (id) => state.agents.filter((a) => a.project === id
 export function projectProgress(p) {
   const ms = p.milestones;
   const done = ms.filter((m) => m.done).length;
-  const ags = projectAgents(p.id).filter((a) => a.state !== 'done');
+  const ags = projectAgents(p.id).filter((a) => !['done', 'stopped'].includes(a.state));
   const live = ags.length ? ags.reduce((s, a) => s + a.progress, 0) / ags.length : 0;
+  if (!ms.length) return live;
   return Math.min(1, (done + live * 0.6) / ms.length);
 }
 
@@ -74,8 +82,8 @@ export function projectHealth(p) {
 export function waitingOn(a) {
   const t = state.humanTasks.find((h) => h.blocks === a.id && !h.done);
   const d = state.decisions.find((x) => x.agent === a.id && !x.choice);
-  const who = person((t || d)?.owner);
-  return who ? who.name : 'אדם';
+  const who = (t || d) && person((t || d).owner);
+  return who?.id ? who.name : 'אדם';
 }
 export function hoursLabel(ms) {
   const h = Math.round(ms / 3600e3);
@@ -100,6 +108,13 @@ export function bottlenecks() {
 }
 
 // ---------- actions ----------
+// In live mode live.js sets this to its writes. Each one gets what changed; a failure rolls back on the next refresh.
+let remote = null;
+export function setRemote(r) { remote = r; }
+function push(name, ...args) {
+  if (!remote?.[name]) return;
+  Promise.resolve(remote[name](...args)).catch((e) => { toast(e.message || 'לא נשמר. אפשר לנסות שוב.', { ms: 6000 }); remote.refresh?.(); });
+}
 let toastN = 0;
 export function toast(text, opts = {}) {
   const t = { id: ++toastN, text, ...opts };
@@ -120,6 +135,7 @@ export function decide(id, optionId) {
     agents: s.agents.map((a) => (a.id === d.agent && a.state === 'wait' && !s.humanTasks.some((t) => t.blocks === a.id && !t.done) ? { ...a, state: 'run', step: `ממשיך: ${opt.label}` } : a)),
   }));
   log(d.project, `הוחלט: ${d.q} ${opt.label}`, 'decision');
+  push('decide', d, opt);
   haptic('success');
   toast(d.agent ? `נרשם ביומן ההחלטות. Claude ממשיך: ${opt.label}` : 'נרשם ביומן ההחלטות');
 }
@@ -131,6 +147,7 @@ export function completeHuman(id) {
     agents: s.agents.map((a) => (a.id === t.blocks && a.state === 'wait' && !s.decisions.some((d) => d.agent === a.id && !d.choice) ? { ...a, state: 'run', step: 'ממשיך מאיפה שנעצר' } : a)),
   }));
   log(t.project, `${person(t.owner).name}: ${t.title}`, 'progress');
+  push('completeHuman', t);
   haptic('success');
   toast(t.blocks ? 'בוצע. Claude חזר לעבוד' : 'בוצע');
 }
@@ -156,10 +173,22 @@ export function approveOutput(id) {
     outputs: s.outputs.map((x) => (x.id === id ? { ...x, review: false, approved: true, fresh: false } : x)),
     agents: s.agents.map((a) => (a.id === o.agent && a.state === 'review' ? { ...a, state: 'done', step: 'אושר' } : a)),
   }));
+  push('approveOutput', o);
   haptic('success');
-  toast('אושר. Claude סגר את המשימה');
+  toast(state.mode === 'live' ? 'אושר' : 'אושר. Claude סגר את המשימה');
 }
-export const seeOutput = (id) => set((s) => ({ outputs: s.outputs.map((x) => (x.id === id ? { ...x, fresh: false } : x)) }));
+
+// Sending an output back: the feedback is what Claude reads next time it checks in.
+export function requestChanges(id, feedback) {
+  const o = state.outputs.find((x) => x.id === id);
+  set((s) => ({ outputs: s.outputs.map((x) => (x.id === id ? { ...x, review: false, changes: true, feedback, fresh: false } : x)) }));
+  push('requestChanges', o, feedback);
+  toast('נשלח ל-Claude. ההערות יגיעו אליו בבדיקה הבאה');
+}
+export function seeOutput(id) {
+  set((s) => ({ outputs: s.outputs.map((x) => (x.id === id ? { ...x, fresh: false } : x)) }));
+  push('seeOutput', id);
+}
 
 export function answerInterview(pid, qid, value) {
   const iv = state.interviews[pid];
@@ -180,8 +209,10 @@ export function answerInterview(pid, qid, value) {
   haptic('success');
 }
 
-// Launching Claude from the platform: a new session appears and starts reporting at once.
+// Launching Claude from the platform. Demo: a session appears and starts reporting at once. Live: a run waits as
+// "queued" and live.js opens Claude with a prompt that carries its run_id; the session picks it up through the connector.
 export function launch({ tool, projectId, brief, title }) {
+  if (state.mode === 'live') { push('launch', { tool, projectId, brief, title }); return null; }
   const id = 'a' + Date.now();
   const kinds = { video: 'video', doc: 'doc', deck: 'deck', app: 'app', data: 'chart', meeting: 'doc', research: 'research', routine: 'doc' };
   set((s) => ({
@@ -195,10 +226,21 @@ export function launch({ tool, projectId, brief, title }) {
 }
 
 export function stopAgent(id) {
+  if (state.mode === 'live') {
+    set((s) => ({ agents: s.agents.map((a) => (a.id === id ? { ...a, stopRequested: true, step: 'ביקשת לעצור. Claude יעצור בעדכון הבא' } : a)) }));
+    push('stopAgent', id);
+    toast('Claude יעצור בעדכון הבא שלו');
+    return;
+  }
   set((s) => ({ agents: s.agents.map((a) => (a.id === id ? { ...a, state: 'wait', step: 'נעצר ביד אדם' } : a)) }));
   toast('הסוכן נעצר');
 }
 export function resumeAgent(id) {
+  if (state.mode === 'live') {
+    set((s) => ({ agents: s.agents.map((a) => (a.id === id ? { ...a, state: 'queued', stopRequested: false, step: 'מחכה שסשן של Claude ימשיך' } : a)) }));
+    push('resumeAgent', id);
+    return;
+  }
   set((s) => ({ agents: s.agents.map((a) => (a.id === id ? { ...a, state: 'run', step: 'ממשיך' } : a)) }));
 }
 
@@ -215,6 +257,7 @@ const STEPS = {
   routine: ['מגדיר תזמון', 'בודק הרשאות', 'מריץ פעם ראשונה'],
 };
 function tick() {
+  if (state.mode !== 'demo') return;
   const done = [];
   set((s) => ({
     agents: s.agents.map((a) => {

@@ -205,4 +205,5 @@ export const HTYPE = {
   file: { label: 'קובץ', icon: 'upload' },
   pay: { label: 'תשלום', icon: 'card' },
   meeting: { label: 'פגישה', icon: 'calendar' },
+  other: { label: 'פעולה', icon: 'check' },
 };

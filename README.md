@@ -98,6 +98,18 @@ sw.js                 עבודה בלי רשת, הצגת התראות ופתיח
 supabase/functions/push   שליחה לטלפון: הצפנה (webpush.js), מה יוצא ומתי (rules.js), השירות (index.ts)
 ```
 
+## החיבור ל-Claude (המחבר)
+
+שרת MCP שדרכו ה-Claude של כל אחד ואחת עובד מול הפלטפורמה, בשני הכיוונים. הקוד ב-`supabase/functions/mcp/` (`server.js` הוא כל השרת, ורץ גם ב-Node לבדיקות), והכתובת לכל אדם היא `https://cto-tasks.vercel.app/mcp/cto_…` עם המפתח האישי שלו (Vercel מעביר את `/mcp/*` לפונקציה).
+
+- **Claude → פלטפורמה:** `start_run`, `report_progress`, `publish_output` (תוצר עם קישור, מחכה לאישור), `ask_decision` (כרטיס החלטה והתראה), `request_human_step` (מטלה אנושית), `finish_run`.
+- **פלטפורמה → Claude:** `whats_waiting`, `get_updates` ותשובת `report_progress` מחזירים החלטות שהתקבלו, מטלות שבוצעו, הערות על תוצרים, בקשות עצירה, ומשימות שהופעלו ממרכז הבקרה (ריצה במצב `queued`, ש-Claude אוסף עם `start_run` וה-`run_id`).
+- **כללים:** הכתיבה נעשית בשם סוכן ה-Claude של הצוות, אז כללי הסוכן במסד חלים: הוא לא מחליט, לא סוגר, לא מאשר תוצר, לא מוחק ולא מבטל עצירה של אדם. כל טקסט עובר את בדיקת הבלמ״ס.
+- **מפתחות:** כל אדם יוצר מפתח לעצמו במרכז הבקרה (`/next/`, "חיבור ל-Claude"). נשמר רק ה-SHA-256 שלו, ועד 5 פעילים לאדם.
+- **כבוי עד שמפעילים:** `team_settings.connector_enabled` מתחיל ב-`false`, והמחבר מחזיר 403 עד שהצוות מפעיל אותו.
+
+הפעלה, פעם אחת: להריץ את המיגרציה `20261014050000_claude_connector.sql`, להעלות את הפונקציה עם `supabase functions deploy mcp --no-verify-jwt` (היא מזהה לפי המפתח האישי, לא לפי JWT), ואז `update team_settings set connector_enabled = true;`.
+
 ## פיתוח מקומי
 
 ```sh

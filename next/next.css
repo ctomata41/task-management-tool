@@ -352,6 +352,39 @@
   .claude-fab .cmark { width: 50px !important; height: 50px !important; }
 }
 
+/* live mode: loading, the connector sheet and small helpers */
+.boot { min-height: 100dvh; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--bg); }
+.row-gap { display: inline-flex; align-items: center; gap: 6px; }
+.row-gap.wrap { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.empty2.quiet { color: var(--fg-2); }
+.dc2-ctx { margin: 0; }
+a.proto-badge { text-decoration: none; }
+.side-connect { width: 100%; margin-top: 10px; }
+.cdot { width: 8px; height: 8px; border-radius: 50%; background: var(--s-todo); margin-inline-start: auto; flex: none; }
+.cdot.on { background: var(--s-done); }
+.connect-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: start; padding: 12px 14px; border-radius: var(--r-card); background: var(--fill); margin-bottom: 14px; }
+.connect-row strong, .krow strong { display: block; }
+.connect { display: flex; flex-direction: column; gap: 16px; }
+.flow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; background: var(--fill); border-radius: var(--r-card); padding: 16px; }
+.flow-side { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.flow-arrows { display: flex; flex-direction: column; gap: 8px; font-size: 0.8125rem; color: var(--fg-2); max-width: 15rem; }
+.flow-arrows span { display: flex; align-items: center; gap: 4px; padding: 6px 10px; border-radius: 999px; background: color-mix(in srgb, var(--claude) 12%, transparent); color: color-mix(in srgb, var(--claude) 70%, var(--ink)); }
+.flow-arrows span.back { background: color-mix(in srgb, var(--accent) 12%, transparent); color: color-mix(in srgb, var(--accent) 70%, var(--ink)); flex-direction: row-reverse; justify-content: flex-end; }
+.cstate { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: 0.875rem; color: var(--fg-2); }
+.csteps { margin: 0; padding-inline-start: 1.4em; display: flex; flex-direction: column; gap: 14px; }
+.csteps li { display: flex; flex-direction: column; gap: 3px; }
+.csteps li::marker { font-weight: 700; color: var(--accent); }
+.curl { display: flex; align-items: center; gap: 6px; margin-top: 6px; padding-block: 8px; padding-inline: 12px 6px; border-radius: 12px; background: var(--fill); opacity: 0.55; min-width: 0; }
+.curl.on { opacity: 1; }
+.curl code { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 0.8125rem; text-align: start; }
+.cguard { display: flex; gap: 8px; align-items: flex-start; font-size: 0.8125rem; color: var(--fg-2); background: var(--fill); border-radius: 12px; padding: 10px 12px; }
+.krow { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+@media (max-width: 560px) {
+  .flow { grid-template-columns: 1fr; }
+  .flow-arrows { max-width: none; }
+}
+@media (hover: hover) { .connect-row:hover { background: var(--hover); } }
+
 /* motion that is ambient, not touched: a slow breath for live sessions and the listening orb. Off with reduced motion. */
 @media (prefers-reduced-motion: no-preference) {
   .cmark.live::after { animation: breathe 2.4s var(--spring) infinite; }
@@ -359,11 +392,11 @@
   .voice.listen .orb-glow { animation: listen 1.4s ease-out infinite; }
   .voice.listen .orb-core { animation: core 1.4s ease-in-out infinite; }
   .ocard.fresh .ocard-new { animation: none; }
-  .dc2-opt, .slot, .hstat, .tool, .tp, .who-row, .orb, .ocard, .pcard2, .iv-promo, .back2 {
+  .dc2-opt, .slot, .hstat, .tool, .tp, .who-row, .orb, .ocard, .pcard2, .iv-promo, .back2, .connect-row {
     transition: transform 0.44s var(--spring), background-color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
   }
   .dc2-opt:active, .slot:active, .tp:active, .orb:active { transform: scale(0.95); transition-duration: 0.08s; }
-  .hstat:active, .tool:active, .who-row:active, .iv-promo:active { transform: scale(0.97); transition-duration: 0.08s; }
+  .hstat:active, .tool:active, .who-row:active, .iv-promo:active, .connect-row:active { transform: scale(0.97); transition-duration: 0.08s; }
   .pcard2:active, .ocard:active:not(:has(button:active, a.btn:active)) { transform: scale(0.985); transition-duration: 0.1s; }
 }
 @keyframes breathe { 0% { opacity: 0.9; transform: scale(0.9); } 100% { opacity: 0; transform: scale(1.35); } }

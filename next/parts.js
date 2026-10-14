@@ -8,17 +8,18 @@ import {
 export function DecisionCard({ d, compact }) {
   const [pick, setPick] = useState(null);
   const a = d.agent ? agent(d.agent) : null;
-  const late = new Date(d.due) < new Date();
+  const late = !!d.due && new Date(d.due) < new Date();
   if (d.choice) {
     return html`<div class="dcard2 done"><${Icon} name="check" size=${16} /><span><b>${d.q}</b> ${d.choice}</span></div>`;
   }
   return html`<article class="dcard2" style=${`--bar:${project(d.project).color}`}>
     <header class="dc2-head">
       <${ProjectTag} id=${d.project} />
-      <span class=${'due2' + (late ? ' late' : '')}>${dueWord(d.due)}</span>
+      ${d.due ? html`<span class=${'due2' + (late ? ' late' : '')}>${dueWord(d.due)}</span>` : d.source === 'claude' ? html`<span class="due2"><${ClaudeMark} size=${14} /> Claude שואל</span>` : null}
     </header>
     <h3 class="dc2-q">${d.q}</h3>
-    <p class="dc2-why"><${Icon} name="bolt" size=${14} />משחרר: ${d.unblocks}${a && a.state === 'wait' ? html` <span class="muted">· Claude עצר ומחכה</span>` : null}</p>
+    ${d.unblocks || (a && a.state === 'wait') ? html`<p class="dc2-why"><${Icon} name="bolt" size=${14} />${d.unblocks ? `משחרר: ${d.unblocks}` : 'משחרר את Claude'}${a && a.state === 'wait' ? html` <span class="muted">· Claude עצר ומחכה</span>` : null}</p>` : null}
+    ${d.context ? html`<p class="dc2-ctx muted small">${d.context}</p>` : null}
     <div class=${'dc2-opts' + (compact ? ' compact' : '')}>
       ${d.options.map((o) => html`<button type="button" class=${'dc2-opt' + (o.id === d.rec ? ' rec' : '') + (pick === o.id ? ' sel' : '')}
         onClick=${() => { if (pick === o.id) decide(d.id, o.id); else setPick(o.id); }}>
@@ -32,7 +33,7 @@ export function DecisionCard({ d, compact }) {
 
 export function HumanTaskRow({ t }) {
   const a = t.blocks ? agent(t.blocks) : null;
-  const ty = HTYPE[t.type];
+  const ty = HTYPE[t.type] || HTYPE.other;
   const age = Date.now() - new Date(t.created).getTime();
   return html`<div class="hrow" style=${`--bar:${project(t.project).color}`}>
     <span class="hrow-ic"><${Icon} name=${ty.icon} size=${18} /></span>
@@ -50,6 +51,7 @@ export function HumanTaskRow({ t }) {
 
 export function OutputCard({ o, wide }) {
   const k = OUT_KIND[o.kind] || OUT_KIND.doc;
+  const real = o.url.startsWith('http');
   const p = project(o.project);
   return html`<article class=${'ocard' + (wide ? ' wide' : '') + (o.fresh ? ' fresh' : '')}>
     <a class="ocard-thumb" href=${o.url} target=${o.url.startsWith('http') ? '_blank' : null} rel="noopener" onClick=${(e) => { seeOutput(o.id); if (!o.url.startsWith('http')) { e.preventDefault(); openSheet('output', { id: o.id }); } }}
@@ -64,8 +66,9 @@ export function OutputCard({ o, wide }) {
       <p>${o.summary}</p>
       <footer>
         <span class="muted small"><${ClaudeMark} size=${14} /> ${ago(o.at)}</span>
-        ${o.review ? html`<button type="button" class="btn sm btn-primary" onClick=${() => approveOutput(o.id)}>אישור</button>`
+        ${o.review ? html`<span class="row-gap">${real ? html`<button type="button" class="btn sm" onClick=${() => openSheet('output', { id: o.id })}>הערות</button>` : null}<button type="button" class="btn sm btn-primary" onClick=${() => approveOutput(o.id)}>אישור</button></span>`
           : o.approved ? html`<span class="ok-chip"><${Icon} name="check" size=${13} />אושר</span>`
+          : o.changes ? html`<span class="spill" style="--c:var(--s-review)">חזר ל-Claude</span>`
           : html`<a class="btn sm" href=${o.url} target="_blank" rel="noopener" onClick=${(e) => { seeOutput(o.id); if (!o.url.startsWith('http')) { e.preventDefault(); openSheet('output', { id: o.id }); } }}>פתיחה<${Icon} name="external" size=${13} /></a>`}
       </footer>
     </div>
@@ -77,18 +80,20 @@ const STATE = {
   wait: { label: 'מחכה לאדם', c: 'var(--s-blocked)' },
   review: { label: 'מוכן לבדיקה', c: 'var(--s-review)' },
   done: { label: 'הסתיים', c: 'var(--s-todo)' },
+  queued: { label: 'מחכה לסשן של Claude', c: 'var(--claude)' },
+  stopped: { label: 'נעצר', c: 'var(--s-todo)' },
 };
 export function AgentRow({ a, showProject = true }) {
-  const st = STATE[a.state];
+  const st = STATE[a.state] || STATE.run;
   return html`<div class=${'arow ' + a.state}>
     <${ClaudeMark} size=${30} live=${a.state === 'run'} />
     <div class="arow-main">
-      <div class="arow-top"><strong>${a.title}</strong><span class="spill" style=${`--c:${st.c}`}>${a.state === 'wait' ? `מחכה ל${waitingOn(a)}` : st.label}</span></div>
+      <div class="arow-top"><strong>${a.url ? html`<a href=${a.url} target="_blank" rel="noopener">${a.title}</a>` : a.title}</strong><span class="spill" style=${`--c:${st.c}`}>${a.state === 'wait' ? `מחכה ל${waitingOn(a)}` : st.label}</span></div>
       <div class="arow-step">${showProject ? html`<${ProjectTag} id=${a.project} />` : null}<span>${a.step}</span></div>
-      ${a.state !== 'done' ? html`<${Bar} value=${a.progress} color=${st.c} />` : null}
+      ${!['done', 'stopped', 'queued'].includes(a.state) ? html`<${Bar} value=${a.progress} color=${st.c} />` : null}
     </div>
-    ${a.state === 'run' ? html`<button type="button" class="icon-btn sm" aria-label="עצירה" title="עצירה" onClick=${() => stopAgent(a.id)}><${Icon} name="pause" size=${15} /></button>`
-      : a.state === 'wait' && a.step === 'נעצר ביד אדם' ? html`<button type="button" class="icon-btn sm" aria-label="המשך" title="המשך" onClick=${() => resumeAgent(a.id)}><${Icon} name="play" size=${15} /></button>` : null}
+    ${['run', 'wait', 'queued'].includes(a.state) && !a.stopRequested && !(a.state === 'wait' && a.step === 'נעצר ביד אדם') ? html`<button type="button" class="icon-btn sm" aria-label="עצירה" title="עצירה" onClick=${() => stopAgent(a.id)}><${Icon} name="pause" size=${15} /></button>`
+      : a.state === 'stopped' || (a.state === 'wait' && a.step === 'נעצר ביד אדם') ? html`<button type="button" class="icon-btn sm" aria-label="המשך" title="המשך" onClick=${() => resumeAgent(a.id)}><${Icon} name="play" size=${15} /></button>` : null}
   </div>`;
 }
 

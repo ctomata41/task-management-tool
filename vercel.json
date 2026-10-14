@@ -4,6 +4,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/mcp/:path*",
+      "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/functions/v1/mcp/:path*"
+    },
+    {
       "source": "/sb/:path*",
       "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/:path*"
     }

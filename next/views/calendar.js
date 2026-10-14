@@ -11,17 +11,17 @@ const H1 = 18;
 
 export function Calendar() {
   const s = useStore();
-  const [view, setView] = useState('week');
+  const [view, setView] = useState(s.gcal ? 'week' : 'gantt');
   const [open, setOpen] = useState(null);
   const sun = new Date(); sun.setHours(0, 0, 0, 0); sun.setDate(sun.getDate() - sun.getDay());
   const days = [0, 1, 2, 3, 4].map((i) => new Date(sun.getTime() + i * 864e5));
   const meets = myMeetingAsks();
   const mine = myProjects();
-  const from = new Date(Math.min(...mine.map((p) => new Date(p.start)))).toISOString();
+  const from = mine.length ? new Date(Math.min(...mine.map((p) => new Date(p.start)))).toISOString() : new Date().toISOString();
   const nowH = new Date().getHours() + new Date().getMinutes() / 60;
   const ev = open && s.events.find((e) => e.id === open);
   return html`<div class="page">
-    <header class="page-head"><div><h1>יומן וגאנט</h1><p class="sub"><span class="gsync"><span class="gdot"></span>מסונכרן עם Google Calendar</span> פגישות שנקבעו כאן נכנסות ליומן לבד, ואחריהן מגיע סיכום</p></div>
+    <header class="page-head"><div><h1>יומן וגאנט</h1><p class="sub">${s.gcal ? html`<span class="gsync"><span class="gdot"></span>מסונכרן עם Google Calendar</span> פגישות שנקבעו כאן נכנסות ליומן לבד, ואחריהן מגיע סיכום` : 'Google Calendar עוד לא מחובר, אז השבוע ריק. הגאנט כבר מחושב מאבני הדרך של הפרויקטים'}</p></div>
       <${Seg} value=${view} onChange=${setView} label="תצוגה" options=${[{ id: 'week', label: 'שבוע' }, { id: 'gantt', label: 'גאנט' }]} /></header>
     ${view === 'week' ? html`<div class="cal-wrap">
       <div class="card cal">

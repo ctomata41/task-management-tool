@@ -69,6 +69,12 @@ export function ClaudeSheetBody() {
   };
   const stop = () => { if (rec.current) rec.current.stop(); };
   const approve = (d) => {
+    // Live: only launching Claude is wired so far. Meetings, ideas and decisions from voice come with the next stage.
+    if (getState().mode === 'live' && d.kind !== 'launch') {
+      toast('זה עוד לא מחובר לנתונים האמיתיים. הפעלת Claude כבר עובדת');
+      setDrafts((xs) => xs.map((x) => (x.id === d.id ? { ...x, state: 'skip' } : x)));
+      return;
+    }
     if (d.kind === 'meeting') { addEvent(d.ev); toast('נקבע ביומן Google, וההזמנה נשלחה'); }
     else if (d.kind === 'launch') launch(d.launch);
     else if (d.kind === 'idea') toast('נוסף לסל הרעיונות');
@@ -95,9 +101,15 @@ export function ClaudeSheetBody() {
         <span class="hrow-ic"><${Icon} name=${d.icon} size=${18} /></span>
         <div class="grow"><strong>${d.title}</strong><span class="muted small">${d.detail}</span></div>
         ${d.state === 'ok' ? html`<span class="ok-chip"><${Icon} name="check" size=${13} />בוצע</span>`
+          : d.state === 'skip' ? html`<span class="muted small">בשלב הבא</span>`
           : html`<button type="button" class="btn sm btn-primary" onClick=${() => approve(d)}>אישור</button>`}
       </div>`)}
     </div>` : null}
+    <button type="button" class="connect-row" onClick=${() => openSheet('connect')}>
+      <span class="hrow-ic"><${Icon} name="plug" size=${18} /></span>
+      <div class="grow"><strong>חיבור ל-Claude</strong><span class="muted small">המחבר שדרכו Claude מדווח לכאן וקורא מה החלטת</span></div>
+      <${Icon} name="chevronLeft" size=${16} />
+    </button>
     <div class="sec-head tools-head"><h2>היכולות של Claude</h2><span class="muted small">בוחרים, ו-Claude מתחיל עם ההקשר של הפרויקט</span></div>
     <div class="tools">${tools.map((t) => html`<button type="button" class="tool" style=${`--c:${t.color}`} onClick=${() => openSheet('launch', { tool: t.id })}>
       <span class="tool-ic"><${Icon} name=${t.icon} size=${22} /></span><strong>${t.label}</strong><span>${t.blurb}</span></button>`)}</div>
@@ -107,13 +119,15 @@ export function ClaudeSheetBody() {
 export function LaunchSheetBody({ tool: toolId = 'research', project: pid, title: t0 }) {
   useStore();
   const mine = myProjects();
-  const [pj, setPj] = useState(pid || mine[0].id);
+  const s = getState();
+  const [pj, setPj] = useState(pid || mine[0]?.id);
   const [tid, setTid] = useState(toolId);
   const tool = tools.find((x) => x.id === tid);
   const p = project(pj);
-  const fill = (s) => s.replace('{goal}', p.goal).replace('{name}', p.name);
+  const fill = (x) => x.replace('{goal}', p.goal || p.name).replace('{name}', p.name);
   const [brief, setBrief] = useState(null);
   const [title, setTitle] = useState(t0 || '');
+  if (!p?.id) return html`<p class="muted">אין לך עדיין פרויקט שאפשר להפעיל עליו את Claude.</p>`;
   const text = brief ?? fill(tool.brief);
   const name = title || `${tool.label}: ${p.name}`;
   const go = () => {
@@ -135,7 +149,9 @@ export function LaunchSheetBody({ tool: toolId = 'research', project: pid, title
       <button type="button" class="btn btn-primary" onClick=${go}><${ClaudeMark} size=${18} />הפעלה</button>
       <button type="button" class="btn" onClick=${closeSheet}>ביטול</button>
     </div>
-    <p class="muted small">בפלטפורמה האמיתית זה פותח סשן ב-Claude עם התדריך, והסשן מדווח לכאן דרך המחבר.</p>
+    <p class="muted small">${s.mode === 'demo' ? 'בפלטפורמה האמיתית זה פותח סשן ב-Claude עם התדריך, והסשן מדווח לכאן דרך המחבר.'
+      : s.connector.enabled ? 'נפתח Claude בחלון חדש עם התדריך. הסשן אוסף את המשימה דרך המחבר ומדווח לכאן.'
+      : 'החיבור ל-Claude עוד לא הופעל לצוות, אז המשימה תישמר ותחכה. כשהוא יופעל, הסשן הבא שלך יאסוף אותה.'}</p>
   </div>`;
 }
 export { set, hm };

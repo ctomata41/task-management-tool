@@ -7,6 +7,12 @@ import { useStore, project, answerInterview } from '../store.js';
 export function Interview({ id }) {
   const s = useStore();
   const ids = Object.keys(s.interviews);
+  if (!ids.length) {
+    return html`<div class="page">
+      <header class="page-head"><div><h1>ראיון עם Claude</h1><p class="sub">Claude מפרק את היעד של הפרויקט להחלטות, ושואל רק את מה שהוא צריך כדי להמשיך</p></div></header>
+      <div class="empty2 quiet"><${ClaudeMark} size=${22} />עוד אין ראיון פתוח. כש-Claude יעבוד דרך המחבר, השאלות שלו על כיוון הפרויקט יגיעו לכאן ולמסך "היום".</div>
+    </div>`;
+  }
   const pid = ids.includes(id) ? id : ids[0];
   const iv = s.interviews[pid];
   const p = project(pid);
