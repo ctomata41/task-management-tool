@@ -4,7 +4,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import {
   useStore, init, me, visibleTasks, openTask, openModal, closeModal, openDecision, markRead, markAllRead, person, isCommand,
-  getState, set, declare, switchUser, answerGuard,
+  getState, set, declare, switchUser, answerGuard, loadAll,
 } from './store.js';
 import { isMock } from './api.js';
 import { html, Icon, Avatar, MenuLayer, Toasts, Modal, navigate } from './ui.js';
@@ -53,12 +53,36 @@ const NAV = [
 ];
 const NAV_BY = Object.fromEntries(NAV.map((n) => [n.id, n]));
 
+// Opening a notification: what it is about, in the app or from a tap on the phone.
+function openNotification(n) {
+  const s = getState();
+  markRead(n);
+  closeModal();
+  if (n.task_id && s.tasks.some((t) => t.id === n.task_id)) openTask(n.task_id);
+  else if (n.decision_id && s.decisions.some((d) => d.id === n.decision_id)) openDecision(n.decision_id);
+  else if (n.commitment_id && s.commitments.some((c) => c.id === n.commitment_id)) openModal('commitment', { id: n.commitment_id });
+}
+// A phone notification opens the app at #/n/<id>. It may be newer than the last refresh, so refresh first if needed.
+async function openNotificationById(id) {
+  const has = () => {
+    const s = getState();
+    const n = s.notifications.find((x) => x.id === id);
+    const here = (list, ref) => !ref || list.some((x) => x.id === ref);
+    return n && here(s.tasks, n.task_id) && here(s.decisions, n.decision_id) && here(s.commitments, n.commitment_id) ? n : null;
+  };
+  if (!has()) await loadAll().catch(() => {});
+  const n = has() || getState().notifications.find((x) => x.id === id);
+  if (n) openNotification(n);
+}
+
 function NotificationsPanel({ s }) {
   const items = s.notifications;
   const text = (n) => {
     const who = person(n.actor_id)?.name || 'מישהו';
-    const task = s.tasks.find((t) => t.id === n.task_id)?.title || n.body || '';
+    const t = s.tasks.find((x) => x.id === n.task_id);
+    const task = t?.title || n.body || '';
     const dTitle = s.decisions.find((d) => d.id === n.decision_id)?.title || '';
+    const pName = t ? s.projects.find((p) => p.id === t.project_id)?.name : '';
     switch (n.kind) {
       case 'assigned': return html`מטלה חדשה בשבילך מ<b>${who}</b>: ${task}`;
       case 'accountable': return html`משימת Claude באחריותך: <b>${task}</b>`;
@@ -70,23 +94,19 @@ function NotificationsPanel({ s }) {
       case 'decision': return html`החלטה מחכה לך: <b>${n.body || dTitle}</b>`;
       case 'decided': return html`הוחלט${dTitle ? html` ב<b>${dTitle}</b>` : ''}: ${n.body}`;
       case 'commitment': return html`התחייבות באחריותך: <b>${n.body}</b>`;
+      case 'blocked': return html`חסם ב<b>${pName || 'פרויקט שלך'}</b>: ${task}${n.body && n.body !== task ? ` · ${n.body}` : ''}`;
+      case 'reminder': return html`תזכורת: <b>${n.body}</b>`;
       default: return n.body || task;
     }
-  };
-  const go = (n) => {
-    markRead(n);
-    closeModal();
-    if (n.task_id && s.tasks.some((t) => t.id === n.task_id)) openTask(n.task_id);
-    else if (n.decision_id && s.decisions.some((d) => d.id === n.decision_id)) openDecision(n.decision_id);
-    else if (n.commitment_id && s.commitments.some((c) => c.id === n.commitment_id)) openModal('commitment', { id: n.commitment_id });
   };
   return html`<${Modal} title="התראות">
     ${items.length ? html`<div class="notif-actions"><button type="button" class="link" onClick=${markAllRead}>סימון הכל כנקרא</button></div>
       <ul class="notifs">${items.map((n) => html`<li key=${n.id}>
-        <button type="button" class=${'notif' + (n.read_at ? '' : ' unread')} onClick=${() => go(n)}>
+        <button type="button" class=${'notif' + (n.read_at ? '' : ' unread')} onClick=${() => openNotification(n)}>
           <span class="notif-dot"></span><span class="notif-text">${text(n)}</span><span class="muted">${timeAgo(n.created_at)}</span>
         </button></li>`)}</ul>`
-      : html`<p class="none">אין התראות. החלטה שמחכה לך, מטלה חדשה, בדיקה, תגובה או מישהו שמחכה לך יופיעו כאן.</p>`}
+      : html`<p class="none">אין התראות. החלטה שמחכה לך, מטלה חדשה, בדיקה, תגובה, תזכורת להתחייבות או מישהו שמחכה לך יופיעו כאן.</p>`}
+    <p class="notif-foot"><button type="button" class="link" onClick=${() => openModal('settings')}><${Icon} name="bell" size=${14} />התראות לטלפון: בהגדרות</button></p>
   <//>`;
 }
 
@@ -201,6 +221,13 @@ function Shell({ s }) {
   else if (route === 'overview') page = html`<${Overview} s=${s} />`;
   else if (route === 'weekly') page = html`<${Weekly} s=${s} />`;
   else { route = home; page = home === 'command' ? html`<${Command} s=${s} />` : html`<${Home} s=${s} />`; }
+  // A tap on a phone notification: open what it is about, over the home page.
+  useEffect(() => {
+    if (parts[0] !== 'n') return;
+    history.replaceState(null, '', '#/' + home);
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    if (parts[1]) openNotificationById(parts[1]);
+  }, [hash]);
   const active = route === 'project' ? 'projects' : route;
   const tabs = [home, 'decisions', 'projects', 'team'];
   const tabOf = (id) => (NAV_BY[id]?.parent && tabs.includes(NAV_BY[id].parent) ? NAV_BY[id].parent : id);
@@ -308,4 +335,12 @@ new MutationObserver((records) => {
 
 if ('serviceWorker' in navigator && !isMock && location.hostname !== 'localhost') {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+}
+// A tap on a phone notification while the app is open: the service worker passes on where it leads.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type !== 'open' || typeof e.data.url !== 'string') return;
+    const url = new URL(e.data.url, location.href);
+    if (url.origin === location.origin && url.hash) location.hash = url.hash;
+  });
 }

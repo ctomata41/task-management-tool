@@ -6,6 +6,7 @@ import { api, setCreds } from './api.js';
 import { POLL_MS } from './config.js';
 import { sensitiveHits, textsIn } from './guard.js';
 import { gateOptions, optionsOf } from './model.js';
+import { pushOff, pushPerson, clearShown, syncPush } from './push.js';
 
 const LS = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -20,6 +21,7 @@ let state = {
   auth: LS.get(AUTH_KEY), // { code, me }
   people: [], projects: [], tasks: [], checklist: [], activity: [], notifications: [],
   decisions: [], commitments: [], ideas: [], meetings: [], settings: null,
+  rules: [], ruleRuns: [], reminders: [], // the fixed rules (digest, commitment reminders), their run log, and the reminders sent
   comments: {}, // task_id -> comments
   openTaskId: null,
   menu: null, // { rect, items, onPick, selected }
@@ -100,6 +102,7 @@ function enter() {
   set({ phase: 'ready' });
   checkSince();
   startPolling();
+  syncPush(state.auth?.me);
 }
 export async function declare() {
   const m = me();
@@ -128,6 +131,8 @@ export async function submitCode(code, isSetup) {
   set({ phase: 'pick' });
 }
 export async function pickMe(id) {
+  // Phone notifications follow the person, not the device: someone else on this device turns them off here.
+  if (pushPerson() && pushPerson() !== id) await pushOff();
   const auth = { ...state.auth, me: id };
   LS.set(AUTH_KEY, auth);
   setCreds({ actor: id });
@@ -136,7 +141,8 @@ export async function pickMe(id) {
   enter();
 }
 export function switchUser() { set({ phase: 'pick', modal: null, openTaskId: null, since: null }); }
-export function logout() {
+export async function logout() {
+  await pushOff();
   LS.del(AUTH_KEY);
   setCreds({ code: null, actor: null });
   stopPolling();
@@ -161,7 +167,7 @@ async function loadPeople() {
 let pending = 0;
 export async function loadAll() {
   const my = state.auth?.me;
-  const [people, projects, tasks, checklist, activity, notifications, decisions, commitments, ideas, meetings, settings] = await Promise.all([
+  const [people, projects, tasks, checklist, activity, notifications, decisions, commitments, ideas, meetings, settings, rules, ruleRuns, reminders] = await Promise.all([
     api.list('people', { archived: 'is.false', order: 'sort.asc' }),
     api.list('projects', { archived: 'is.false', order: 'created_at.asc' }),
     api.list('tasks', { archived: 'is.false' }),
@@ -173,11 +179,15 @@ export async function loadAll() {
     api.list('ideas', { archived: 'is.false', order: 'created_at.desc' }),
     api.list('meetings', { order: 'week_start.desc', limit: 12 }),
     api.list('team_settings', { limit: 1 }),
+    // Newer tables: until the database has them, the app works without them.
+    api.list('rules', { order: 'sort.asc' }).catch(() => []),
+    api.list('rule_runs', { order: 'ran_at.desc', limit: 40 }).catch(() => []),
+    api.list('reminders', { order: 'sent_at.desc', limit: 200 }).catch(() => []),
   ]);
   if (pending > 0) return; // a write is in flight; the next poll will catch up
   set({
     people, projects, tasks, checklist, activity, notifications, decisions, commitments, ideas, meetings,
-    settings: settings[0] || null, lastSync: new Date().toISOString(),
+    settings: settings[0] || null, rules, ruleRuns, reminders, lastSync: new Date().toISOString(),
   });
 }
 let timer = null;
@@ -515,6 +525,20 @@ export function createCommitment(fields) {
 }
 export const updateCommitment = (id, patch) => updateRow('commitments', 'commitments', id, patch);
 export const archiveCommitment = (id) => archiveRow('commitments', 'commitments', id, 'ההתחייבות נמחקה');
+// "בזמן": the answer to a commitment reminder, from the owner or anyone on the team who takes it.
+export async function answerReminder(c) {
+  const at = nowIso();
+  const prev = state.reminders;
+  set((s) => ({ reminders: s.reminders.map((r) => (r.commitment_id === c.id && !r.answered_at ? { ...r, answered_at: at, answered_by: s.auth?.me } : r)) }));
+  try {
+    await write(() => api.rpc('reminder_answer', { commitment: c.id }));
+    toast('נרשם: בזמן');
+    refreshActivitySoon();
+  } catch (e) {
+    set({ reminders: prev });
+    fail(e);
+  }
+}
 
 // ---------- ideas ----------
 export function createIdea(fields) {
@@ -560,6 +584,21 @@ export async function saveSettings(patch, { guard = true } = {}) {
   }
 }
 
+// ---------- the fixed rules: a person approves or pauses; the database logs it ----------
+export async function setRule(key, status) {
+  const prev = state.rules;
+  set((s) => ({ rules: s.rules.map((r) => (r.key === key ? { ...r, status, ...(status === 'active' ? { approved_by: s.auth?.me, approved_at: nowIso() } : {}) } : r)) }));
+  try {
+    await write(() => api.rpc('rule_set', { rule_key: key, to_status: status }));
+    const rule = prev.find((r) => r.key === key);
+    toast(status === 'active' ? `הכלל "${rule?.title || ''}" אושר ויתחיל לרוץ` : `הכלל "${rule?.title || ''}" הושהה`);
+    refreshActivitySoon();
+  } catch (e) {
+    set({ rules: prev });
+    fail(e);
+  }
+}
+
 // ---------- possibly classified: anyone marks, command clears or removes ----------
 const TABLE_OF = { task: ['tasks', 'tasks'], decision: ['decisions', 'decisions'], commitment: ['commitments', 'commitments'], idea: ['ideas', 'ideas'], project: ['projects', 'projects'] };
 export async function flagItem(kind, id) {
@@ -596,12 +635,14 @@ export async function loadFlaggedComments() {
 
 // ---------- notifications ----------
 export async function markRead(n) {
+  clearShown([n.id]);
   if (n.read_at) return;
   set((s) => ({ notifications: s.notifications.map((x) => (x.id === n.id ? { ...x, read_at: nowIso() } : x)) }));
   try { await write(() => api.update('notifications', n.id, { read_at: nowIso() })); } catch (e) { /* not critical */ }
 }
 export async function markAllRead() {
   const my = state.auth?.me;
+  clearShown();
   set((s) => ({ notifications: s.notifications.map((x) => (x.read_at ? x : { ...x, read_at: nowIso() })) }));
   try { await write(() => api.updateWhere('notifications', { person_id: 'eq.' + my, read_at: 'is.null' }, { read_at: nowIso() })); } catch (e) { fail(e); }
 }

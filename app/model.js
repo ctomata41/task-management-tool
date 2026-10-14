@@ -93,6 +93,13 @@ export function commitmentWhen(c) {
   return dueLabel(c.due);
 }
 export const counterpartOf = (c) => c.counterpart || (c.direction === 'they_owe' ? 'הצד השני' : 'גורם חיצוני');
+// The reminder about this commitment's current due date that nobody answered yet: nobody said "בזמן" and the commitment
+// was not updated since it went out.
+export function openReminder(c, s = getState()) {
+  if (c.status !== 'open' || !c.due) return null;
+  const touched = Date.parse(c.updated_at || c.created_at);
+  return (s.reminders || []).find((r) => r.commitment_id === c.id && r.due === c.due && !r.answered_at && !(touched > Date.parse(r.sent_at))) || null;
+}
 // "ל" + a free-text name: "ליונתן", but "אל הדרג הבכיר" (ל would swallow the ה) and "ל-Microsoft".
 export const toWhom = (name) => (/^ה/.test(name) ? `אל ${name}` : /^[א-ת]/.test(name) ? `ל${name}` : `ל-${name}`);
 export const fromWhom = (name) => (/^[א-ת]/.test(name) ? `מ${name}` : `מ-${name}`);
@@ -144,8 +151,11 @@ export function significant(s = getState()) {
   visibleCommitments(s).filter((c) => c.status === 'open' && c.due).forEach((c) => {
     const n = workdaysUntil(c.due);
     const cp = counterpartOf(c);
+    const r = openReminder(c, s);
     if (n < 0) out.push({ type: 'commitment', key: 'c' + c.id, c, at: c.created_at, why: c.direction === 'we_owe' ? `המסירה ${toWhom(cp)} ${commitmentWhen(c)}` : `${cp} ${commitmentWhen(c)}` });
     else if (c.direction === 'we_owe' && n <= 1) out.push({ type: 'commitment', key: 'c' + c.id, c, at: c.created_at, why: `המסירה ${toWhom(cp)} ${dueLabel(c.due)}` });
+    // A reminder nobody answered for a workday (the commitment_reminders rule).
+    else if (r && ageOf(r.sent_at).work >= 24) out.push({ type: 'commitment', key: 'c' + c.id, c, at: r.sent_at, why: 'התזכורת לא נענתה' });
   });
   // Warning signs in a project (spec): the lead marked it at risk, its time budget ran out, a milestone is late while it is
   // marked on track, or nobody updated it for seven workdays. One line per project, the first sign that applies.

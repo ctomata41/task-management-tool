@@ -3,10 +3,10 @@
 // so every one has an owner and a date, and comes up in "מה מחכה לי" five workdays before it is due.
 import { useState } from 'preact/hooks';
 import {
-  person, createCommitment, updateCommitment, archiveCommitment, openModal, closeModal, flagItem,
+  person, createCommitment, updateCommitment, archiveCommitment, openModal, closeModal, flagItem, answerReminder,
 } from '../store.js';
 import { html, Icon, Avatar, ProjectChip, Modal, Empty, Seg, BlmsNote, humanPeople } from '../ui.js';
-import { visibleCommitments, commitmentWhen, commitmentLate, counterpartOf, liveProjects, toWhom, fromWhom } from '../model.js';
+import { visibleCommitments, commitmentWhen, commitmentLate, counterpartOf, liveProjects, toWhom, fromWhom, openReminder } from '../model.js';
 import { workdaysUntil, shortDate, timeAgo } from '../util.js';
 import { FlagBar } from './decisions.js';
 
@@ -62,8 +62,12 @@ export function CommitmentEditor({ s }) {
     if (saved) closeModal();
   };
   const history = c ? s.activity.filter((a) => a.commitment_id === c.id).slice(0, 5) : [];
+  const reminder = c ? openReminder(c, s) : null;
   return html`<${Modal} title=${c ? 'התחייבות' : 'התחייבות חדשה'}>
     ${c?.flagged ? html`<${FlagBar} kind="commitment" id=${c.id} />` : null}
+    ${reminder ? html`<div class="remind-bar" role="status"><${Icon} name="bell" size=${16} />
+      <span class="grow">תזכורת נשלחה ${timeAgo(reminder.sent_at)}. אם הכל בזמן, מספיק לסמן. אם משהו השתנה, מעדכנים כאן מועד או הערה ושומרים.</span>
+      <button type="button" class="btn sm" onClick=${() => answerReminder(c)}><${Icon} name="check" size=${14} />בזמן</button></div>` : null}
     <form class="form" onSubmit=${submit}>
       <${Seg} label="כיוון" value=${direction} onChange=${setDirection} options=${[{ id: 'we_owe', label: 'הבטחנו', icon: 'swap' }, { id: 'they_owe', label: 'מחכים להם', icon: 'clock' }]} />
       <label class="lbl" for="ce-title">${we ? 'מה הבטחנו?' : 'מה מחכים לקבל?'}</label>

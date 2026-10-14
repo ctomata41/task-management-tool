@@ -4,12 +4,12 @@
 import { useEffect, useState } from 'preact/hooks';
 import {
   getState, me, person, updateTask, approveTask, returnTask, openTask, updateCommitment, openModal, openDecision, dismissSince, loadActivitySince,
-  visibleTasks,
+  visibleTasks, answerReminder,
 } from '../store.js';
 import { html, Icon, Avatar, ProjectChip, AgeChip, Empty, RichText, StatusPill, pickPerson, humanPeople, navigate } from '../ui.js';
 import { DecisionCard } from './decisions.js';
 import { MyWork } from './mine.js';
-import { waitingFor, HTYPE, commitmentWhen, counterpartOf, fromWhom, openDecisions, visibleCommitments, canSee, since } from '../model.js';
+import { waitingFor, HTYPE, commitmentWhen, counterpartOf, fromWhom, openDecisions, visibleCommitments, canSee, since, openReminder } from '../model.js';
 import { longDate, greeting, timeAgo, dueLabel, today } from '../util.js';
 import { activityLine, openActivity, visibleActivity } from '../activity.js';
 
@@ -80,12 +80,14 @@ function Unblock({ it }) {
 function Commitment({ it }) {
   const c = it.c;
   const we = c.direction === 'we_owe';
+  const reminder = openReminder(c);
   return html`<${QCard} type="commitment" icon="swap" label=${we ? `התחייבנו כלפי ${counterpartOf(c)}` : `מחכים ${fromWhom(counterpartOf(c))}`} at=${it.at} agePrefix="פתוחה" project=${c.project_id}
     tone=${c.due < today() ? 'late' : ''}>
     <button type="button" class="qc-title" onClick=${() => openModal('commitment', { id: c.id })}>${c.title}</button>
-    <p class="qc-line"><b>${commitmentWhen(c)}</b>${c.contact ? ` · ${c.contact}` : ''}</p>
+    <p class="qc-line"><b>${commitmentWhen(c)}</b>${c.contact ? ` · ${c.contact}` : ''}${reminder ? html` · <span class="qc-remind">תזכורת ${timeAgo(reminder.sent_at)}</span>` : null}</p>
     <div class="qc-actions">
       <button type="button" class="btn btn-primary sm" onClick=${() => updateCommitment(c.id, { status: 'done' })}><${Icon} name="check" size=${15} />${we ? 'נמסר' : 'התקבל'}</button>
+      ${reminder ? html`<button type="button" class="btn sm" title="עונה לתזכורת: הכל בזמן" onClick=${() => answerReminder(c)}><${Icon} name="clock" size=${15} />בזמן</button>` : null}
       <button type="button" class="btn sm" onClick=${(e) => pickPerson(e.currentTarget, { selected: c.owner_id, include: humanPeople().filter((p) => p.is_team),
         onPick: (id) => id && updateCommitment(c.id, { owner_id: id }) })}><${Icon} name="user" size=${15} />העברה</button>
       <button type="button" class="btn sm ghost" onClick=${() => openModal('commitment', { id: c.id })}>עריכה</button>

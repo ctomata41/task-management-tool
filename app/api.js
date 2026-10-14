@@ -149,16 +149,33 @@ function makeMock() {
   const commitments = [
     C('מצגת התנעה וחוזה עבודה', { counterpart: 'הצוות ויונתן', due: day(1) }),
     C('נתוני שימוש לרבעון', { direction: 'they_owe', counterpart: 'מחלקת המו״פ', owner_id: yarden.id, project_id: proj2.id, due: day(-1), created_at: ago(70) }),
-    C('הצגת הדוח לדרג הבכיר', { counterpart: 'הדרג הבכיר', owner_id: yonatan.id, project_id: proj2.id, due: day(6) }),
+    C('הצגת הדוח לדרג הבכיר', { counterpart: 'הדרג הבכיר', owner_id: yonatan.id, project_id: proj2.id, due: day(6), created_at: ago(60), updated_at: ago(60) }),
+  ];
+  // Reminders the rule sent: one this morning about tomorrow's delivery, one yesterday that nobody answered.
+  const reminders = [
+    { id: uid(), team_id: teamId, commitment_id: commitments[0].id, person_id: yahli.id, step: '1', due: commitments[0].due, sent_at: ago(2), answered_at: null, answered_by: null },
+    { id: uid(), team_id: teamId, commitment_id: commitments[2].id, person_id: yonatan.id, step: '5', due: commitments[2].due, sent_at: ago(26), answered_at: null, answered_by: null },
+  ];
+  const ruleRuns = [
+    { id: 2, team_id: teamId, rule: 'commitment_reminders', run_date: day(0), ran_at: ago(2), summary: 'תזכורת אחת', details: [{ title: commitments[0].title, owner: 'יהלי', step: '1' }] },
+    { id: 1, team_id: teamId, rule: 'commitment_reminders', run_date: day(-1), ran_at: ago(26), summary: 'תזכורת אחת', details: [{ title: commitments[2].title, owner: 'יונתן', step: '5' }] },
+  ];
+  const rules = [
+    { team_id: teamId, key: 'digest', title: 'תקציר יומי', sort: 1, status: 'proposed', approved_by: null, approved_at: null, updated_by: null, updated_at: ago(20),
+      body: 'בכל יום עבודה, בשעת התקציר של הצוות, מי שהפעיל התראות מקבל לטלפון התראה אחת: עד חמישה דברים שמחכים לו, כל אחד עם הסיבה, ואחריהם מה שקרה מאז התקציר הקודם ולא שלח התראה (תגובות, החלטות שהתקבלו, חסמים ששוחררו). המפקד לא מקבל תקציר יומי.' },
+    { team_id: teamId, key: 'commitment_reminders', title: 'תזכורות להתחייבויות', sort: 2, status: 'active', approved_by: yonatan.id, approved_at: ago(28), updated_by: yonatan.id, updated_at: ago(28),
+      body: 'חמישה ימי עבודה ויום עבודה אחד לפני המועד של התחייבות פתוחה, הבעלים שלה מקבל תזכורת בהתראות ובתקציר. תזכורת שלא נענתה תוך יום עבודה (ההתחייבות לא עודכנה ולא סומנה "בזמן") מעלה את ההתחייבות לתצוגת הצוות והפיקוד, עם "עלה כי התזכורת לא נענתה".' },
   ];
   const ideas = [
     { id: uid(), team_id: teamId, title: 'סיכום פגישה אוטומטי מתוך הקלטה', notes: null, status: 'new', project_id: null, created_by: yonatan.id, created_at: ago(30), updated_at: ago(30), archived: false, flagged: false },
     { id: uid(), team_id: teamId, title: 'לוח מינוף לדרג הבכיר', notes: 'שלב ד׳', status: 'new', project_id: null, created_by: yahli.id, created_at: ago(12), updated_at: ago(12), archived: false, flagged: false },
   ];
   const db = {
-    people, projects: [proj, proj2, proj3], tasks, checklist: [], comments: [], activity: [], notifications: [], decisions, commitments, ideas, meetings: [],
+    people, projects: [proj, proj2, proj3], tasks, checklist: [], comments: [], activity: [], decisions, commitments, ideas, meetings: [],
+    notifications: [{ id: uid(), person_id: yahli.id, actor_id: null, kind: 'reminder', body: `${commitments[0].title}: המסירה אל הצוות ויונתן מחר`, task_id: null, decision_id: null, commitment_id: commitments[0].id, read_at: null, created_at: ago(2) }],
     teams: [{ id: teamId, name: 'צוות CTO', created_at: now() }],
-    team_settings: [{ team_id: teamId, context: '', word_hashes: [], updated_by: null, updated_at: now() }],
+    team_settings: [{ team_id: teamId, context: '', word_hashes: [], updated_by: null, updated_at: now(), quiet_from: '19:00:00', quiet_to: '08:00:00', quiet_days: [5, 6], digest_at: '08:00:00' }],
+    rules, rule_runs: ruleRuns, reminders, push_subscriptions: [],
   };
   let codeHash = '';
   let seq = 0;
@@ -308,6 +325,36 @@ function makeMock() {
         if (r) Object.assign(r, table === 'comments' ? { body: gone, flagged: false } : { [table === 'projects' ? 'name' : 'title']: gone, flagged: false, archived: true, notes: null, context: null });
         db.activity.forEach((a) => { if ([a.task_id, a.decision_id, a.commitment_id, a.payload?.idea_id].includes(args.item_id)) a.payload = { title: gone }; });
         return delay(true);
+      }
+      const actor = db.people.find((p) => p.id === creds.actor);
+      const teamPerson = !!actor && actor.is_team && !actor.is_agent && !actor.archived;
+      if (fn === 'push_subscribe') {
+        if (!actor || actor.is_agent) return Promise.reject(new Error('צריך לבחור מי משתמש במכשיר'));
+        db.push_subscriptions = db.push_subscriptions.filter((x) => x.endpoint !== args.endpoint);
+        db.push_subscriptions.push({ endpoint: args.endpoint, person_id: actor.id, device: args.device || null, created_at: now(), last_ok_at: null, last_status: null });
+        return delay(true);
+      }
+      if (fn === 'push_unsubscribe') {
+        const had = db.push_subscriptions.some((x) => x.endpoint === args.endpoint);
+        db.push_subscriptions = db.push_subscriptions.filter((x) => x.endpoint !== args.endpoint);
+        return delay(had);
+      }
+      if (fn === 'push_devices') return delay(db.push_subscriptions.filter((x) => x.person_id === creds.actor));
+      if (fn === 'rule_set') {
+        if (!teamPerson) return Promise.reject(new Error('רק אדם מהצוות מאשר או משהה כלל'));
+        const r = db.rules.find((x) => x.key === args.rule_key);
+        if (!r) return Promise.reject(new Error('הכלל לא נמצא'));
+        Object.assign(r, { status: args.to_status, updated_by: actor.id, updated_at: now() }, args.to_status === 'active' ? { approved_by: actor.id, approved_at: now() } : {});
+        log({}, 'rule_' + args.to_status, { title: r.title });
+        return delay(true);
+      }
+      if (fn === 'reminder_answer') {
+        if (!teamPerson) return Promise.reject(new Error('רק אדם מהצוות עונה על תזכורת'));
+        const open = db.reminders.filter((x) => x.commitment_id === args.commitment && !x.answered_at);
+        open.forEach((x) => Object.assign(x, { answered_at: now(), answered_by: actor.id }));
+        const c = db.commitments.find((x) => x.id === args.commitment);
+        if (open.length && c) log({ commitment_id: c.id, project_id: c.project_id }, 'commitment_on_track', { title: c.title, direction: c.direction, counterpart: c.counterpart });
+        return delay(open.length > 0);
       }
       return Promise.reject(new Error('unknown rpc ' + fn));
     },

@@ -29,12 +29,15 @@ export function activityWhat(a) {
     case 'commitment_cancelled': return html`ההתחייבות בוטלה: <b>${title}</b>`;
     case 'commitment_assigned': return html`ההתחייבות עברה ל${name(p.to)}: <b>${title}</b>`;
     case 'commitment_due': return html`מועד חדש ל<b>${title}</b>: ${p.to ? shortDate(p.to) : 'בלי מועד'}`;
+    case 'commitment_on_track': return html`בזמן, בתשובה לתזכורת: <b>${title}</b>`;
     case 'project_new': return html`פרויקט חדש${p.stage === 'proposed' ? ' (מוצע)' : ''}: <b>${title}</b>`;
     case 'project_stage': return html`הפרויקט <b>${title}</b>: ${p.to === 'active' ? 'נפתח' : p.to === 'stopped' ? 'נעצר' : STAGE[p.to]?.label || p.to}`;
     case 'project_health': return html`<b>${title}</b>: ${HEALTH_BY[p.to]?.label || p.to}${p.note ? `. ${p.note}` : ''}`;
     case 'project_lead': return html`<b>${title}</b>: מוביל חדש, ${name(p.to)}`;
     case 'project_archived': return html`הפרויקט <b>${title}</b> הועבר לארכיון`;
     case 'idea_new': return html`רעיון חדש לסל: <b>${title}</b>`;
+    case 'rule_active': return html`הכלל <b>${title}</b> אושר ומתחיל לרוץ`;
+    case 'rule_paused': return html`הכלל <b>${title}</b> הושהה`;
     default: return title;
   }
 }
@@ -50,6 +53,7 @@ export function openActivity(a) {
   if (a.decision_id) { if (s.decisions.some((d) => d.id === a.decision_id)) openDecision(a.decision_id); return; }
   if (a.commitment_id) { navigate('#/commitments'); if (s.commitments.some((c) => c.id === a.commitment_id)) openModal('commitment', { id: a.commitment_id }); return; }
   if (a.kind === 'idea_new') { navigate('#/weekly'); return; }
+  if (a.kind.startsWith('rule_')) { openModal('settings'); return; }
   if (a.project_id && s.projects.some((p) => p.id === a.project_id)) navigate('#/project/' + a.project_id);
 }
 // Entries about items the viewer cannot see (archived, or marked as possibly classified) are left out.

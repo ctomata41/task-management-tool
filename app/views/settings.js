@@ -1,5 +1,5 @@
-// Settings: who uses this device, the בלמ״ס rules, the team context file for Claude, the sensitive-word list (command),
-// a full export, the team code, and signing out.
+// Settings: who uses this device, phone notifications, the בלמ״ס rules, quiet hours and the fixed rules, the team context
+// file for Claude, the sensitive-word list (command), a full export, the team code, and signing out.
 import { useState } from 'preact/hooks';
 import { me, isCommand, switchUser, logout, changeCode, saveSettings } from '../store.js';
 import { html, Icon, Avatar, Modal, AutoText, ConfirmButton, copyText } from '../ui.js';
@@ -7,6 +7,7 @@ import { fingerprint, sensitiveHits } from '../guard.js';
 import { exportAll } from '../export.js';
 import { APP_VERSION } from '../config.js';
 import { timeAgo, shortDate } from '../util.js';
+import { PhoneNotifications, QuietHours, FixedRules } from './notify.js';
 
 function SensitiveWords({ s }) {
   const [text, setText] = useState('');
@@ -75,6 +76,11 @@ export function SettingsPanel({ s }) {
       <div class="set-me"><${Avatar} p=${m} size=${36} /><div><strong>${m?.name}</strong><span class="muted">${m?.role || ''}${cmd ? ' · פיקוד' : ''}</span></div>
         <button type="button" class="btn sm" onClick=${switchUser}>החלפת משתמש</button></div>
     </section>
+    <${PhoneNotifications} s=${s} />
+    <section class="set-sec">
+      <h3>התקנה בטלפון</h3>
+      <p class="muted">אייפון: בספארי, כפתור השיתוף ואז "הוסף למסך הבית". אנדרואיד: בכרום, תפריט ⋮ ואז "התקנת אפליקציה".</p>
+    </section>
     <section class="set-sec">
       <h3><${Icon} name="shieldCheck" size=${16} />בלמ״ס בלבד</h3>
       <ul class="rules">
@@ -85,12 +91,10 @@ export function SettingsPanel({ s }) {
       </ul>
       ${m?.declared_at ? html`<p class="muted small">ההצהרה אושרה ב-${shortDate(m.declared_at.slice(0, 10))}.</p>` : null}
     </section>
+    <${QuietHours} s=${s} canEdit=${cmd} />
+    <${FixedRules} s=${s} />
     <${TeamContext} s=${s} canEdit=${cmd} />
     ${cmd ? html`<${SensitiveWords} s=${s} />` : null}
-    <section class="set-sec">
-      <h3>התקנה בטלפון</h3>
-      <p class="muted">אייפון: בספארי, כפתור השיתוף ואז "הוסף למסך הבית". אנדרואיד: בכרום, תפריט ⋮ ואז "התקנת אפליקציה".</p>
-    </section>
     <section class="set-sec">
       <h3>ייצוא מלא</h3>
       <p class="muted">כל הנתונים בקובץ אחד, כדי שהעבודה לא תלויה בכלי ולא ב-AI. בלי פריטים שסומנו כחשודים ובלי פריטים פרטיים של אחרים.</p>

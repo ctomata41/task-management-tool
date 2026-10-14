@@ -979,6 +979,34 @@ details.stopped[open] summary { margin-bottom: 8px; }
 .more-item .ic { color: var(--accent); }
 .more-item:hover { border-color: var(--line-strong); }
 
+/* phone notifications, quiet hours, fixed rules */
+.push-actions, .rule-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.push-on { display: flex; }
+.push-devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--fg-2); }
+.push-devices li { display: flex; align-items: baseline; gap: 8px; }
+.push-msg { border-radius: var(--r-sm); padding: 7px 10px; font-size: 13px !important; }
+.push-msg.ok { background: var(--ok-bg); color: var(--ok); }
+.push-msg.bad { background: var(--bad-bg); color: var(--bad); }
+.quiet-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.quiet-field { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-2); }
+.quiet-field .input { width: auto; min-width: 0; height: 34px; padding: 0 8px; font-variant-numeric: tabular-nums; }
+.quiet-days { display: inline-flex; gap: 4px; }
+.day-tog { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--fg-2); font-size: 13px; font-weight: 600; }
+.day-tog.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-2); }
+.rule-list { display: flex; flex-direction: column; gap: 10px; }
+.rule-card { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--surface); }
+.rule-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.rule-body { color: var(--fg-2); line-height: 1.55; }
+.rule-log summary { cursor: pointer; font-size: 13px; color: var(--accent); width: fit-content; }
+.rule-log ul { margin: 6px 0 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+.rule-when { font-variant-numeric: tabular-nums; color: var(--fg-3); }
+.remind-bar { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 500; margin-bottom: 14px; }
+.remind-bar .grow { flex: 1 1 0; min-width: 12em; }
+.remind-bar .btn { color: var(--fg); }
+.qc-remind { color: var(--warn); }
+.notif-foot { margin: 10px 0 0; padding-top: 8px; border-top: 1px solid var(--line); }
+.notif-foot .link { display: inline-flex; align-items: center; gap: 5px; }
+
 .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .page.overview > .card, .page.daily > .card { padding-bottom: 10px; }
 
