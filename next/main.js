@@ -81,7 +81,7 @@ function App() {
     </aside>
     <div class="main">
       <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
-        ${s.mode === 'demo' ? html`<a class="proto-badge" href="/" title="כניסה באפליקציה עם קוד הצוות, ואז חזרה לכאן">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
+        ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.startsWith("/next") ? "/" : null} title="כניסה באפליקציה עם קוד הצוות, ואז חזרה לכאן">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
         <button type="button" class="icon-btn mobile-only" aria-label="החלפת משתמש" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${30} /></button>
       </header>
       <main id="content">${view}</main>
