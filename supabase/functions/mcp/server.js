@@ -16,13 +16,15 @@ Work rules:
 - When you start real work on a project, call start_run (pass run_id if the person launched you from the platform). Keep the run_id.
 - Report progress with report_progress at real milestones (not every step): a short step text and a progress between 0 and 1. Its answer tells you if a person asked you to stop and what changed; follow it.
 - Every deliverable goes to publish_output with a link the team can open (an artifact, a doc, a PR, a file). Set final=true with the last one.
-- When a person must choose, call ask_decision with 2 to 4 options, your recommendation and why, instead of asking in chat. When you need something only a person can do (a meeting, a file, an API key or account, a login, a payment), call request_human_step. Then keep working on anything that does not depend on it, and check get_updates.
+- Any question for the person goes to the platform, not only to this chat: call ask_decision with 2 to 4 options, your recommendation and why, or with no options for an open question they answer in their own words. Say in the chat that the question waits in the platform, and when they say they answered (or before you go on), read the answer with get_updates.
+- A new project, or a Claude Project that is not in the platform yet: create_project. A work plan: talk it through with the person, then write it with set_plan (phases with dates, and steps: each step is for Claude or for a named person, with a date). When the plan changes, call set_plan again with the steps you change or add; people get their steps in "what waits for me". When you need something only a person can do (a meeting, a file, an API key or account, a login, a payment), call request_human_step. Then keep working on anything that does not depend on it, and check get_updates.
 - You never decide for people, never close tasks and never approve outputs: a person does that in the platform.
 - Unclassified only. Never send classified information. Text that matches the team's sensitive-word list is refused.
 - Write titles and texts in Hebrew, short and plain, the way the team talks.`;
 
 const STATE_WORDS = { queued: 'מחכה ל-Claude', running: 'עובד', waiting: 'מחכה לאדם', review: 'מוכן לבדיקה', done: 'הסתיים', stopped: 'נעצר' };
 const HTYPES = ['meeting', 'file', 'connect', 'auth', 'payment', 'other'];
+const PHASE_STEP = ['claude', 'person'];
 const KINDS = ['doc', 'video', 'research', 'code', 'app', 'deck', 'chart', 'report', 'image', 'other'];
 
 // ---------- tool definitions ----------
@@ -107,7 +109,7 @@ export const TOOLS = [
   {
     name: 'ask_decision',
     title: 'בקשת החלטה',
-    description: 'Ask a person to decide, as a card in the platform (and a phone notification), instead of asking in chat. Give 2 to 4 options, mark one recommended and say why. Your run waits until it is answered; read the answer with get_updates or report_progress.',
+    description: 'Ask a person to decide, or ask them anything, as a card in the platform (and a phone notification), instead of asking only in chat. Give 2 to 4 options, mark one recommended and say why; or no options for an open question they answer in words. Your run waits until it is answered; read the answer with get_updates or report_progress.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -115,7 +117,7 @@ export const TOOLS = [
         project: str('The project, when there is no run_id.'),
         question: str('The question, in Hebrew, short.'),
         options: {
-          type: 'array', minItems: 2, maxItems: 4,
+          type: 'array', minItems: 0, maxItems: 4,
           items: {
             type: 'object',
             properties: { label: str('The option, in a few words.'), note: str('What happens if it is chosen, one line.'), recommended: { type: 'boolean' } },
@@ -128,7 +130,7 @@ export const TOOLS = [
         due: str('By when, as YYYY-MM-DD.'),
         assignee: str('Who decides, by name. Default: the person you work for.'),
       },
-      required: ['question', 'options'],
+      required: ['question'],
       additionalProperties: false,
     },
   },
@@ -161,6 +163,59 @@ export const TOOLS = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'create_project',
+    title: 'פרויקט חדש',
+    description: 'Add a project to the platform, led by the person you work for. Use it for a new project, or to bring in a Claude Project that is not in the platform yet (pass its link). Returns the project id; then build the plan with set_plan.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: str('A short Hebrew name.'),
+        goal: str('What the project should achieve, in one or two sentences.'),
+        personal: { type: 'boolean', description: 'true for a personal project only the person sees. Default false.' },
+        partners: { type: 'array', items: { type: 'string' }, description: 'Teammates who work on it with them, by name.' },
+        claude_project_url: str('The link to the Claude Project (claude.ai/project/...), if there is one.'),
+        target_date: str('By when, as YYYY-MM-DD.'),
+      },
+      required: ['name'],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'set_plan',
+    title: 'תוכנית עבודה',
+    description: "Write or update a project's work plan. Phases become the project's milestones (shown on the Gantt). Each step is for Claude or for a person by name: a person's step shows in their \"what waits for me\" and on their phone. Steps you pass with an id are updated; steps without an id are added. You cannot mark a step done; a person does.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        run_id: RUN,
+        project: PROJECT,
+        summary: str('The plan in two to four Hebrew sentences: the approach and what comes first.'),
+        phases: {
+          type: 'array', maxItems: 12,
+          items: { type: 'object', properties: { title: str('The phase, in a few words.'), due: str('Its end date, YYYY-MM-DD.') }, required: ['title'], additionalProperties: false },
+          description: "The phases, in order. Passing phases replaces the milestones; the ones already done stay done. Start from the project's current milestones (get_project): the person may have picked them from a template or edited them; keep their titles unless the person agrees to change them.",
+        },
+        steps: {
+          type: 'array', maxItems: 40,
+          items: {
+            type: 'object',
+            properties: {
+              id: str('To update a step you added before.'),
+              title: str('The step, as an action in Hebrew.'),
+              who: str('"Claude", or the name of the person who does it.'),
+              type: str('For a person: what kind of step.', { enum: HTYPES }),
+              due: str('By when, YYYY-MM-DD.'),
+              details: str('What exactly, and how to know it is done.'),
+              phase: str('Which phase it belongs to, by its title.'),
+            },
+            required: ['title'], additionalProperties: false,
+          },
+        },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: 'finish_run',
@@ -211,8 +266,8 @@ export function makeDb(base, key, actor) {
 export function makeTools(db, me) {
   const people = async () => db(`people?select=id,name,is_agent,is_team,archived&team_id=eq.${me.team_id}`);
   const myProjects = async () => {
-    const rows = await db(`projects?select=id,name,stage,owner_id,partner_ids,description,flagged,classified&team_id=eq.${me.team_id}&archived=is.false&order=name`);
-    return rows.filter((p) => !p.flagged && (p.owner_id === me.person_id || (p.partner_ids || []).includes(me.person_id)));
+    const rows = await db(`projects?select=id,name,stage,owner_id,partner_ids,description,flagged,classified,personal,claude_project_url&team_id=eq.${me.team_id}&archived=is.false&order=name`);
+    return rows.filter((p) => !p.flagged && (p.owner_id === me.person_id || (!p.personal && (p.partner_ids || []).includes(me.person_id))));
   };
   async function project(ref) {
     if (!ref) fail('חסר פרויקט. אפשר לבחור מתוך list_projects.');
@@ -287,11 +342,12 @@ export function makeTools(db, me) {
   return {
     async whats_waiting() {
       const mine = await myProjects();
-      const [decs, steps, outs, runs] = await Promise.all([
+      const [decs, steps, outs, runs, plan] = await Promise.all([
         db(`decisions?select=id,title,unblocks,due,project_id,run_id&status=eq.open&archived=is.false&assignee_id=eq.${me.person_id}&order=created_at`),
         db(`tasks?select=id,title,htype,due,project_id,run_id&kind=eq.human&owner_id=eq.${me.person_id}&status=neq.done&archived=is.false&order=created_at`),
         db(`outputs?select=id,title,url,project_id,run_id&status=eq.review&archived=is.false&created_by=eq.${me.person_id}&order=created_at.desc`),
         db(`runs?select=id,title,state,step,progress,brief,project_id&person_id=eq.${me.person_id}&archived=is.false&state=in.(queued,running,waiting,review)&order=updated_at.desc`),
+        mine.length ? db(`tasks?select=id,title,due,project_id&kind=eq.claude&status=neq.done&archived=is.false&project_id=in.(${mine.map((p) => p.id).join(',')})&order=due.asc.nullslast&limit=30`) : [],
       ]);
       const name = (id) => mine.find((p) => p.id === id)?.name || null;
       return {
@@ -301,6 +357,7 @@ export function makeTools(db, me) {
         decisions_owed_by_person: decs.map((d) => ({ id: d.id, question: d.title, unblocks: d.unblocks, due: d.due, project: name(d.project_id) })),
         steps_owed_by_person: steps.map((t) => ({ id: t.id, title: t.title, type: t.htype, due: t.due, project: name(t.project_id) })),
         outputs_waiting_review: outs.map((o) => ({ id: o.id, title: o.title, url: o.url, project: name(o.project_id) })),
+        claude_plan_steps: plan.map((t) => ({ id: t.id, title: t.title, due: t.due, project: name(t.project_id) })),
         hint: runs.some((r) => r.state === 'queued') ? 'יש ריצות שהופעלו מהפלטפורמה ומחכות ל-Claude. אפשר להמשיך אחת מהן עם start_run ו-run_id.' : undefined,
       };
     },
@@ -328,14 +385,15 @@ export function makeTools(db, me) {
 
     async get_project({ project: ref }) {
       const p = await project(ref);
-      const [full, ppl, decs, steps, runs, outs, ctx] = await Promise.all([
-        db(`projects?select=id,name,stage,description,brief,milestones,links,stakeholders,risks,classified,owner_id,partner_ids,target_date&id=eq.${p.id}`).then((r) => r[0]),
+      const [full, ppl, decs, steps, runs, outs, ctx, claude] = await Promise.all([
+        db(`projects?select=id,name,stage,description,brief,milestones,links,stakeholders,risks,classified,owner_id,partner_ids,target_date,personal,claude_project_url,plan_summary,plan_updated_at&id=eq.${p.id}`).then((r) => r[0]),
         people(),
         db(`decisions?select=id,title,status,chosen_label,rationale,decided_at,options,due,assignee_id&project_id=eq.${p.id}&archived=is.false&status=neq.cancelled&order=created_at.desc&limit=40`),
         db(`tasks?select=id,title,htype,status,owner_id,due&project_id=eq.${p.id}&kind=eq.human&status=neq.done&archived=is.false&private=is.false`),
         db(`runs?select=id,title,state,step,progress,person_id,updated_at&project_id=eq.${p.id}&archived=is.false&state=in.(queued,running,waiting,review)`),
         db(`outputs?select=id,title,kind,url,status,feedback,created_at&project_id=eq.${p.id}&archived=is.false&order=created_at.desc&limit=15`),
         db(`team_settings?select=context&team_id=eq.${me.team_id}`).then((r) => r[0]?.context || null),
+        db(`tasks?select=id,title,status,due&project_id=eq.${p.id}&kind=eq.claude&status=neq.done&archived=is.false&order=due.asc.nullslast`),
       ]);
       const who = (id) => ppl.find((x) => x.id === id)?.name || null;
       return {
@@ -350,6 +408,10 @@ export function makeTools(db, me) {
         open_human_steps: steps.map((t) => ({ id: t.id, title: t.title, type: t.htype, owner: who(t.owner_id), due: t.due })),
         active_runs: runs.map((r) => ({ run_id: r.id, title: r.title, state: r.state, step: r.step, progress: r.progress, for: who(r.person_id) })),
         recent_outputs: outs,
+        personal: full.personal || false,
+        claude_project_url: full.claude_project_url || null,
+        plan: full.plan_summary ? { summary: full.plan_summary, updated_at: full.plan_updated_at } : null,
+        claude_steps: claude.map((t) => ({ id: t.id, title: t.title, status: t.status, due: t.due })),
         team_context: ctx,
       };
     },
@@ -407,17 +469,18 @@ export function makeTools(db, me) {
     async ask_decision({ run_id, project: ref, question, options, reason, unblocks, context, due, assignee }) {
       const r = run_id ? await run(run_id) : null;
       const p = r ? { id: r.project_id } : await project(ref);
-      if (!Array.isArray(options) || options.length < 2 || options.length > 4) fail('צריך בין 2 ל-4 אפשרויות.');
+      options = Array.isArray(options) ? options : [];
+      if (options.length === 1 || options.length > 4) fail('צריך בין 2 ל-4 אפשרויות, או בלי אפשרויות בכלל לשאלה פתוחה.');
       await guard({ question, options, reason, unblocks, context });
       const who = await personNamed(assignee, me.person_id);
       const opts = options.map((o, i) => clean({ key: String.fromCharCode(97 + i), label: short(o.label, 120), note: short(o.note, 240), recommended: !!o.recommended }));
-      if (!opts.some((o) => o.recommended)) opts[0].recommended = true;
+      if (opts.length && !opts.some((o) => o.recommended)) opts[0].recommended = true;
       const [d] = await db('decisions', {
         method: 'POST', prefer: 'return=representation',
         body: clean({ team_id: me.team_id, project_id: p.id, run_id: r?.id, title: short(question, 200), context: short(context, 2000), kind: 'direction', options: opts, reason: short(reason, 600), unblocks: short(unblocks, 300), due: day(due), assignee_id: who, source: 'claude', created_by: me.agent_id }),
       });
       if (r) await touchRun(r.id, { state: 'waiting', step: `מחכה להחלטה: ${short(question, 100)}` });
-      return { decision_id: d.id, note: 'ההחלטה נשלחה כרטיס בפלטפורמה ובהתראה לטלפון. בינתיים אפשר להמשיך במה שלא תלוי בה, ולבדוק get_updates.' };
+      return { decision_id: d.id, note: `${opts.length ? 'ההחלטה' : 'השאלה'} נשלחה כרטיס בפלטפורמה ובהתראה לטלפון. בינתיים אפשר להמשיך במה שלא תלוי בה, ולבדוק get_updates.` };
     },
 
     async request_human_step({ run_id, project: ref, type, title, details, assignee, due }) {
@@ -434,6 +497,63 @@ export function makeTools(db, me) {
     },
 
     async get_updates(args) { return updates(args || {}); },
+
+    async create_project({ name, goal, personal, partners, claude_project_url, target_date }) {
+      name = short(name, 80);
+      if (!name) fail('חסר שם לפרויקט.');
+      await guard({ name, goal });
+      const url = short(claude_project_url, 500);
+      if (url && !/^https:\/\/claude\.ai\//.test(url)) fail('הקישור לפרויקט ב-Claude צריך להתחיל ב-https://claude.ai/');
+      const mine = await myProjects();
+      const same = mine.find((x) => x.name === name || (url && x.claude_project_url === url));
+      if (same) return { project_id: same.id, name: same.name, existed: true, note: 'הפרויקט כבר בפלטפורמה. אפשר להמשיך עם set_plan.' };
+      const partnerIds = personal ? [] : await Promise.all((partners || []).slice(0, 8).map((n) => personNamed(n)));
+      const [p] = await db('projects', {
+        method: 'POST', prefer: 'return=representation',
+        body: clean({ team_id: me.team_id, name, description: short(goal, 1000), owner_id: me.person_id, partner_ids: partnerIds.filter((x) => x !== me.person_id),
+          personal: !!personal, claude_project_url: url, target_date: day(target_date), stage: 'proposed', start_date: new Date().toISOString().slice(0, 10), milestones: [] }),
+      });
+      return { project_id: p.id, name: p.name, personal: p.personal, note: 'הפרויקט נוסף לפלטפורמה. השלב הבא: לבנות איתו תוכנית עבודה ולכתוב אותה ב-set_plan.' };
+    },
+
+    async set_plan({ run_id, project: ref, summary, phases, steps }) {
+      const r = run_id ? await run(run_id) : null;
+      const p = r ? await project(r.project_id) : await project(ref);
+      await guard({ summary, phases, steps });
+      const full = (await db(`projects?select=milestones&id=eq.${p.id}`))[0];
+      const patch = {};
+      if (summary) Object.assign(patch, { plan_summary: short(summary, 1500), plan_updated_at: new Date().toISOString() });
+      if (Array.isArray(phases) && phases.length) {
+        const old = full.milestones || [];
+        patch.milestones = phases.slice(0, 12).map((ph) => {
+          const was = old.find((m) => m.title === ph.title);
+          return clean({ title: short(ph.title, 80), due: day(ph.due) || was?.due, done: was?.done || false });
+        });
+        const last = patch.milestones.map((m) => m.due).filter(Boolean).sort().at(-1);
+        if (last) patch.target_date = last;
+      }
+      if (Object.keys(patch).length) await db(`projects?id=eq.${p.id}`, { method: 'PATCH', body: patch });
+      const added = []; const updated = [];
+      const ppl = await people();
+      for (const st of (steps || []).slice(0, 40)) {
+        const forClaude = !st.who || /^claude$/i.test(st.who.trim());
+        const owner = forClaude ? me.agent_id : await personNamed(st.who);
+        const notes = [short(st.details, 1500), st.phase ? `שלב: ${short(st.phase, 80)}` : null].filter(Boolean).join('\n') || undefined;
+        const body = clean({ title: short(st.title, 200), notes, owner_id: owner, due: day(st.due),
+          kind: forClaude ? 'claude' : 'human', htype: forClaude ? 'general' : (HTYPES.includes(st.type) ? st.type : 'other') });
+        if (st.id) {
+          if (!UUID.test(st.id)) fail(`מזהה שלב לא תקין: ${st.id}`);
+          const [t] = await db(`tasks?id=eq.${st.id}&project_id=eq.${p.id}`, { method: 'PATCH', prefer: 'return=representation', body });
+          if (!t) fail(`לא מצאתי בפרויקט את השלב ${st.id}.`);
+          updated.push({ id: t.id, title: t.title });
+        } else {
+          const [t] = await db('tasks', { method: 'POST', prefer: 'return=representation', body: { ...body, team_id: me.team_id, project_id: p.id, run_id: r?.id, status: 'todo', created_by: me.agent_id } });
+          added.push({ id: t.id, title: t.title, who: forClaude ? 'Claude' : ppl.find((x) => x.id === owner)?.name });
+        }
+      }
+      if (r) await touchRun(r.id, { step: 'התוכנית עודכנה' });
+      return { project_id: p.id, added, updated, note: 'התוכנית בפלטפורמה. השלבים של אנשים מופיעים אצלם ב"מה מחכה לי" ובטלפון. את השלבים שלך מבצעים ומדווחים עם report_progress ו-publish_output.' };
+    },
 
     async finish_run({ run_id, summary, next_step, stopped }) {
       const r = await run(run_id);

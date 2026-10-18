@@ -8,6 +8,9 @@ import { haptic } from '../app/motion.js';
 
 export function DecisionCard({ d, compact }) {
   const [pick, setPick] = useState(null);
+  const open = !d.options.length; // Claude asked an open question
+  const [typing, setTyping] = useState(open);
+  const [text, setText] = useState('');
   const a = d.agent ? agent(d.agent) : null;
   const late = !!d.due && new Date(d.due) < new Date();
   if (d.choice) {
@@ -21,14 +24,20 @@ export function DecisionCard({ d, compact }) {
     <h3 class="dc2-q">${d.q}</h3>
     ${d.unblocks || (a && a.state === 'wait') ? html`<p class="dc2-why"><${Icon} name="bolt" size=${14} />${d.unblocks ? `משחרר: ${d.unblocks}` : 'משחרר את Claude'}${a && a.state === 'wait' ? html` <span class="muted">· Claude עצר ומחכה</span>` : null}</p>` : null}
     ${d.context ? html`<p class="dc2-ctx muted small">${d.context}</p>` : null}
-    <div class=${'dc2-opts' + (compact ? ' compact' : '')}>
+    ${open ? null : html`<div class=${'dc2-opts' + (compact ? ' compact' : '')}>
       ${d.options.map((o) => html`<button type="button" class=${'dc2-opt' + (o.id === d.rec ? ' rec' : '') + (pick === o.id ? ' sel' : '')}
         onClick=${() => { if (pick === o.id) decide(d.id, o.id); else setPick(o.id); }}>
         <span class="dc2-opt-l">${o.label}${o.id === d.rec ? html`<em>המלצת Claude</em>` : null}</span>
         <span class="dc2-opt-w">${o.why}</span>
         ${pick === o.id ? html`<span class="dc2-confirm">נגיעה נוספת לאישור</span>` : null}
       </button>`)}
-    </div>
+    </div>`}
+    ${typing ? html`<form class="dc2-text" onSubmit=${(e) => { e.preventDefault(); if (text.trim()) decide(d.id, 'text', text); }}>
+        <textarea class="input area" rows="2" aria-label=${`התשובה ל: ${d.q}`} placeholder=${open ? 'התשובה שלך ל-Claude' : 'תשובה אחרת'} value=${text}
+          onInput=${(e) => setText(e.currentTarget.value)}></textarea>
+        <button type="submit" class="btn btn-primary sm" disabled=${!text.trim()}><${Icon} name="send" size=${14} />שליחה</button>
+      </form>`
+      : html`<button type="button" class="dc2-other" onClick=${() => { setTyping(true); setPick(null); }}>תשובה אחרת</button>`}
   </article>`;
 }
 

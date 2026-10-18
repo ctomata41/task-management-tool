@@ -21,6 +21,8 @@ export const projects = [
     id: 'platform', name: 'פלטפורמת הצוות', emoji: '◆', color: '#5856d6', lead: 'yahali', partners: ['yonatan'],
     goal: 'שכבה אחת מעל Claude שמראה לצוות מה מוכן, מה תקוע ומה מחכה למי',
     stage: 'בנייה', start: at(-6, 0), end: at(15, 0),
+    plan: 'שלושה שבועות: אב-טיפוס שהצוות מגיב עליו, מחבר דו-כיווני ל-Claude, ואז פיילוט של שבועיים עם כל הצוות.', planAt: at(-1, 0),
+    claudeUrl: 'https://claude.ai/project/demo',
     milestones: [
       { id: 'm1', title: 'אפיון', start: at(-6, 0), end: at(-1, 0), done: true },
       { id: 'm2', title: 'אב-טיפוס', start: at(-1, 0), end: at(1, 0) },
@@ -232,6 +234,14 @@ export const interviews = {
 };
 
 // The capabilities of Claude, as a visual launcher. Each opens a session with the project's brief already written.
+// The plan's steps for Claude (the people's steps are human tasks, below).
+export const planSteps = [
+  { id: 'ps1', project: 'platform', title: 'לבנות את מסך "מה מחכה לי"', due: at(0, 0).slice(0, 10), phase: 'אב-טיפוס', done: true },
+  { id: 'ps2', project: 'platform', title: 'מחבר MCP עם מפתח אישי', due: at(3, 0).slice(0, 10), phase: 'מחבר ל-Claude' },
+  { id: 'ps3', project: 'platform', title: 'דיווח התקדמות ותוצרים מהשיחה', due: at(6, 0).slice(0, 10), phase: 'מחבר ל-Claude' },
+  { id: 'ps4', project: 'platform', title: 'סיכום שבועי לפיילוט', due: at(12, 0).slice(0, 10), phase: 'פיילוט צוות' },
+];
+
 export const tools = [
   { id: 'research', label: 'מחקר עמוק', icon: 'search', color: '#0071e3', blurb: 'מחקר עם מקורות מאומתים', brief: 'לחקור את {goal}, עם מקורות מ-2026 בלבד, ולסכם ב-5 ממצאים ו-3 המלצות.' },
   { id: 'video', label: 'סרטון', icon: 'play', color: '#ff2d55', blurb: 'סרטון הסבר או הדגמה', brief: 'להכין סרטון הסבר של עד 3 דקות על {name}, בעברית, עם כתוביות.' },

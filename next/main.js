@@ -15,6 +15,7 @@ import { Calendar, EventSheetBody } from './views/calendar.js';
 import { Interview } from './views/interview.js';
 import { Insights } from './views/insights.js';
 import { ClaudeSheetBody, LaunchSheetBody } from './views/claude.js';
+import { NewProjectSheetBody, MilestonesSheetBody } from './views/newproject.js';
 
 const NAV = [
   { id: 'today', label: 'היום', icon: 'home' },
@@ -98,6 +99,8 @@ function App() {
     ${s.sheet?.kind === 'launch' ? html`<${Sheet} title="הפעלת Claude"><${LaunchSheetBody} ...${s.sheet} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'output' ? html`<${Sheet} title="תוצר"><${OutputSheetBody} id=${s.sheet.id} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'who' ? html`<${Sheet} title=${s.mode === 'live' ? 'החשבון שלי' : 'לראות כ…'}><${WhoList} /></${Sheet}>` : null}
+    ${s.sheet?.kind === 'newproject' ? html`<${Sheet} title="פרויקט חדש" wide><${NewProjectSheetBody} /></${Sheet}>` : null}
+    ${s.sheet?.kind === 'milestones' ? html`<${Sheet} title="אבני דרך"><${MilestonesSheetBody} id=${s.sheet.id} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'event' ? html`<${Sheet} title="אירוע חדש"><${EventSheetBody} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'connect' ? html`<${Sheet} title="חיבור ל-Claude" wide><${ConnectSheetBody} /></${Sheet}>` : null}
     <${Toasts} />

@@ -105,7 +105,7 @@ async function load() {
     api.list('people', { archived: 'is.false', order: 'sort.asc' }),
     api.list('projects', { archived: 'is.false', order: 'created_at.asc' }),
     api.list('decisions', { archived: 'is.false', status: 'in.(open,decided)', order: 'created_at.desc', limit: 400 }),
-    api.list('tasks', { archived: 'is.false', kind: 'eq.human', or: `(status.neq.done,done_at.gte.${since})`, order: 'created_at.desc', limit: 500 }),
+    api.list('tasks', { archived: 'is.false', kind: 'in.(human,claude)', or: `(status.neq.done,done_at.gte.${since})`, order: 'created_at.desc', limit: 500 }),
     maybe(api.list('runs', { archived: 'is.false', order: 'updated_at.desc', limit: 200 })),
     maybe(api.list('outputs', { archived: 'is.false', order: 'created_at.desc', limit: 300 })),
     api.list('activity', { order: 'at.desc', limit: 150 }),
@@ -125,8 +125,8 @@ async function load() {
     const dues = (p.milestones || []).map((m) => m.due).filter(Boolean).sort();
     const end = p.target_date || dues.at(-1) || new Date(new Date(start).getTime() + 30 * DAY).toISOString();
     let prev = start;
-    const milestones = (p.milestones || []).map((m) => {
-      const ms = { id: m.id, title: m.title, start: prev, end: m.due || end, done: !!m.done };
+    const milestones = (p.milestones || []).map((m, k) => {
+      const ms = { id: m.id || `i${k}`, title: m.title, start: prev, end: m.due || end, done: !!m.done };
       if (m.due) prev = m.due;
       return ms;
     });
@@ -135,6 +135,7 @@ async function load() {
       lead: p.owner_id, partners: p.partner_ids || [],
       goal: p.classified ? 'הפרטים ברשת המסווגת' : (p.description || ''),
       stage: STAGE[p.stage] || p.stage || '', start, end, milestones, classified: p.classified,
+      personal: !!p.personal, claudeUrl: p.claude_project_url || '', plan: p.plan_summary || '', planAt: p.plan_updated_at,
     };
   });
   const pids = new Set(prj.map((p) => p.id));
@@ -149,11 +150,18 @@ async function load() {
       choice: d.status === 'decided' ? (d.chosen_label || 'הוחלט') : null, decidedAt: d.decided_at, source: d.source,
     };
   });
-  const steps = tasks.filter((t) => (!t.flagged || cmd) && inProject(t) && (!t.private || t.owner_id === me.id || t.created_by === me.id)).map((t) => {
+  const seeable = tasks.filter((t) => (!t.flagged || cmd) && inProject(t) && (!t.private || t.owner_id === me.id || t.created_by === me.id));
+  // The plan's own steps for Claude (set_plan writes them as kind "claude"); the people's steps are the human tasks.
+  const planSteps = seeable.filter((t) => t.kind === 'claude').map((t) => ({
+    id: t.id, project: t.project_id, title: t.title, due: t.due, done: t.status === 'done', review: t.status === 'review',
+    phase: phaseOf(t.notes), created: t.created_at,
+  }));
+  const steps = seeable.filter((t) => t.kind !== 'claude').map((t) => {
     const type = HTYPE[t.htype] || t.htype || 'other';
     return {
       id: t.id, project: t.project_id, type, owner: t.owner_id, title: t.title, blocks: t.run_id, created: t.created_at,
-      cta: CTA[type] || 'בוצע', note: t.notes ? t.notes.slice(0, 120) : '', done: t.status === 'done', doneAt: t.done_at, due: t.due,
+      cta: CTA[type] || 'בוצע', note: t.notes ? t.notes.replace(/^שלב: .*$/m, '').trim().slice(0, 120) : '', done: t.status === 'done', doneAt: t.done_at, due: t.due,
+      phase: phaseOf(t.notes),
     };
   });
   const agents = (runs || []).filter(inProject).map((r) => ({
@@ -170,13 +178,17 @@ async function load() {
   const feed = activity.filter(inProject).map((a) => feedLine(a, agentIds, humans)).filter(Boolean);
 
   set({
-    mode: 'live', me: me.id, people: ppl, projects: prj, decisions: decs, humanTasks: steps, agents, outputs: outs, feed,
+    mode: 'live', me: me.id, people: ppl, projects: prj, decisions: decs, humanTasks: steps, planSteps, agents, outputs: outs, feed,
     meetingAsks: [], interviews: {}, weekly: weeklyFrom(outs, decs, steps),
     presence: presenceFrom(humans, presence, runs || []),
     connector: { ready: runs !== null, enabled: settings?.[0]?.connector_enabled ?? false, teamId: settings?.[0]?.team_id },
   });
   return true;
 }
+
+// Milestones as the database keeps them (the same shape set_plan writes): a title, an end date, done.
+const plainMs = (list = []) => list.map((m) => ({ id: m.id, title: m.title, due: (m.due || m.end || '').slice(0, 10) || undefined, done: !!m.done }));
+const phaseOf = (notes) => (notes || '').match(/^שלב: (.+)$/m)?.[1] || '';
 
 // Who has Claude connected. "Online" means their Claude reached the platform in the last 15 minutes: the connector
 // has no open line to a session, so the last call is the best signal there is.
@@ -241,9 +253,35 @@ async function write(fn) {
 // What people do on screen, written back. Claude reads all of it through the connector.
 const writes = {
   refresh: () => load().catch(() => {}),
-  decide: (d, opt) => write(() => api.update('decisions', d.id, {
-    status: 'decided', chosen_key: opt.id, chosen_label: opt.label, decided_by: me.id, decided_at: now(),
-  })),
+  // A free-text answer (an open question, or "another answer") is kept as the chosen label; Claude reads it as is.
+  decide: (d, opt) => write(async () => {
+    if (opt.id === 'text') await guard({ answer: opt.label });
+    await api.update('decisions', d.id, { status: 'decided', chosen_key: opt.id, chosen_label: opt.label.slice(0, 1000), decided_by: me.id, decided_at: now() });
+  }),
+  // A new project, and when asked, the Claude session that builds its plan. Claude opens first, while the tap still
+  // counts as the person's; the project is written before the run that points at it.
+  createProject: (p, plan) => {
+    const go = plan ? openClaude({ id: plan.id, title: plan.title, brief: plan.brief, project: p, tool: plan.tool }) : null;
+    return write(async () => {
+      await guard({ name: p.name, goal: p.goal });
+      await api.insert('projects', {
+        id: p.id, name: p.name, description: p.goal || null, owner_id: me.id, partner_ids: p.personal ? [] : p.partners,
+        personal: p.personal, claude_project_url: p.claudeUrl || null, stage: 'proposed', start_date: now().slice(0, 10),
+        milestones: plainMs(p.milestones), target_date: plainMs(p.milestones).at(-1)?.due || null,
+        ...(getState().connector?.teamId ? { team_id: getState().connector.teamId } : {}),
+      });
+      if (plan) await api.insert('runs', { id: plan.id, project_id: p.id, person_id: me.id, title: plan.title, brief: plan.brief, state: 'queued', step: 'מחכה שסשן של Claude יאסוף', source: 'app', created_by: me.id });
+      await load();
+      if (go) toast(go, { ms: 7000 });
+    });
+  },
+  setMilestones: (p, list) => write(async () => {
+    await guard({ titles: list.map((m) => m.title) });
+    const ms = plainMs(list);
+    await api.update('projects', p.id, { milestones: ms, ...(ms.length && ms.at(-1).due ? { target_date: ms.at(-1).due } : {}) });
+  }),
+  setPersonal: (p, personal) => write(() => api.update('projects', p.id, { personal })),
+  setClaudeUrl: (p, url) => write(() => api.update('projects', p.id, { claude_project_url: url || null })),
   completeHuman: (t) => write(() => api.update('tasks', t.id, { status: 'done', done_at: now() })),
   approveOutput: (o) => write(() => api.update('outputs', o.id, { status: 'approved', reviewed_by: me.id, reviewed_at: now() })),
   requestChanges: (o, feedback) => write(async () => {
@@ -259,17 +297,31 @@ const writes = {
   // the tap still counts as the person's, so the browser does not block it.
   launch: ({ tool, projectId, brief, title }) => {
     const id = crypto.randomUUID();
-    const p = project(projectId);
-    const url = `https://claude.ai/new?q=${encodeURIComponent(launchPrompt({ id, title, brief, project: p, tool }))}`;
-    if (getState().connector?.enabled) window.open(url, '_blank', 'noopener');
+    const go = openClaude({ id, title, brief, project: project(projectId), tool });
     return write(async () => {
       await guard({ title, brief });
       await api.insert('runs', { id, project_id: projectId, person_id: me.id, title, brief, state: 'queued', step: 'מחכה שסשן של Claude יאסוף', source: 'app', created_by: me.id });
       await load();
-      toast(getState().connector?.enabled ? 'נפתח Claude עם התדריך. ההתקדמות תופיע כאן לבד' : 'נשמר. כשהחיבור ל-Claude יופעל, הסשן הבא שלך יאסוף את זה', { ms: 6000 });
+      toast(go || 'נשמר. כשהחיבור ל-Claude יופעל, הסשן הבא שלך יאסוף את זה', { ms: 7000 });
     });
   },
 };
+
+// Opens Claude with the brief. A project linked to a Claude Project opens there, with the brief copied to paste into a
+// new chat (claude.ai takes a prompt in the address only for a plain new chat). Returns what to tell the person, or
+// null when the connector is not on yet.
+function openClaude(args) {
+  if (!getState().connector?.enabled) return null;
+  const text = launchPrompt(args);
+  const proj = args.project?.claudeUrl;
+  if (proj) {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    window.open(proj, '_blank', 'noopener');
+    return 'נפתח הפרויקט ב-Claude, והתדריך הועתק. פותחים שם שיחה חדשה ומדביקים. ההתקדמות תופיע כאן לבד';
+  }
+  window.open(`https://claude.ai/new?q=${encodeURIComponent(text)}`, '_blank', 'noopener');
+  return 'נפתח Claude עם התדריך. ההתקדמות תופיע כאן לבד';
+}
 
 export function launchPrompt({ id, title, brief, project: p, tool }) {
   return [

@@ -16,6 +16,7 @@ let state = {
   outputs: clone(seed.outputs),
   decisions: clone(seed.decisions).map((d) => ({ ...d, choice: null })),
   humanTasks: clone(seed.humanTasks).map((t) => ({ ...t, done: false })),
+  planSteps: clone(seed.planSteps || []),
   meetingAsks: clone(seed.meetingAsks).map((m) => ({ ...m, booked: null })),
   events: clone(seed.events),
   feed: clone(seed.feed),
@@ -133,15 +134,17 @@ export const closeSheet = () => set({ sheet: null });
 const log = (project, text, kind) => set((s) => ({ feed: [{ id: 'f' + Date.now(), project, at: new Date().toISOString(), text, kind }, ...s.feed] }));
 
 // A decision made: the Claude that waited on it carries on right away.
-export function decide(id, optionId) {
+// optionId 'text' is a free-text answer: an open question, or an answer that is none of the options.
+export function decide(id, optionId, text) {
   const d = state.decisions.find((x) => x.id === id);
-  const opt = d.options.find((o) => o.id === optionId) || { label: optionId };
+  const opt = optionId === 'text' ? { id: 'text', label: text.trim() } : d.options.find((o) => o.id === optionId) || { label: optionId };
   set((s) => ({
     decisions: s.decisions.map((x) => (x.id === id ? { ...x, choice: opt.label, decidedAt: new Date().toISOString() } : x)),
     agents: s.agents.map((a) => (a.id === d.agent && a.state === 'wait' && !s.humanTasks.some((t) => t.blocks === a.id && !t.done) ? { ...a, state: 'run', step: `ממשיך: ${opt.label}` } : a)),
   }));
   log(d.project, `הוחלט: ${d.q} ${opt.label}`, 'decision');
   push('decide', d, opt);
+  if (state.mode === 'demo' && !d.options.length && d.agent) setTimeout(() => demoPlanFill({ ...d, choice: opt.label }), 1200);
   haptic('success');
   toast(d.agent ? `נרשם ביומן ההחלטות. Claude ממשיך: ${opt.label}` : 'נרשם ביומן ההחלטות');
 }
@@ -229,6 +232,103 @@ export function launch({ tool, projectId, brief, title }) {
   haptic('success');
   toast('Claude התחיל לעבוד. ההתקדמות תופיע כאן לבד');
   return id;
+}
+
+// A new project. With a plan, Claude is started on it at once to build the work plan with the person: it asks through
+// the platform, then writes the plan (set_plan), and the steps reach the people they are for.
+const PCOL = ['#5856d6', '#ff2d55', '#ff9500', '#30b0c7', '#34c759', '#af52de', '#0071e3'];
+export const PLAN_TOOL = { id: 'plan', label: 'תוכנית עבודה' };
+export function planBrief(p) {
+  return [
+    `לבנות איתי תוכנית עבודה לפרויקט "${p.name}"${p.goal ? `, שהמטרה שלו: ${p.goal}` : ''}.`,
+    'קודם לשאול אותי מה צריך כדי לתכנן: מה התוצאה, עד מתי, מי שותף, מה כבר קיים ומה חוסם. כל שאלה דרך ask_decision (אפשר גם שאלה פתוחה, בלי אפשרויות), כדי שאוכל לענות בפלטפורמה. אחרי שאלה לעצור ולבקש שאכתוב "עניתי", ואז לקרוא ל-get_updates.',
+    'אחר כך לכתוב את התוכנית עם set_plan: סיכום קצר, שלבים עם תאריכים, וצעדים עם אחראי (Claude או אדם בשם) ותאריך. צעדים שרק אדם יכול לעשות יגיעו אליו לבד.',
+    'כשמשהו משתנה בהמשך, לעדכן את התוכנית שוב עם set_plan.',
+  ].join('\n');
+}
+// Milestones on screen run from the end of the one before; people edit them as a title and an end date.
+export function toScreenMs(list, start) {
+  let prev = start;
+  return list.filter((m) => m.title.trim()).map((m) => {
+    const end = m.due ? new Date(`${m.due}T18:00`).toISOString() : m.end || prev;
+    const ms = { id: m.id, title: m.title.trim(), start: prev, end, done: !!m.done };
+    prev = end;
+    return ms;
+  });
+}
+export function createProject({ name, goal, partners = [], personal = false, claudeUrl = '', milestones: plain = [] }, { plan = false } = {}) {
+  const live = state.mode === 'live';
+  const id = live ? crypto.randomUUID() : 'p' + Date.now();
+  const start = new Date().toISOString();
+  const p = {
+    id, name: name.trim(), goal: goal.trim(), emoji: '◆', color: PCOL[state.projects.length % PCOL.length], lead: state.me,
+    partners: personal ? [] : partners, stage: 'מוצע', start, end: new Date(Date.now() + 30 * 864e5).toISOString(), milestones: toScreenMs(plain, start),
+    personal, claudeUrl: claudeUrl.trim(), plan: '', planAt: null,
+  };
+  if (p.milestones.length) p.end = p.milestones.at(-1).end;
+  set((s) => ({ projects: [...s.projects, p] }));
+  const run = plan ? { id: live ? crypto.randomUUID() : 'a' + Date.now(), tool: PLAN_TOOL, title: `תוכנית עבודה: ${p.name}`, brief: planBrief(p) } : null;
+  if (live) push('createProject', p, run);
+  else {
+    log(id, `פרויקט חדש: ${p.name}`, 'progress');
+    if (run) demoPlan(p, run);
+    else toast('הפרויקט נוסף');
+  }
+  haptic('success');
+  return id;
+}
+// The demo's Claude asks one open question, then writes a plan once it is answered.
+function demoPlan(p, run) {
+  set((s) => ({
+    agents: [{ id: run.id, project: p.id, owner: s.me, title: run.title, state: 'wait', progress: 0.1, step: 'שואל אותך כדי לתכנן', started: new Date().toISOString(), kind: 'doc', brief: run.brief }, ...s.agents],
+    decisions: [{ id: 'd' + Date.now(), project: p.id, owner: s.me, agent: run.id, q: 'עד מתי הפרויקט צריך להיות מוכן, ומה חייב להיות בו?', options: [], source: 'claude', created: new Date().toISOString(), choice: null }, ...s.decisions],
+  }));
+  toast('Claude התחיל. השאלה שלו מחכה לך כאן');
+}
+const phaseAt = (pid, i) => project(pid)?.milestones[i]?.title;
+function demoPlanFill(d) {
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const at = (n) => new Date(Date.now() + n * 864e5).toISOString();
+  const pid = d.project;
+  set((s) => ({
+    projects: s.projects.map((p) => (p.id === pid ? { ...p, plan: `תוכנית לפי מה שענית: ${d.choice}`, planAt: new Date().toISOString(), end: at(21),
+      milestones: p.milestones.length ? p.milestones : [{ id: 'm1', title: 'מיפוי', start: p.start, end: at(5) }, { id: 'm2', title: 'בנייה', start: at(5), end: at(14) }, { id: 'm3', title: 'הגשה', start: at(14), end: at(21) }] } : p)),
+    planSteps: [
+      { id: 's' + Date.now(), project: pid, title: 'לאסוף את מה שכבר קיים ולסכם', due: day(3), phase: phaseAt(pid, 0) || 'מיפוי' },
+      { id: 's' + (Date.now() + 1), project: pid, title: 'לבנות טיוטה ראשונה', due: day(10), phase: phaseAt(pid, 1) || 'בנייה' },
+      ...s.planSteps,
+    ],
+    humanTasks: [{ id: 'h' + Date.now(), project: pid, type: 'meeting', owner: s.me, title: 'לקבוע פגישת התנעה עם השותפים', created: new Date().toISOString(), cta: 'נקבע', due: day(2), phase: phaseAt(pid, 0) || 'מיפוי', done: false }, ...s.humanTasks],
+    agents: s.agents.map((a) => (a.id === d.agent ? { ...a, state: 'run', progress: 0.3, step: 'התוכנית נכתבה. ממשיך לשלב הראשון' } : a)),
+  }));
+  log(pid, 'Claude כתב את תוכנית העבודה', 'progress');
+}
+// The milestones change as the work does: renamed, moved, added, removed, or marked done.
+export function setMilestones(id, plain, { quiet } = {}) {
+  const p = project(id);
+  const ms = toScreenMs(plain, p.start);
+  set((s) => ({ projects: s.projects.map((x) => (x.id === id ? { ...x, milestones: ms, end: ms.at(-1)?.end || x.end } : x)) }));
+  push('setMilestones', project(id), ms);
+  if (!quiet) toast('אבני הדרך עודכנו');
+}
+export function toggleMilestone(id, msId) {
+  const p = project(id);
+  const m = p.milestones.find((x) => x.id === msId);
+  const plain = p.milestones.map((x) => ({ ...x, due: x.end.slice(0, 10), done: x.id === msId ? !x.done : x.done }));
+  setMilestones(id, plain, { quiet: true });
+  if (!m.done) { haptic('success'); log(id, `הושלם שלב: ${m.title}`, 'progress'); toast(`השלב "${m.title}" הושלם`); }
+}
+export function setPersonal(id, personal) {
+  const p = project(id);
+  set((s) => ({ projects: s.projects.map((x) => (x.id === id ? { ...x, personal } : x)) }));
+  push('setPersonal', p, personal);
+  toast(personal ? 'עכשיו הפרויקט גלוי רק לך' : 'הפרויקט גלוי לכל הצוות');
+}
+export function setClaudeUrl(id, url) {
+  const p = project(id);
+  set((s) => ({ projects: s.projects.map((x) => (x.id === id ? { ...x, claudeUrl: url } : x)) }));
+  push('setClaudeUrl', p, url);
+  toast(url ? 'הקישור לפרויקט ב-Claude נשמר' : 'הקישור הוסר');
 }
 
 export function stopAgent(id) {
