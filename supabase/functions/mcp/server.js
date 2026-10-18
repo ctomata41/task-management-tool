@@ -185,7 +185,7 @@ export const TOOLS = [
   {
     name: 'set_plan',
     title: 'תוכנית עבודה',
-    description: "Write or update a project's work plan. Phases become the project's milestones (shown on the Gantt). Each step is for Claude or for a person by name: a person's step shows in their \"what waits for me\" and on their phone. Steps you pass with an id are updated; steps without an id are added. You cannot mark a step done; a person does.",
+    description: "Write or update a project's work plan. Phases become the project's milestones (shown on the Gantt). Each step is for Claude or for a person by name: a person's step shows in their \"what waits for me\" and on their phone. Steps you pass with an id are updated, and only the fields you pass change; steps without an id are added. You cannot mark a step done; a person does. When people finish their steps, get_updates tells you.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -291,6 +291,15 @@ export function makeTools(db, me) {
     if (r.person_id !== me.person_id) fail('הריצה הזו שייכת לאדם אחר.');
     return r;
   }
+  // The project a run works on, with the fields the rules below need. A run launched without a project has none.
+  async function runProject(r) {
+    if (!r.project_id) return { id: null };
+    return (await myProjects()).find((x) => x.id === r.project_id) || { id: r.project_id };
+  }
+  // A personal project is seen only by its lead, so a question or a step there can only be for them.
+  function onlyLead(p, who) {
+    if (p.personal && who !== p.owner_id) fail('זה פרויקט אישי, ורק מי שמוביל אותו רואה אותו. אפשר לבקש רק ממנו.');
+  }
   async function personNamed(name, fallback) {
     if (!name) return fallback;
     const all = (await people()).filter((p) => !p.archived && !p.is_agent);
@@ -312,9 +321,12 @@ export function makeTools(db, me) {
     const runs = run_id ? [await run(run_id)]
       : await db(`runs?select=*&person_id=eq.${me.person_id}&archived=is.false&order=updated_at.desc&limit=50`);
     const ids = runs.map((r) => r.id);
-    // One run: what it opened. Everything: what this person's runs opened, and what Claude asked of this person.
+    // One run: what it opened. Everything: what this person's runs opened, what Claude asked of this person, and what
+    // Claude asked of anyone in this person's projects (a teammate's step in the plan, a question put to a partner).
     const inRuns = ids.length ? `run_id.in.(${ids.join(',')})` : 'run_id.is.null';
-    const scope = (who) => (run_id ? `run_id=eq.${run_id}` : `or=(${inRuns},and(created_by.eq.${me.agent_id},${who}.eq.${me.person_id}))`);
+    const pids = run_id ? [] : (await myProjects()).map((p) => p.id);
+    const inProjects = pids.length ? `,and(created_by.eq.${me.agent_id},project_id.in.(${pids.join(',')}))` : '';
+    const scope = (who) => (run_id ? `run_id=eq.${run_id}` : `or=(${inRuns},and(created_by.eq.${me.agent_id},${who}.eq.${me.person_id})${inProjects})`);
     const [decided, steps, reviewed] = await Promise.all([
       db(`decisions?select=id,title,chosen_label,rationale,status,decided_at,run_id,project_id&status=in.(decided,cancelled)&updated_at=gte.${enc(from)}&${scope('assignee_id')}`),
       db(`tasks?select=id,title,status,htype,done_at,run_id,notes&kind=eq.human&status=eq.done&updated_at=gte.${enc(from)}&${scope('owner_id')}`),
@@ -333,22 +345,28 @@ export function makeTools(db, me) {
   }
   const pendingFor = async (r) => {
     const [decs, steps] = await Promise.all([
-      db(`decisions?select=id&run_id=eq.${r.id}&status=eq.open`),
+      db(`decisions?select=id&run_id=eq.${r.id}&status=eq.open&archived=is.false`),
       db(`tasks?select=id&run_id=eq.${r.id}&kind=eq.human&status=neq.done&archived=is.false`),
     ]);
     return decs.length + steps.length;
   };
+  // Claude is working again on a run that waited, once nothing it asked for is still open.
+  const resumed = async (r) => (r.state === 'waiting' && !(await pendingFor(r)) ? { state: 'running' } : {});
 
   return {
     async whats_waiting() {
       const mine = await myProjects();
-      const [decs, steps, outs, runs, plan] = await Promise.all([
+      const [decs, steps, outs, runs, plan, back] = await Promise.all([
         db(`decisions?select=id,title,unblocks,due,project_id,run_id&status=eq.open&archived=is.false&assignee_id=eq.${me.person_id}&order=created_at`),
         db(`tasks?select=id,title,htype,due,project_id,run_id&kind=eq.human&owner_id=eq.${me.person_id}&status=neq.done&archived=is.false&order=created_at`),
         db(`outputs?select=id,title,url,project_id,run_id&status=eq.review&archived=is.false&created_by=eq.${me.person_id}&order=created_at.desc`),
         db(`runs?select=id,title,state,step,progress,brief,project_id&person_id=eq.${me.person_id}&archived=is.false&state=in.(queued,running,waiting,review)&order=updated_at.desc`),
         mine.length ? db(`tasks?select=id,title,due,project_id&kind=eq.claude&status=neq.done&archived=is.false&project_id=in.(${mine.map((p) => p.id).join(',')})&order=due.asc.nullslast&limit=30`) : [],
+        db(`outputs?select=id,title,url,feedback,project_id,run_id,reviewed_at&status=eq.changes&archived=is.false&created_by=eq.${me.person_id}&reviewed_at=gte.${enc(new Date(Date.now() - 14 * 864e5).toISOString())}&order=reviewed_at.desc&limit=20`),
       ]);
+      // Sent back with feedback and not finished since: a new session has to see it here, not only in get_updates.
+      const live = new Set(runs.map((r) => r.id));
+      const sentBack = back.filter((o) => !o.run_id || live.has(o.run_id));
       const name = (id) => mine.find((p) => p.id === id)?.name || null;
       return {
         person: me.person_name,
@@ -357,6 +375,7 @@ export function makeTools(db, me) {
         decisions_owed_by_person: decs.map((d) => ({ id: d.id, question: d.title, unblocks: d.unblocks, due: d.due, project: name(d.project_id) })),
         steps_owed_by_person: steps.map((t) => ({ id: t.id, title: t.title, type: t.htype, due: t.due, project: name(t.project_id) })),
         outputs_waiting_review: outs.map((o) => ({ id: o.id, title: o.title, url: o.url, project: name(o.project_id) })),
+        outputs_sent_back: sentBack.map((o) => ({ id: o.id, title: o.title, url: o.url, feedback: o.feedback, run_id: o.run_id, project: name(o.project_id) })),
         claude_plan_steps: plan.map((t) => ({ id: t.id, title: t.title, due: t.due, project: name(t.project_id) })),
         hint: runs.some((r) => r.state === 'queued') ? 'יש ריצות שהופעלו מהפלטפורמה ומחכות ל-Claude. אפשר להמשיך אחת מהן עם start_run ו-run_id.' : undefined,
       };
@@ -441,7 +460,9 @@ export function makeTools(db, me) {
       if (['done', 'stopped'].includes(r.state)) fail('הריצה הזו כבר הסתיימה או נעצרה.');
       await guard({ step });
       const p = typeof progress === 'number' ? Math.max(0, Math.min(1, progress > 1 ? progress / 100 : progress)) : undefined;
-      const next = state || (r.state === 'queued' || r.state === 'review' ? 'running' : undefined);
+      // A run that waited goes back to "running" once people answered everything it asked; otherwise the platform keeps
+      // showing it as stuck while Claude works.
+      const next = state || (r.state === 'queued' || r.state === 'review' ? 'running' : (await resumed(r)).state);
       const up = await touchRun(r.id, clean({ progress: p, step: short(step, 160), state: next }));
       const since = r.last_seen_at || r.created_at;
       const u = await updates({ run_id: r.id, since });
@@ -457,22 +478,25 @@ export function makeTools(db, me) {
       const r = run_id ? await run(run_id) : null;
       const p = r ? { id: r.project_id } : await project(ref);
       if (!/^https?:\/\//i.test(url || '')) fail('צריך קישור מלא (https://...) שהצוות יכול לפתוח.');
-      await guard({ title, summary });
+      let shown = url;
+      try { shown = decodeURIComponent(url); } catch (e) { /* not encoded */ }
+      await guard({ title, summary, url: shown });
       const [o] = await db('outputs', {
         method: 'POST', prefer: 'return=representation',
         body: clean({ team_id: me.team_id, project_id: p.id, run_id: r?.id, task_id: r?.task_id, kind: KINDS.includes(kind) ? kind : 'other', title: short(title, 160), summary: short(summary, 600), url: short(url, 1000), status: needs_review === false ? 'info' : 'review', created_by: me.person_id }),
       });
-      if (r) await touchRun(r.id, final ? { state: 'review', progress: 1, step: 'מוכן לבדיקה' } : { step: `פורסם: ${short(title, 100)}` });
+      if (r) await touchRun(r.id, final ? { state: 'review', progress: 1, step: 'מוכן לבדיקה' } : { ...(await resumed(r)), step: `פורסם: ${short(title, 100)}` });
       return { output_id: o.id, status: o.status, note: final ? 'התוצר פורסם והריצה מוכנה לבדיקה. אדם יאשר או יבקש שינויים, והתשובה תגיע ב-get_updates.' : 'התוצר פורסם ומופיע אצל הצוות עם הקישור.' };
     },
 
     async ask_decision({ run_id, project: ref, question, options, reason, unblocks, context, due, assignee }) {
       const r = run_id ? await run(run_id) : null;
-      const p = r ? { id: r.project_id } : await project(ref);
+      const p = r ? await runProject(r) : await project(ref);
       options = Array.isArray(options) ? options : [];
       if (options.length === 1 || options.length > 4) fail('צריך בין 2 ל-4 אפשרויות, או בלי אפשרויות בכלל לשאלה פתוחה.');
       await guard({ question, options, reason, unblocks, context });
       const who = await personNamed(assignee, me.person_id);
+      onlyLead(p, who);
       const opts = options.map((o, i) => clean({ key: String.fromCharCode(97 + i), label: short(o.label, 120), note: short(o.note, 240), recommended: !!o.recommended }));
       if (opts.length && !opts.some((o) => o.recommended)) opts[0].recommended = true;
       const [d] = await db('decisions', {
@@ -485,9 +509,10 @@ export function makeTools(db, me) {
 
     async request_human_step({ run_id, project: ref, type, title, details, assignee, due }) {
       const r = run_id ? await run(run_id) : null;
-      const p = r ? { id: r.project_id } : await project(ref);
+      const p = r ? await runProject(r) : await project(ref);
       await guard({ title, details });
       const who = await personNamed(assignee, me.person_id);
+      onlyLead(p, who);
       const [t] = await db('tasks', {
         method: 'POST', prefer: 'return=representation',
         body: clean({ team_id: me.team_id, project_id: p.id, run_id: r?.id, title: short(title, 200), notes: short(details, 2000), kind: 'human', htype: HTYPES.includes(type) ? type : 'other', owner_id: who, due: day(due), status: 'todo', created_by: me.agent_id }),
@@ -524,10 +549,15 @@ export function makeTools(db, me) {
       const patch = {};
       if (summary) Object.assign(patch, { plan_summary: short(summary, 1500), plan_updated_at: new Date().toISOString() });
       if (Array.isArray(phases) && phases.length) {
+        // A phase keeps the milestone it continues: the same title, or else the one in the same place when that one was
+        // not taken by title. So a renamed phase stays done, and the screens keep tracking it by its id.
         const old = full.milestones || [];
-        patch.milestones = phases.slice(0, 12).map((ph) => {
-          const was = old.find((m) => m.title === ph.title);
-          return clean({ title: short(ph.title, 80), due: day(ph.due) || was?.due, done: was?.done || false });
+        const list = phases.slice(0, 12);
+        const byTitle = list.map((ph) => old.find((m) => m.title === ph.title));
+        const taken = new Set(byTitle.filter(Boolean));
+        patch.milestones = list.map((ph, i) => {
+          const was = byTitle[i] || (old[i] && !taken.has(old[i]) ? old[i] : undefined);
+          return clean({ id: was?.id || `m${Date.now().toString(36)}${i}`, title: short(ph.title, 80), due: day(ph.due) || was?.due, done: was?.done || false });
         });
         const last = patch.milestones.map((m) => m.due).filter(Boolean).sort().at(-1);
         if (last) patch.target_date = last;
@@ -535,23 +565,46 @@ export function makeTools(db, me) {
       if (Object.keys(patch).length) await db(`projects?id=eq.${p.id}`, { method: 'PATCH', body: patch });
       const added = []; const updated = [];
       const ppl = await people();
+      const notesOf = (details, phase) => [short(details, 1500), phase ? `שלב: ${short(phase, 80)}` : null].filter(Boolean).join('\n') || undefined;
       for (const st of (steps || []).slice(0, 40)) {
         const forClaude = !st.who || /^claude$/i.test(st.who.trim());
-        const owner = forClaude ? me.agent_id : await personNamed(st.who);
-        const notes = [short(st.details, 1500), st.phase ? `שלב: ${short(st.phase, 80)}` : null].filter(Boolean).join('\n') || undefined;
-        const body = clean({ title: short(st.title, 200), notes, owner_id: owner, due: day(st.due),
-          kind: forClaude ? 'claude' : 'human', htype: forClaude ? 'general' : (HTYPES.includes(st.type) ? st.type : 'other') });
         if (st.id) {
+          // An update changes only what is passed: a step sent with a new date keeps its person, its kind and its notes.
           if (!UUID.test(st.id)) fail(`מזהה שלב לא תקין: ${st.id}`);
-          const [t] = await db(`tasks?id=eq.${st.id}&project_id=eq.${p.id}`, { method: 'PATCH', prefer: 'return=representation', body });
+          const t = (await db(`tasks?select=id,title,kind,htype,owner_id,notes,status,created_by&id=eq.${st.id}&project_id=eq.${p.id}&archived=is.false`))[0];
           if (!t) fail(`לא מצאתי בפרויקט את השלב ${st.id}.`);
-          updated.push({ id: t.id, title: t.title });
+          if (t.created_by !== me.agent_id) fail(`השלב "${t.title}" נכתב בידי אדם, אז רק אדם משנה אותו.`);
+          if (t.status === 'done') fail(`השלב "${t.title}" כבר בוצע. אפשר להוסיף שלב חדש במקומו.`);
+          const body = { title: short(st.title, 200) };
+          if (st.who) {
+            const owner = forClaude ? me.agent_id : await personNamed(st.who);
+            if (!forClaude) onlyLead(p, owner);
+            Object.assign(body, { owner_id: owner, kind: forClaude ? 'claude' : 'human' });
+            if (forClaude) body.htype = 'general';
+          }
+          if (st.type && (body.kind || t.kind) === 'human') body.htype = HTYPES.includes(st.type) ? st.type : 'other';
+          if (body.kind === 'human' && t.kind === 'claude' && !body.htype) body.htype = 'other';
+          if (st.due) body.due = day(st.due);
+          if (st.details !== undefined || st.phase !== undefined) {
+            const oldPhase = (t.notes || '').match(/^שלב: (.+)$/m)?.[1];
+            const oldDetails = (t.notes || '').replace(/^שלב: .*$/m, '').trim() || undefined;
+            body.notes = notesOf(st.details ?? oldDetails, st.phase ?? oldPhase) ?? null;
+          }
+          const [u] = await db(`tasks?id=eq.${t.id}`, { method: 'PATCH', prefer: 'return=representation', body: clean(body) });
+          updated.push({ id: u.id, title: u.title });
         } else {
-          const [t] = await db('tasks', { method: 'POST', prefer: 'return=representation', body: { ...body, team_id: me.team_id, project_id: p.id, run_id: r?.id, status: 'todo', created_by: me.agent_id } });
+          const owner = forClaude ? me.agent_id : await personNamed(st.who);
+          if (!forClaude) onlyLead(p, owner);
+          // Plan steps belong to the project, not to this session: a person's step in a plan does not make this run wait.
+          const [t] = await db('tasks', { method: 'POST', prefer: 'return=representation', body: clean({
+            title: short(st.title, 200), notes: notesOf(st.details, st.phase), owner_id: owner, due: day(st.due),
+            kind: forClaude ? 'claude' : 'human', htype: forClaude ? 'general' : (HTYPES.includes(st.type) ? st.type : 'other'),
+            team_id: me.team_id, project_id: p.id, status: 'todo', created_by: me.agent_id,
+          }) });
           added.push({ id: t.id, title: t.title, who: forClaude ? 'Claude' : ppl.find((x) => x.id === owner)?.name });
         }
       }
-      if (r) await touchRun(r.id, { step: 'התוכנית עודכנה' });
+      if (r) await touchRun(r.id, { ...(await resumed(r)), step: 'התוכנית עודכנה' });
       return { project_id: p.id, added, updated, note: 'התוכנית בפלטפורמה. השלבים של אנשים מופיעים אצלם ב"מה מחכה לי" ובטלפון. את השלבים שלך מבצעים ומדווחים עם report_progress ו-publish_output.' };
     },
 

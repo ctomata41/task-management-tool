@@ -76,14 +76,20 @@ export function projectProgress(p) {
 export function projectHealth(p) {
   const waits = projectAgents(p.id).filter((a) => a.state === 'wait');
   const open = state.decisions.filter((d) => d.project === p.id && !d.choice);
-  const late = open.filter((d) => new Date(d.due) < new Date());
-  const stuckHuman = state.humanTasks.filter((t) => t.project === p.id && !t.done);
-  const oldest = Math.max(0, ...stuckHuman.map((t) => Date.now() - new Date(t.created).getTime()), ...waits.map((a) => Date.now() - new Date(a.started).getTime()));
-  if (late.length || oldest > 24 * 3600e3) {
-    const why = waits.length ? `Claude מחכה ל${waitingOn(waits[0])} כבר ${hoursLabel(oldest)}` : `${late.length} החלטות עברו את המועד`;
+  // Late means a due date that has passed; a question with no date is never late. A plan step for next week is not stuck:
+  // only a step Claude waits on, or one past its date, counts.
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const overdue = (x) => !!x.due && new Date(x.due) < today;
+  const late = open.filter(overdue);
+  const openHuman = state.humanTasks.filter((t) => t.project === p.id && !t.done);
+  const lateHuman = openHuman.filter(overdue);
+  const oldest = Math.max(0, ...openHuman.filter((t) => t.blocks).map((t) => Date.now() - new Date(t.created).getTime()), ...waits.map((a) => Date.now() - new Date(a.started).getTime()));
+  if (late.length || lateHuman.length || oldest > 24 * 3600e3) {
+    const why = waits.length && oldest > 24 * 3600e3 ? `Claude מחכה ל${waitingOn(waits[0])} כבר ${hoursLabel(oldest)}`
+      : late.length ? `${late.length} החלטות עברו את המועד` : lateHuman.length ? `${lateHuman.length} מטלות עברו את המועד` : `מטלה מחכה כבר ${hoursLabel(oldest)}`;
     return { id: 'risk', label: 'בסיכון', why };
   }
-  if (waits.length || open.length) return { id: 'wait', label: 'מחכה לאנשים', why: `${open.length} החלטות ו-${stuckHuman.length} מטלות פתוחות` };
+  if (waits.length || open.length) return { id: 'wait', label: 'מחכה לאנשים', why: `${open.length} החלטות ו-${openHuman.length} מטלות פתוחות` };
   return { id: 'on', label: 'במסלול', why: 'כל הסוכנים עובדים, ואין מה שמחכה לאדם' };
 }
 export function waitingOn(a) {
