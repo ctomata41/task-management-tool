@@ -68,8 +68,8 @@ export function ConnectSheetBody() {
       </li>
       <li><strong>להוסיף אותה ל-Claude</strong>
         ${label === 'Claude Code' ? html`<span class="muted small">בטרמינל:</span>
-          <div class="curl on"><code dir="ltr">claude mcp add --transport http cto-platform ${url}</code>
-            <button type="button" class="icon-btn sm" aria-label="העתקה" disabled=${!fresh} onClick=${() => copy(`claude mcp add --transport http cto-platform ${url}`)}><${Icon} name="copy" size=${15} /></button></div>`
+          <div class="curl on"><code dir="ltr">claude mcp add --transport http --scope user cto-platform ${url}</code>
+            <button type="button" class="icon-btn sm" aria-label="העתקה" disabled=${!fresh} onClick=${() => copy(`claude mcp add --transport http --scope user cto-platform ${url}`)}><${Icon} name="copy" size=${15} /></button></div>`
           : html`<span class="muted small">ב-claude.ai: הגדרות, Connectors, הוספת מחבר מותאם אישית. שם: פלטפורמת הצוות. כתובת: מה שהעתקת.</span>`}
       </li>
       <li><strong>לעבוד כרגיל</strong>
