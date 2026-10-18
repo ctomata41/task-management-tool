@@ -32,7 +32,7 @@ export function ConnectSheetBody() {
   const revoke = async (k) => {
     try { await keys.revoke(k.id); toast('המפתח בוטל. Claude שמשתמש בו כבר לא יכול לדווח'); reload(); } catch (e) { toast(e.message); }
   };
-  const url = fresh ? connectorUrl(fresh) : `${location.origin}/mcp/cto_…`;
+  const url = fresh ? connectorUrl(fresh) : connectorUrl("cto_…");
 
   return html`<div class="connect">
     <div class="flow">

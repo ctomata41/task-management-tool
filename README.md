@@ -100,7 +100,7 @@ supabase/functions/push   שליחה לטלפון: הצפנה (webpush.js), מה
 
 ## החיבור ל-Claude (המחבר)
 
-שרת MCP שדרכו ה-Claude של כל אחד ואחת עובד מול הפלטפורמה, בשני הכיוונים. הקוד ב-`supabase/functions/mcp/` (`server.js` הוא כל השרת, ורץ גם ב-Node לבדיקות), והכתובת לכל אדם היא `https://cto-tasks.vercel.app/mcp/cto_…` עם המפתח האישי שלו (Vercel מעביר את `/mcp/*` לפונקציה).
+שרת MCP שדרכו ה-Claude של כל אחד ואחת עובד מול הפלטפורמה, בשני הכיוונים. הקוד ב-`supabase/functions/mcp/` (`server.js` הוא כל השרת, ורץ גם ב-Node לבדיקות), והכתובת לכל אדם היא `https://dtsxlaxonvldcdziozgp.supabase.co/functions/v1/mcp/cto_…` עם המפתח האישי שלו (גם `/mcp/*` באתר מעביר לשם).
 
 - **Claude → פלטפורמה:** `start_run`, `report_progress`, `publish_output` (תוצר עם קישור, מחכה לאישור), `ask_decision` (כרטיס החלטה והתראה), `request_human_step` (מטלה אנושית), `finish_run`.
 - **פלטפורמה → Claude:** `whats_waiting`, `get_updates` ותשובת `report_progress` מחזירים החלטות שהתקבלו, מטלות שבוצעו, הערות על תוצרים, בקשות עצירה, ומשימות שהופעלו ממרכז הבקרה (ריצה במצב `queued`, ש-Claude אוסף עם `start_run` וה-`run_id`).

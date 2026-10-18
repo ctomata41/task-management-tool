@@ -237,7 +237,8 @@ export function launchPrompt({ id, title, brief, project: p, tool }) {
 }
 
 // ---------- personal connector keys ----------
-export const connectorUrl = (key) => `${location.origin}/mcp/${key}`;
+// The function itself, so the address works without a deploy of the site and is never behind a preview login.
+export const connectorUrl = (key) => `https://dtsxlaxonvldcdziozgp.supabase.co/functions/v1/mcp/${key}`;
 export const keys = {
   list: () => api.rpc('connector_keys_mine'),
   create: (label) => api.rpc('connector_key_create', { p_label: label }),
