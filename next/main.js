@@ -1,11 +1,13 @@
 // The control center's shell: a floating sidebar on desktop, a glass tab bar with a Claude button on phones, and the
-// router. Signed in to the app on this browser, it opens on the team's real data (live.js); otherwise, or with ?demo,
-// on sample data.
+// router. Signed in on this browser (here or in the app), it opens on the team's real data (live.js); otherwise it asks
+// for the team code. ?demo shows the sample data.
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, ClaudeMark, Sheet, Toasts } from './ui.js';
 import { useStore, set, openSheet, closeSheet, myDecisions, myHumanTasks, myOutputs, myAgents, person, myProjects, toast } from './store.js';
-import { liveAuth, startLive } from './live.js';
+import { liveAuth, startLive, forgetPerson } from './live.js';
+import { ThemeButton, ThemeChoice } from './parts.js';
+import { SignIn } from './views/signin.js';
 import { ConnectSheetBody } from './views/connect.js';
 import { Today, Outputs, OutputSheetBody } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
@@ -81,7 +83,8 @@ function App() {
     </aside>
     <div class="main">
       <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
-        ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.startsWith("/next") ? "/" : null} title="כניסה באפליקציה עם קוד הצוות, ואז חזרה לכאן">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
+        ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.startsWith("/next") ? location.pathname : null} title="כניסה עם קוד הצוות">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
+        <${ThemeButton} />
         <button type="button" class="icon-btn mobile-only" aria-label="החלפת משתמש" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${30} /></button>
       </header>
       <main id="content">${view}</main>
@@ -111,20 +114,29 @@ function WhoList() {
   if (s.mode === 'live') {
     return html`<div class="who-list">
       <div class="who-row on"><${Avatar} id=${s.me} size=${36} /><div class="grow"><strong>${person(s.me).name}</strong><span class="muted small">${person(s.me).role}</span></div></div>
-      <a class="btn block" href="/">החלפת משתמש באפליקציה</a>
+      <button type="button" class="btn block" onClick=${() => { forgetPerson(); location.reload(); }}>החלפת משתמש</button>
+      <a class="btn block" href="/#/home">האפליקציה הקודמת</a>
       <a class="btn block" href="?demo">לראות את נתוני הדמה</a>
+      <${ThemeChoice} />
       <p class="muted small">כאן רואים רק את הפרויקטים שבהם מובילים או שותפים. ההתחברות משותפת עם האפליקציה.</p></div>`;
   }
   return html`<div class="who-list">${s.people.map((p) => html`<button type="button" class=${'who-row' + (p.id === s.me ? ' on' : '')} onClick=${() => { set({ me: p.id }); closeSheet(); location.hash = '#/today'; }}>
     <${Avatar} id=${p.id} size=${36} /><div class="grow"><strong>${p.name}</strong><span class="muted small">${p.role}</span></div>${p.id === s.me ? html`<${Icon} name="check" />` : null}</button>`)}
+    <${ThemeChoice} />
     <p class="muted small">כל אחד ואחת רואים רק את הפרויקטים שבהם הם מובילים או שותפים.</p></div>`;
 }
 
-if (liveAuth()) {
-  set({ booting: true });
-  startLive().then((ok) => {
-    set({ booting: false });
-    if (!ok) toast('לא הצלחתי לטעון את הנתונים של הצוות, אז מוצגים נתוני דמה', { ms: 6000 });
-  });
+// Outside /next/ (the artifact copy) and with ?demo or ?mock, the sample data needs no sign-in.
+const sample = /[?&](demo|mock)\b/.test(location.search) || !location.pathname.startsWith('/next');
+if (!liveAuth() && !sample) {
+  render(html`<${SignIn} />`, document.getElementById('app'));
+} else {
+  if (liveAuth()) {
+    set({ booting: true });
+    startLive().then((ok) => {
+      set({ booting: false });
+      if (!ok) toast('לא הצלחתי לטעון את הנתונים של הצוות, אז מוצגים נתוני דמה', { ms: 6000 });
+    });
+  }
+  render(html`<${App} />`, document.getElementById('app'));
 }
-render(html`<${App} />`, document.getElementById('app'));

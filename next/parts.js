@@ -1,6 +1,6 @@
 // Cards that appear on several screens: a decision, a human step Claude waits on, an output, a running Claude, a meeting.
-import { useState } from 'preact/hooks';
-import { html, Icon, Avatar, Faces, ClaudeMark, Bar, ProjectTag, OUT_KIND, HTYPE, ago, dueWord, when, hm, dayWord } from './ui.js';
+import { useEffect, useState } from 'preact/hooks';
+import { html, Icon, Seg, Avatar, Faces, ClaudeMark, Bar, ProjectTag, OUT_KIND, HTYPE, ago, dueWord, when, hm, dayWord } from './ui.js';
 import {
   decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, hoursLabel, openSheet, toast, getState,
 } from './store.js';
@@ -175,4 +175,31 @@ export function Presence({ compact }) {
       ${compact ? null : html`<span class="spill" style=${`--c:${st.c}`}>${st.label}</span>`}
     </div>`;
   })}</div>`;
+}
+
+// Light or dark (app/theme.js keeps the choice per device). The button flips between them; the choice in the account
+// sheet can also go back to following the system.
+function useTheme() {
+  const t = window.ctoTheme;
+  const read = () => ({ pref: t ? t.get() : 'auto', dark: t ? t.dark() : false });
+  const [v, setV] = useState(read);
+  useEffect(() => {
+    const f = () => setV(read());
+    window.addEventListener('cto-theme', f);
+    return () => window.removeEventListener('cto-theme', f);
+  }, []);
+  return v;
+}
+export function ThemeButton() {
+  const { dark } = useTheme();
+  if (!window.ctoTheme) return null;
+  const label = dark ? 'מעבר למצב בהיר' : 'מעבר למצב כהה';
+  return html`<button type="button" class="icon-btn theme-btn" aria-label=${label} title=${label} onClick=${() => { haptic(); window.ctoTheme.set(dark ? 'light' : 'dark'); }}>
+    <${Icon} name=${dark ? 'sun' : 'moon'} size=${20} /></button>`;
+}
+const THEMES = [{ id: 'light', label: 'בהיר' }, { id: 'dark', label: 'כהה' }, { id: 'auto', label: 'לפי המכשיר' }];
+export function ThemeChoice() {
+  const { pref } = useTheme();
+  if (!window.ctoTheme) return null;
+  return html`<div class="theme-choice"><span class="muted small">מראה</span><${Seg} value=${pref} options=${THEMES} label="מראה" onChange=${(id) => window.ctoTheme.set(id)} /></div>`;
 }

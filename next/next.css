@@ -2,7 +2,7 @@
    tokens only, grouped white cards without borders, a short --bar on the leading edge, capsules, springs, RTL logical
    properties, and reduced motion, transparency and more contrast respected. */
 :root { --claude-mark: #c15f3c; }
-@media (prefers-color-scheme: dark) { :root { --claude-mark: #e07a55; } }
+:root[data-theme="dark"] { --claude-mark: #e07a55; }
 
 /* shell additions */
 .logo-n { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--claude), var(--accent)); flex: none; }
@@ -432,3 +432,15 @@ a.proto-badge { text-decoration: none; }
 @media (prefers-contrast: more) {
   .dcard2, .ocard, .pcard2, .group, .hstat, .tool, .mask, .draft, .voice { box-shadow: 0 0 0 1px var(--line-strong); }
 }
+
+/* sign-in and light/dark */
+.signin { position: relative; }
+.signin-theme { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 12px); inset-inline-end: 12px; }
+.brand-lg .logo-n.lg { width: 44px; height: 44px; border-radius: 12px; color: var(--on-accent); font-size: inherit; background: linear-gradient(135deg, var(--claude), var(--accent)); }
+.signin .pick .avatar { color: var(--on-accent); }
+.signin form h1 { margin-top: 22px; }
+.signin-alt { display: flex; justify-content: center; gap: 8px; margin-top: 20px; font-size: 0.8125rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.signin-alt a { color: var(--accent-2); text-decoration: none; }
+.boot.inline { min-height: 120px; background: none; }
+.theme-choice { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; padding: 4px 2px; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; }

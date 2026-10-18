@@ -37,6 +37,33 @@ export function liveAuth() {
   return a?.code && a?.me ? a : null;
 }
 
+// Sign-in here, the same as the app's: check the team code, then pick who is using this device. Both are kept in
+// cto.auth, so signing in here also signs in the app and the other way round.
+export function savedCode() {
+  const a = LS.get(AUTH_KEY);
+  return a?.code || null;
+}
+export async function checkCode(code) {
+  code = code.trim();
+  setCreds({ code: null, actor: null });
+  const ok = await api.rpc('check_team_code', { code });
+  if (!ok) throw new Error('הקוד לא נכון. אפשר לנסות שוב.');
+  LS.set(AUTH_KEY, { code });
+  return code;
+}
+export async function teamPeople(code) {
+  setCreds({ code, actor: null });
+  const people = await api.list('people', { archived: 'is.false', order: 'sort.asc' });
+  return people.filter((p) => p.is_team);
+}
+export function pickPerson(code, id) {
+  LS.set(AUTH_KEY, { code, me: id });
+}
+export function forgetPerson() {
+  const a = LS.get(AUTH_KEY);
+  if (a?.code) LS.set(AUTH_KEY, { code: a.code });
+}
+
 export async function startLive() {
   auth = liveAuth();
   if (!auth) return false;
