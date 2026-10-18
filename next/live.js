@@ -257,6 +257,7 @@ const writes = {
   decide: (d, opt) => write(async () => {
     if (opt.id === 'text') await guard({ answer: opt.label });
     await api.update('decisions', d.id, { status: 'decided', chosen_key: opt.id, chosen_label: opt.label.slice(0, 1000), decided_by: me.id, decided_at: now() });
+    await resumeRun(d.agent, `ממשיך: ${opt.label.slice(0, 80)}`);
   }),
   // A new project, and when asked, the Claude session that builds its plan. Claude opens first, while the tap still
   // counts as the person's; the project is written before the run that points at it.
@@ -282,8 +283,18 @@ const writes = {
   }),
   setPersonal: (p, personal) => write(() => api.update('projects', p.id, { personal })),
   setClaudeUrl: (p, url) => write(() => api.update('projects', p.id, { claude_project_url: url || null })),
-  completeHuman: (t) => write(() => api.update('tasks', t.id, { status: 'done', done_at: now() })),
-  approveOutput: (o) => write(() => api.update('outputs', o.id, { status: 'approved', reviewed_by: me.id, reviewed_at: now() })),
+  completeHuman: (t) => write(async () => {
+    await api.update('tasks', t.id, { status: 'done', done_at: now() });
+    await resumeRun(t.blocks, 'ממשיך מאיפה שנעצר');
+  }),
+  // Approving the last output a run waits on closes the run: a person closes it, never Claude.
+  approveOutput: (o) => write(async () => {
+    await api.update('outputs', o.id, { status: 'approved', reviewed_by: me.id, reviewed_at: now() });
+    if (!o.agent) return;
+    const [r] = await api.list('runs', { id: `eq.${o.agent}`, select: 'id,state' });
+    const left = await api.list('outputs', { run_id: `eq.${o.agent}`, status: 'eq.review', archived: 'is.false', select: 'id' });
+    if (r?.state === 'review' && !left.length) await api.update('runs', r.id, { state: 'done', step: 'אושר' });
+  }),
   requestChanges: (o, feedback) => write(async () => {
     await guard({ feedback });
     await api.update('outputs', o.id, { status: 'changes', feedback, reviewed_by: me.id, reviewed_at: now() });
@@ -315,6 +326,19 @@ const writes = {
     });
   },
 };
+
+// A run that waited on people goes back to "running" once the last thing it asked for is answered, so the screens stop
+// showing it as stuck. Claude reads the answer on its next check-in.
+async function resumeRun(runId, step) {
+  if (!runId) return;
+  const [r] = await api.list('runs', { id: `eq.${runId}`, select: 'id,state' });
+  if (r?.state !== 'waiting') return;
+  const [decs, steps] = await Promise.all([
+    api.list('decisions', { run_id: `eq.${runId}`, status: 'eq.open', archived: 'is.false', select: 'id' }),
+    api.list('tasks', { run_id: `eq.${runId}`, kind: 'eq.human', status: 'neq.done', archived: 'is.false', select: 'id' }),
+  ]);
+  if (!decs.length && !steps.length) await api.update('runs', runId, { state: 'running', step });
+}
 
 // Opens Claude with the brief. A project linked to a Claude Project opens there, with the brief copied to paste into a
 // new chat (claude.ai takes a prompt in the address only for a plain new chat). Returns what to tell the person, or
