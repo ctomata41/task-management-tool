@@ -292,6 +292,15 @@ const writes = {
   }),
   stopAgent: (id) => write(() => api.update('runs', id, { stop_requested: true })),
   resumeAgent: (id) => write(() => api.update('runs', id, { stop_requested: false, state: 'queued', step: 'מחכה שסשן של Claude ימשיך' })),
+  // Brings Claude back to a run: a new chat that picks up the same run id, reads the answers and goes on.
+  continueRun: (a) => {
+    const p = project(a.project);
+    const text = continuePrompt(a, p);
+    const proj = p?.claudeUrl;
+    if (proj) { navigator.clipboard?.writeText(text).catch(() => {}); window.open(proj, '_blank', 'noopener'); }
+    else window.open(`https://claude.ai/new?q=${encodeURIComponent(text)}`, '_blank', 'noopener');
+    toast(proj ? 'נפתח הפרויקט ב-Claude, וההנחיה הועתקה. פותחים שיחה חדשה ומדביקים' : 'נפתח Claude עם ההנחיה להמשיך. ההתקדמות תופיע כאן לבד', { ms: 7000 });
+  },
   seeOutput: (id) => { seenIds.add(id); LS.set(SEEN_KEY, { at: seenAt, ids: [...seenIds].slice(-200) }); },
   // Launching: the run waits as "queued", and Claude opens with a prompt that names it. The window opens first, while
   // the tap still counts as the person's, so the browser does not block it.
@@ -321,6 +330,19 @@ function openClaude(args) {
   }
   window.open(`https://claude.ai/new?q=${encodeURIComponent(text)}`, '_blank', 'noopener');
   return 'נפתח Claude עם התדריך. ההתקדמות תופיע כאן לבד';
+}
+
+export function continuePrompt(a, p) {
+  return [
+    `להמשיך משימה מפלטפורמת הצוות: ${a.title}`,
+    `פרויקט: ${p?.name || ''}`,
+    '',
+    `לקרוא ל-start_run במחבר "פלטפורמת הצוות" עם run_id=${a.id}, ואז ל-get_updates כדי לקרוא את התשובות וההחלטות שנשמרו.`,
+    a.brief ? `התדריך המקורי:\n${a.brief}` : null,
+    '',
+    /^תוכנית עבודה/.test(a.title) ? 'לכתוב או לעדכן את התוכנית עם set_plan לפי התשובות, עכשיו, בלי לחכות.' : 'להמשיך את העבודה לפי התשובות, ולדווח עם report_progress.',
+    'אם חסר עוד משהו, לשאול דרך ask_decision ולהמשיך במה שלא תלוי בזה.',
+  ].filter((x) => x !== null).join('\n');
 }
 
 export function launchPrompt({ id, title, brief, project: p, tool }) {

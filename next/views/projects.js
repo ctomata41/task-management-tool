@@ -7,6 +7,7 @@ import { MilestoneTrack } from './newproject.js';
 import {
   useStore, myProjects, projectProgress, projectHealth, projectAgents, project, person, openSheet, launch, planBrief, PLAN_TOOL,
   setPersonal, setClaudeUrl, toast,
+  needsClaude, continueInClaude,
 } from '../store.js';
 import { haptic } from '../../app/motion.js';
 
@@ -115,18 +116,22 @@ function PlanSection({ p, canEdit }) {
   const steps = [...claude, ...human].sort((a, b) => (a.due || '9').localeCompare(b.due || '9'));
   const planning = s.agents.find((a) => a.project === p.id && /^תוכנית עבודה/.test(a.title) && !['done', 'stopped'].includes(a.state));
   const build = () => launch({ tool: PLAN_TOOL, projectId: p.id, title: `תוכנית עבודה: ${p.name}`, brief: planBrief(p) });
+  const stuck = needsClaude(planning) && planning.owner === s.me;
+  const resume = stuck ? html`<button type="button" class="btn btn-primary" onClick=${() => continueInClaude(planning)}><${ClaudeMark} size=${16} />להמשיך ב-Claude</button>` : null;
   if (!p.plan && !steps.length) {
     return html`<section class="sec"><div class="card plan-empty">
       <${ClaudeMark} size=${34} live=${!!planning} />
       <div class="grow"><strong>${planning ? 'Claude בונה את התוכנית' : 'עוד אין תוכנית עבודה'}</strong>
-        <span class="muted small">${planning ? 'השאלות שלו מחכות לך כאן, בהחלטות. אחרי שעונים, כותבים לו בשיחה "עניתי".' : 'Claude ישאל אותך כמה שאלות, ויכתוב שלבים, צעדים ותאריכים. הצעדים של אנשים יגיעו אליהם לבד.'}</span></div>
-      ${!planning && canEdit ? html`<button type="button" class="btn btn-primary" onClick=${build}>בניית תוכנית עם Claude</button>` : null}
+        <span class="muted small">${stuck ? (planning.state === 'queued' ? 'השיחה עם Claude לא התחילה. אפשר לפתוח אותה מכאן.' : 'כל התשובות שלך נשמרו. Claude לא חוזר לבד, אז פותחים שיחה שממשיכה מהן וכותבת את התוכנית.')
+          : planning ? 'Claude כותב תוכנית ראשונה. שאלות, אם יהיו, יחכו לך כאן בהחלטות.' : 'Claude יכתוב שלבים, צעדים ותאריכים, וישאל רק מה שחסר. הצעדים של אנשים יגיעו אליהם לבד.'}</span></div>
+      ${resume || (!planning && canEdit ? html`<button type="button" class="btn btn-primary" onClick=${build}>בניית תוכנית עם Claude</button>` : null)}
     </div></section>`;
   }
   const phases = [...p.milestones.map((m) => m.title), ...new Set(steps.map((x) => x.phase).filter((x) => x && !p.milestones.some((m) => m.title === x)))];
   const groups = [...phases.map((ph) => ({ ph, list: steps.filter((x) => x.phase === ph) })), { ph: '', list: steps.filter((x) => !x.phase || !phases.includes(x.phase)) }].filter((g) => g.list.length);
   return html`<section class="sec"><div class="sec-head"><h2>תוכנית העבודה</h2>
-      ${canEdit ? html`<button type="button" class="btn sm" onClick=${build}><${ClaudeMark} size=${15} />לעדכן עם Claude</button>` : null}</div>
+      ${stuck ? html`<button type="button" class="btn sm" onClick=${() => continueInClaude(planning)}><${ClaudeMark} size=${15} />להמשיך ב-Claude</button>`
+        : canEdit ? html`<button type="button" class="btn sm" onClick=${build}><${ClaudeMark} size=${15} />לעדכן עם Claude</button>` : null}</div>
     <div class="card plan">
       ${p.plan ? html`<p class="plan-sum">${p.plan}${p.planAt ? html` <span class="muted small">· ${ago(p.planAt)}</span>` : null}</p>` : null}
       ${groups.map((g) => html`<div class="plan-ph">${g.ph ? html`<h3>${g.ph}</h3>` : groups.length > 1 ? html`<h3>עוד</h3>` : null}

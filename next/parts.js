@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Seg, Avatar, Faces, ClaudeMark, Bar, ProjectTag, OUT_KIND, HTYPE, ago, dueWord, when, hm, dayWord } from './ui.js';
 import {
-  decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, hoursLabel, openSheet, toast, getState,
+  decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, needsClaude, continueInClaude, hoursLabel, openSheet, toast, getState,
 } from './store.js';
 import { haptic } from '../app/motion.js';
 
@@ -98,9 +98,10 @@ export function AgentRow({ a, showProject = true }) {
   return html`<div class=${'arow ' + a.state}>
     <${ClaudeMark} size=${30} live=${a.state === 'run'} />
     <div class="arow-main">
-      <div class="arow-top"><strong>${a.url ? html`<a href=${a.url} target="_blank" rel="noopener">${a.title}</a>` : a.title}</strong><span class="spill" style=${`--c:${st.c}`}>${a.state === 'wait' ? `מחכה ל${waitingOn(a)}` : st.label}</span></div>
+      <div class="arow-top"><strong>${a.url ? html`<a href=${a.url} target="_blank" rel="noopener">${a.title}</a>` : a.title}</strong><span class="spill" style=${`--c:${st.c}`}>${a.state === 'wait' ? (needsClaude(a) ? 'מחכה שיחזרו ל-Claude' : `מחכה ל${waitingOn(a)}`) : st.label}</span></div>
       <div class="arow-step">${showProject ? html`<${ProjectTag} id=${a.project} />` : null}<span>${a.step}</span></div>
       ${!['done', 'stopped', 'queued'].includes(a.state) ? html`<${Bar} value=${a.progress} color=${st.c} />` : null}
+      ${needsClaude(a) && a.owner === getState().me ? html`<button type="button" class="btn sm arow-go" onClick=${() => continueInClaude(a)}><${ClaudeMark} size=${15} />להמשיך ב-Claude</button>` : null}
     </div>
     ${['run', 'wait', 'queued'].includes(a.state) && !a.stopRequested && !(a.state === 'wait' && a.step === 'נעצר ביד אדם') ? html`<button type="button" class="icon-btn sm" aria-label="עצירה" title="עצירה" onClick=${() => stopAgent(a.id)}><${Icon} name="pause" size=${15} /></button>`
       : a.state === 'stopped' || (a.state === 'wait' && a.step === 'נעצר ביד אדם') ? html`<button type="button" class="icon-btn sm" aria-label="המשך" title="המשך" onClick=${() => resumeAgent(a.id)}><${Icon} name="play" size=${15} /></button>` : null}

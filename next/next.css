@@ -119,6 +119,7 @@
 /* a Claude session */
 .arow { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
 .arow-main { flex: 1; min-width: 0; }
+.arow-go { margin-top: 10px; }
 .arow-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .arow-top strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .arow-step { display: flex; align-items: center; gap: 10px; font-size: 0.8125rem; color: var(--fg-2); margin-top: 2px; min-width: 0; }

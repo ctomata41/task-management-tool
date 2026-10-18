@@ -74,7 +74,8 @@ export function projectProgress(p) {
 
 // The project's state, worked out from what is happening, with the reason in one line.
 export function projectHealth(p) {
-  const waits = projectAgents(p.id).filter((a) => a.state === 'wait');
+  const back = projectAgents(p.id).filter(needsClaude);
+  const waits = projectAgents(p.id).filter((a) => a.state === 'wait' && !back.includes(a));
   const open = state.decisions.filter((d) => d.project === p.id && !d.choice);
   const late = open.filter((d) => new Date(d.due) < new Date());
   const stuckHuman = state.humanTasks.filter((t) => t.project === p.id && !t.done);
@@ -84,6 +85,7 @@ export function projectHealth(p) {
     return { id: 'risk', label: 'בסיכון', why };
   }
   if (waits.length || open.length) return { id: 'wait', label: 'מחכה לאנשים', why: `${open.length} החלטות ו-${stuckHuman.length} מטלות פתוחות` };
+  if (back.length) return { id: 'wait', label: 'מחכה שיחזרו ל-Claude', why: 'התשובות נשמרו. Claude ממשיך כשפותחים לו שיחה' };
   return { id: 'on', label: 'במסלול', why: 'כל הסוכנים עובדים, ואין מה שמחכה לאדם' };
 }
 export function waitingOn(a) {
@@ -238,13 +240,29 @@ export function launch({ tool, projectId, brief, title }) {
 // the platform, then writes the plan (set_plan), and the steps reach the people they are for.
 const PCOL = ['#5856d6', '#ff2d55', '#ff9500', '#30b0c7', '#34c759', '#af52de', '#0071e3'];
 export const PLAN_TOOL = { id: 'plan', label: 'תוכנית עבודה' };
-export function planBrief(p) {
+// Claude cannot be woken by the platform: a session that stops to wait for answers usually never comes back. So the
+// brief has Claude write a first plan at once, on stated assumptions, and the questions only refine it.
+export function planBrief(p, { result = '', given = '' } = {}) {
   return [
-    `לבנות איתי תוכנית עבודה לפרויקט "${p.name}"${p.goal ? `, שהמטרה שלו: ${p.goal}` : ''}.`,
-    'קודם לשאול אותי מה צריך כדי לתכנן: מה התוצאה, עד מתי, מי שותף, מה כבר קיים ומה חוסם. כל שאלה דרך ask_decision (אפשר גם שאלה פתוחה, בלי אפשרויות), כדי שאוכל לענות בפלטפורמה. אחרי שאלה לעצור ולבקש שאכתוב "עניתי", ואז לקרוא ל-get_updates.',
-    'אחר כך לכתוב את התוכנית עם set_plan: סיכום קצר, שלבים עם תאריכים, וצעדים עם אחראי (Claude או אדם בשם) ותאריך. צעדים שרק אדם יכול לעשות יגיעו אליו לבד.',
-    'כשמשהו משתנה בהמשך, לעדכן את התוכנית שוב עם set_plan.',
-  ].join('\n');
+    `לבנות תוכנית עבודה לפרויקט "${p.name}"${p.goal ? `, שהמטרה שלו: ${p.goal}` : ''}.`,
+    result.trim() ? `התוצאה בסוף: ${result.trim()}` : null,
+    given.trim() ? `מה כבר קיים ומה חוסם: ${given.trim()}` : null,
+    'לכתוב עכשיו, באותה שיחה, תוכנית ראשונה עם set_plan, בלי לחכות לתשובות: סיכום קצר שאומר על אילו הנחות היא בנויה, שלבים עם תאריכים (לשמור את אבני הדרך של הפרויקט), וצעדים עם אחראי (Claude או אדם בשם) ותאריך. צעדים שרק אדם יכול לעשות יגיעו אליו לבד.',
+    'אחרי שהתוכנית נכתבה, לשאול דרך ask_decision רק מה שבאמת חסר (אפשר שאלה פתוחה, בלי אפשרויות). התשובות נשמרות בפלטפורמה. כשממשיכים את השיחה, לקרוא ל-get_updates ולעדכן את התוכנית עם set_plan.',
+  ].filter(Boolean).join('\n');
+}
+// A run that waits while nothing is open for people, or one no session picked up: it needs a person to bring Claude
+// back, with a prompt that picks up the same run, reads the answers and goes on.
+export function needsClaude(a) {
+  if (!a || a.stopRequested || ['done', 'stopped', 'review'].includes(a.state)) return false;
+  if (a.state === 'queued') return true;
+  if (a.state !== 'wait' || a.step === 'נעצר ביד אדם') return false;
+  return !state.decisions.some((d) => d.agent === a.id && !d.choice) && !state.humanTasks.some((t) => t.blocks === a.id && !t.done);
+}
+export function continueInClaude(a) {
+  if (state.mode === 'live') { push('continueRun', a); return; }
+  set((s) => ({ agents: s.agents.map((x) => (x.id === a.id ? { ...x, state: 'run', step: 'ממשיך מהתשובות' } : x)) }));
+  toast('Claude ממשיך מהתשובות שלך');
 }
 // Milestones on screen run from the end of the one before; people edit them as a title and an end date.
 export function toScreenMs(list, start) {
@@ -256,7 +274,7 @@ export function toScreenMs(list, start) {
     return ms;
   });
 }
-export function createProject({ name, goal, partners = [], personal = false, claudeUrl = '', milestones: plain = [] }, { plan = false } = {}) {
+export function createProject({ name, goal, partners = [], personal = false, claudeUrl = '', milestones: plain = [], intake = {} }, { plan = false } = {}) {
   const live = state.mode === 'live';
   const id = live ? crypto.randomUUID() : 'p' + Date.now();
   const start = new Date().toISOString();
@@ -267,7 +285,7 @@ export function createProject({ name, goal, partners = [], personal = false, cla
   };
   if (p.milestones.length) p.end = p.milestones.at(-1).end;
   set((s) => ({ projects: [...s.projects, p] }));
-  const run = plan ? { id: live ? crypto.randomUUID() : 'a' + Date.now(), tool: PLAN_TOOL, title: `תוכנית עבודה: ${p.name}`, brief: planBrief(p) } : null;
+  const run = plan ? { id: live ? crypto.randomUUID() : 'a' + Date.now(), tool: PLAN_TOOL, title: `תוכנית עבודה: ${p.name}`, brief: planBrief(p, intake) } : null;
   if (live) push('createProject', p, run);
   else {
     log(id, `פרויקט חדש: ${p.name}`, 'progress');

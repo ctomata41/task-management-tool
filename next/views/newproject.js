@@ -18,6 +18,8 @@ export function NewProjectSheetBody() {
   const [partners, setPartners] = useState([]);
   const [who, setWho] = useState('team');
   const [url, setUrl] = useState('');
+  const [result, setResult] = useState('');
+  const [given, setGiven] = useState('');
   const mates = s.people.filter((p) => p.id !== s.me && p.isTeam !== false && !p.agent);
   const personal = who === 'me';
   const badUrl = url.trim() && !CLAUDE_URL.test(url.trim());
@@ -26,7 +28,7 @@ export function NewProjectSheetBody() {
 
   const go = (plan) => {
     if (!name.trim() || badUrl) return;
-    const id = createProject({ name, goal, partners, personal, claudeUrl: url, milestones: ms }, { plan });
+    const id = createProject({ name, goal, partners, personal, claudeUrl: url, milestones: ms, intake: { result, given } }, { plan });
     closeSheet();
     location.hash = `#/project/${id}`;
   };
@@ -35,7 +37,11 @@ export function NewProjectSheetBody() {
     <label class="lbl" for="np-name">שם הפרויקט</label>
     <input id="np-name" class="input" value=${name} onInput=${(e) => setName(e.currentTarget.value)} placeholder="למשל: כלי לתיאום משמרות" autoFocus required />
     <label class="lbl" for="np-goal">מה רוצים להשיג <span class="muted">(לא חובה)</span></label>
-    <textarea id="np-goal" class="input area" rows="2" value=${goal} onInput=${(e) => setGoal(e.currentTarget.value)} placeholder="משפט או שניים. Claude ישאל את השאר"></textarea>
+    <textarea id="np-goal" class="input area" rows="2" value=${goal} onInput=${(e) => setGoal(e.currentTarget.value)} placeholder="משפט או שניים"></textarea>
+    <label class="lbl" for="np-result">מה התוצאה בסוף <span class="muted">(לא חובה, עוזר ל-Claude לתכנן מיד)</span></label>
+    <textarea id="np-result" class="input area" rows="2" value=${result} onInput=${(e) => setResult(e.currentTarget.value)} placeholder="למשל: אתר שכל עובד מבקש בו אישור כניסה, והאישור מגיע לאבטחה"></textarea>
+    <label class="lbl" for="np-given">מה כבר קיים, ומה חוסם <span class="muted">(לא חובה)</span></label>
+    <textarea id="np-given" class="input area" rows="2" value=${given} onInput=${(e) => setGiven(e.currentTarget.value)} placeholder="למשל: היום הכול בוואטסאפ. צריך פגישה עם הלשכה"></textarea>
 
     <label class="lbl">סוג הפרויקט</label>
     <div class="tpl-grid" role="radiogroup" aria-label="סוג הפרויקט">${TEMPLATES.map((t) => html`<button type="button" role="radio" aria-checked=${t.id === tpl}
@@ -64,7 +70,7 @@ export function NewProjectSheetBody() {
       <button type="submit" class="btn btn-primary" disabled=${!name.trim() || badUrl}><${ClaudeMark} size=${18} />יצירה ובניית תוכנית עם Claude</button>
       <button type="button" class="btn" disabled=${!name.trim() || badUrl} onClick=${() => go(false)}>יצירה בלבד</button>
     </div>
-    <p class="muted small">${s.mode === 'live' ? 'Claude ישאל אותך כאן, בפלטפורמה, ויכתוב את התוכנית לפרויקט. שלבים של אנשים יגיעו אליהם לבד.' : 'בנתוני הדמה הפרויקט נשמר רק כאן.'}</p>
+    <p class="muted small">${s.mode === 'live' ? 'Claude כותב מיד תוכנית ראשונה, ושואל כאן רק מה שחסר. שלבים של אנשים יגיעו אליהם לבד.' : 'בנתוני הדמה הפרויקט נשמר רק כאן.'}</p>
   </form>`;
 }
 
