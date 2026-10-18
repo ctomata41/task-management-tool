@@ -198,6 +198,8 @@ export const OUT_KIND = {
   app: { label: 'אפליקציה', icon: 'code', color: '#34c759' },
   report: { label: 'דוח', icon: 'report', color: '#ff9500' },
   deck: { label: 'מצגת', icon: 'grid', color: '#ff9500' },
+  image: { label: 'תמונה', icon: 'eye', color: '#af52de' },
+  other: { label: 'קובץ', icon: 'link', color: '#8e8e93' },
 };
 export const HTYPE = {
   connect: { label: 'חיבור כלי', icon: 'plug' },

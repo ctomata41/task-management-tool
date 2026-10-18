@@ -26,6 +26,12 @@ let state = {
   gcal: true,
   weekly: seed.weekly,
   connector: { ready: false, enabled: false },
+  presence: [
+    { id: 'yahali', state: 'online', seen: seed.ago(2 * 60e3), working: 2 },
+    { id: 'yonatan', state: 'online', seen: seed.ago(9 * 60e3), working: 1 },
+    { id: 'yarden', state: 'offline', seen: seed.ago(5 * 3600e3), working: 0 },
+    { id: 'yoash', state: 'none', seen: null, working: 0 },
+  ],
 };
 const subs = new Set();
 export const getState = () => state;

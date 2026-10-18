@@ -2,9 +2,10 @@
 // every line comes from what the Claude sessions reported, from the calendar, or from a decision someone made.
 import { useState } from 'preact/hooks';
 import { html, Icon, ClaudeMark, Ring } from '../ui.js';
-import { DecisionCard, HumanTaskRow, OutputCard, AgentRow, MeetingAsk, EventRow } from '../parts.js';
+import { DecisionCard, HumanTaskRow, OutputCard, AgentRow, MeetingAsk, EventRow, OutputActions, Presence } from '../parts.js';
+import { OUT_KIND } from '../ui.js';
 import {
-  useStore, person, myDecisions, myHumanTasks, myMeetingAsks, myOutputs, myAgents, bottlenecks, project, hoursLabel, openSheet,
+  useStore, person, myDecisions, myHumanTasks, myMeetingAsks, myOutputs, myAgents, myProjects, bottlenecks, project, hoursLabel, openSheet,
   requestChanges, approveOutput, closeSheet,
 } from '../store.js';
 
@@ -89,6 +90,10 @@ export function Today() {
           ${meets.map((m) => html`<${MeetingAsk} key=${m.id} m=${m} />`)}
         </section>` : null}
         <section class="card side-card">
+          <div class="sec-head"><h2>מי מחובר ל-Claude</h2><button type="button" class="link" onClick=${() => openSheet('connect')}>חיבור</button></div>
+          <${Presence} compact />
+        </section>
+        <section class="card side-card">
           <div class="sec-head"><h2>צווארי בקבוק</h2><a class="link" href="#/insights">ניתוח</a></div>
           ${bn.length ? bn.map((b, i) => html`<div class="bn-row" key=${b.id}>
             <span class="bn-n">${i + 1}</span>
@@ -111,12 +116,33 @@ export function Today() {
   </div>`;
 }
 
+// Every output in the person's projects, filtered by project and by kind, and grouped by project when showing all.
 export function Outputs() {
-  const outs = myOutputs().slice().sort((a, b) => b.at.localeCompare(a.at));
   useStore();
+  const [pid, setPid] = useState('all');
+  const [kind, setKind] = useState('all');
+  const all = myOutputs().slice().sort((a, b) => b.at.localeCompare(a.at));
+  const projects = myProjects().filter((p) => all.some((o) => o.project === p.id));
+  const kinds = Object.keys(OUT_KIND).filter((k) => all.some((o) => (OUT_KIND[o.kind] ? o.kind : 'other') === k));
+  const outs = all.filter((o) => (pid === 'all' || o.project === pid) && (kind === 'all' || (OUT_KIND[o.kind] ? o.kind : 'other') === kind));
+  const groups = pid === 'all' ? projects.map((p) => [p, outs.filter((o) => o.project === p.id)]).filter(([, xs]) => xs.length) : [[project(pid), outs]];
+  const chip = (on, c, label, n, click, icon) => html`<button type="button" class=${'tp' + (on ? ' on' : '')} style=${`--c:${c}`} aria-pressed=${on} onClick=${click}>${icon ? html`<${Icon} name=${icon} size=${15} />` : null}${label}${n != null ? html`<span class="tp-n">${n}</span>` : null}</button>`;
   return html`<div class="page">
-    <header class="page-head"><div><h1>תוצרים</h1><p class="sub">כל מה ש-Claude הפיק בפרויקטים שלך, מסודר ועם קישורים, במקום לחפש בצ׳אט ישן</p></div></header>
-    <div class="ogrid">${outs.map((o) => html`<${OutputCard} key=${o.id} o=${o} wide />`)}</div>
+    <header class="page-head"><div><h1>תוצרים</h1><p class="sub">כל מה ש-Claude הפיק בפרויקטים שלך, עם קישור שנפתח, לפי פרויקט ולפי סוג</p></div></header>
+    <div class="ofilters">
+      <div class="tool-pick" role="group" aria-label="פרויקט">
+        ${chip(pid === 'all', 'var(--accent)', 'כל הפרויקטים', all.length, () => setPid('all'))}
+        ${projects.map((p) => chip(pid === p.id, p.color, p.name, all.filter((o) => o.project === p.id).length, () => setPid(p.id)))}
+      </div>
+      <div class="tool-pick" role="group" aria-label="סוג">
+        ${chip(kind === 'all', 'var(--accent)', 'כל הסוגים', null, () => setKind('all'))}
+        ${kinds.map((k) => chip(kind === k, OUT_KIND[k].color, OUT_KIND[k].label, null, () => setKind(k), OUT_KIND[k].icon))}
+      </div>
+    </div>
+    ${outs.length ? groups.map(([p, xs]) => html`<section class="sec" key=${p.id}>
+      ${pid === 'all' ? html`<div class="sec-head"><h2><i class="pdot" style=${`background:${p.color}`}></i> ${p.name}</h2><span class="muted small">${xs.length} תוצרים</span></div>` : null}
+      <div class="ogrid">${xs.map((o) => html`<${OutputCard} key=${o.id} o=${o} wide />`)}</div></section>`)
+      : html`<div class="empty2 quiet"><${ClaudeMark} size=${22} />${all.length ? 'אין תוצרים שמתאימים לסינון' : 'עוד אין תוצרים. הם יופיעו כאן לבד כש-Claude יעלה אותם דרך המחבר'}</div>`}
   </div>`;
 }
 
@@ -127,6 +153,7 @@ export function OutputSheetBody({ id }) {
   if (!o) return null;
   return html`<div class="osheet">
     <${OutputCard} o=${o} wide />
+    <${OutputActions} o=${o} />
     ${o.feedback ? html`<p class="sumbox"><strong>ההערות שנשלחו</strong> ${o.feedback}</p>` : null}
     ${o.review && s.mode === 'live' ? html`<label class="lbl" for="o-note">מה לשנות</label>
       <textarea id="o-note" class="input area" rows="3" placeholder="מה לתקן, להוסיף או להוריד" value=${note} onInput=${(e) => setNote(e.target.value)}></textarea>

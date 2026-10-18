@@ -67,7 +67,7 @@ const maybe = (p) => p.catch((e) => { if (e.status === 404 || e.status === 400) 
 
 async function load() {
   const since = new Date(Date.now() - 42 * DAY).toISOString();
-  const [people, projects, decisions, tasks, runs, outputs, activity, settings] = await Promise.all([
+  const [people, projects, decisions, tasks, runs, outputs, activity, settings, presence] = await Promise.all([
     api.list('people', { archived: 'is.false', order: 'sort.asc' }),
     api.list('projects', { archived: 'is.false', order: 'created_at.asc' }),
     api.list('decisions', { archived: 'is.false', status: 'in.(open,decided)', order: 'created_at.desc', limit: 400 }),
@@ -76,6 +76,7 @@ async function load() {
     maybe(api.list('outputs', { archived: 'is.false', order: 'created_at.desc', limit: 300 })),
     api.list('activity', { order: 'at.desc', limit: 150 }),
     maybe(api.list('team_settings', { select: 'team_id,word_hashes,connector_enabled' })).then((r) => r || maybe(api.list('team_settings', { select: 'team_id,word_hashes' }))),
+    maybe(api.rpc('connector_presence')),
   ]);
   if (!people.length || !people.some((p) => p.id === auth.me)) return false; // a wrong or changed team code reads as no rows
   me = people.find((p) => p.id === auth.me);
@@ -137,9 +138,22 @@ async function load() {
   set({
     mode: 'live', me: me.id, people: ppl, projects: prj, decisions: decs, humanTasks: steps, agents, outputs: outs, feed,
     meetingAsks: [], events: [], gcal: false, interviews: {}, weekly: weeklyFrom(outs, decs, steps),
+    presence: presenceFrom(humans, presence, runs || []),
     connector: { ready: runs !== null, enabled: settings?.[0]?.connector_enabled ?? false, teamId: settings?.[0]?.team_id },
   });
   return true;
+}
+
+// Who has Claude connected. "Online" means their Claude reached the platform in the last 15 minutes: the connector
+// has no open line to a session, so the last call is the best signal there is.
+const ONLINE_MS = 15 * 60e3;
+function presenceFrom(humans, rows, runs) {
+  return humans.filter((h) => h.is_team).map((h) => {
+    const r = (rows || []).find((x) => x.person_id === h.id);
+    const seen = [r?.last_used_at, ...runs.filter((x) => x.person_id === h.id).map((x) => x.last_seen_at)].filter(Boolean).sort().at(-1) || null;
+    const state = seen && Date.now() - new Date(seen).getTime() < ONLINE_MS ? 'online' : r?.has_key || seen ? 'offline' : 'none';
+    return { id: h.id, state, seen, working: runs.filter((x) => x.person_id === h.id && x.state === 'running').length };
+  });
 }
 
 function feedLine(a, agentIds, humans) {

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, ClaudeMark, Seg, ago } from '../ui.js';
 import { useStore, toast } from '../store.js';
 import { keys, connectorUrl } from '../live.js';
+import { Presence } from '../parts.js';
 import { haptic } from '../../app/motion.js';
 
 const LABELS = [{ id: 'claude.ai', label: 'claude.ai' }, { id: 'Claude Code', label: 'Claude Code' }, { id: 'Cowork', label: 'Cowork' }];
@@ -75,6 +76,8 @@ export function ConnectSheetBody() {
         <span class="muted small">אפשר לכתוב ל-Claude "תבדוק מה מחכה לי בפלטפורמה", או להפעיל אותו מכאן. הוא ירשום ריצה, ידווח, יעלה תוצרים עם קישור, וישאל כאן במקום בצ׳אט.</span>
       </li>
     </ol>
+
+    <section class="sec"><div class="sec-head"><h2>מי מחובר</h2><span class="muted small">לפי הפעם האחרונה ש-Claude שלהם פנה לפלטפורמה</span></div><${Presence} /></section>
 
     <div class="cguard"><${Icon} name="shield" size=${16} /><span>Claude לא מחליט, לא סוגר משימות ולא מאשר תוצרים. רק אדם. כל טקסט עובר את בדיקת הבלמ״ס לפני שהוא נשמר.</span></div>
 

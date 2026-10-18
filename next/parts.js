@@ -2,8 +2,9 @@
 import { useState } from 'preact/hooks';
 import { html, Icon, Avatar, Faces, ClaudeMark, Bar, ProjectTag, OUT_KIND, HTYPE, ago, dueWord, when, hm, dayWord } from './ui.js';
 import {
-  decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, hoursLabel, openSheet,
+  decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, hoursLabel, openSheet, toast, getState,
 } from './store.js';
+import { haptic } from '../app/motion.js';
 
 export function DecisionCard({ d, compact }) {
   const [pick, setPick] = useState(null);
@@ -62,7 +63,7 @@ export function OutputCard({ o, wide }) {
     </a>
     <div class="ocard-body">
       <span class="ocard-kind" style=${`--c:${k.color}`}>${k.label} · ${p.name}</span>
-      <h3>${o.title}</h3>
+      <h3><button type="button" class="otitle" onClick=${() => { seeOutput(o.id); openSheet('output', { id: o.id }); }}>${o.title}</button></h3>
       <p>${o.summary}</p>
       <footer>
         <span class="muted small"><${ClaudeMark} size=${14} /> ${ago(o.at)}</span>
@@ -124,3 +125,54 @@ export function EventRow({ e }) {
 }
 
 export { when };
+
+// What can be done with an output's link. The platform keeps the link, not the file: where the file lives decides
+// whether it downloads, plays in the browser or can be edited by the team.
+const EDITABLE = [
+  [/docs\.google\.com|drive\.google\.com/, 'ב-Google Drive'], [/github\.com/, 'ב-GitHub'], [/figma\.com/, 'ב-Figma'],
+  [/canva\.com/, 'ב-Canva'], [/notion\.(so|site)/, 'ב-Notion'], [/sharepoint\.com|onedrive|office\.com/, 'ב-Office'],
+];
+const FILE = /\.(pdf|mp4|mov|webm|mp3|wav|zip|pptx?|docx?|xlsx?|csv|html?|png|jpe?g|gif|svg)(\?|#|$)/i;
+export function linkInfo(url = '') {
+  if (!/^https?:\/\//.test(url)) return { real: false };
+  const edit = EDITABLE.find(([re]) => re.test(url));
+  return {
+    real: true,
+    file: FILE.test(url.split('?')[0]) || /supabase\.co\/storage\//.test(url),
+    edit: edit ? edit[1] : null,
+    artifact: /claude\.ai\/(code\/)?artifact\//.test(url),
+    host: (() => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return ''; } })(),
+  };
+}
+export function OutputActions({ o }) {
+  const L = linkInfo(o.url);
+  if (!L.real) return html`<p class="muted small">אין לתוצר הזה קישור פתוח.</p>`;
+  const copy = () => (navigator.clipboard?.writeText(o.url) || Promise.reject()).then(() => { haptic(); toast('הקישור הועתק'); }, () => toast('לא הצלחתי להעתיק'));
+  const share = () => navigator.share({ title: o.title, url: o.url }).catch(() => {});
+  return html`<div class="oacts">
+    <a class="btn btn-primary" href=${o.url} target="_blank" rel="noopener" onClick=${() => seeOutput(o.id)}><${Icon} name="external" size=${15} />פתיחה</a>
+    ${L.file ? html`<a class="btn" href=${o.url} download target="_blank" rel="noopener"><${Icon} name="download" size=${15} />הורדה</a>` : null}
+    ${L.edit ? html`<a class="btn" href=${o.url} target="_blank" rel="noopener"><${Icon} name="edit" size=${15} />עריכה ${L.edit}</a>` : null}
+    ${navigator.share ? html`<button type="button" class="btn" onClick=${share}><${Icon} name="send" size=${15} />שיתוף</button>` : null}
+    <button type="button" class="btn" onClick=${copy}><${Icon} name="copy" size=${15} />העתקת קישור</button>
+  </div>
+  <p class="muted small">${L.artifact ? 'Artifact של Claude נפתח רק למי שהבעלים שיתף איתו. כדי שכל הצוות יראה, משתפים אותו מתפריט Share.'
+    : L.edit ? `מי שיש לו הרשאה ${L.edit} יכול לערוך שם.` : `הקובץ נמצא ב-${L.host}. מי שיש לו גישה לשם יכול לפתוח אותו.`}</p>`;
+}
+
+// Who on the team has Claude connected, from the last time their Claude reached the platform.
+const PRES = { online: { label: 'מחובר', c: 'var(--s-done)' }, offline: { label: 'לא מחובר עכשיו', c: 'var(--s-todo)' }, none: { label: 'עוד לא חיבר', c: 'var(--line-strong)' } };
+export function Presence({ compact }) {
+  const s = getState();
+  const rows = (s.presence || []).slice().sort((a, b) => ['online', 'offline', 'none'].indexOf(a.state) - ['online', 'offline', 'none'].indexOf(b.state));
+  return html`<div class=${'pres' + (compact ? ' compact' : '')}>${rows.map((r) => {
+    const st = PRES[r.state];
+    return html`<div class="pres-row" key=${r.id}>
+      <span class="pres-av"><${Avatar} id=${r.id} size=${compact ? 26 : 32} /><i style=${`background:${st.c}`}></i></span>
+      <div class="grow"><strong>${person(r.id).name}</strong>
+        <span class="muted small">${r.state === 'online' ? (r.working ? `Claude עובד על ${r.working === 1 ? 'משימה אחת' : `${r.working} משימות`}` : 'Claude מחובר')
+          : r.state === 'offline' ? `נראה לאחרונה ${ago(r.seen)}` : st.label}</span></div>
+      ${compact ? null : html`<span class="spill" style=${`--c:${st.c}`}>${st.label}</span>`}
+    </div>`;
+  })}</div>`;
+}
