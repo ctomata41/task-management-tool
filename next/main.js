@@ -5,13 +5,13 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, ClaudeMark, Sheet, Toasts } from './ui.js';
 import { useStore, set, openSheet, closeSheet, myDecisions, myHumanTasks, myOutputs, myAgents, person, myProjects, toast } from './store.js';
-import { liveAuth, startLive, forgetPerson } from './live.js';
+import { liveAuth, startLive, forgetPerson, gcal } from './live.js';
 import { ThemeButton, ThemeChoice } from './parts.js';
 import { SignIn } from './views/signin.js';
 import { ConnectSheetBody } from './views/connect.js';
 import { Today, Outputs, OutputSheetBody } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
-import { Calendar } from './views/calendar.js';
+import { Calendar, EventSheetBody } from './views/calendar.js';
 import { Interview } from './views/interview.js';
 import { Insights } from './views/insights.js';
 import { ClaudeSheetBody, LaunchSheetBody } from './views/claude.js';
@@ -98,6 +98,7 @@ function App() {
     ${s.sheet?.kind === 'launch' ? html`<${Sheet} title="הפעלת Claude"><${LaunchSheetBody} ...${s.sheet} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'output' ? html`<${Sheet} title="תוצר"><${OutputSheetBody} id=${s.sheet.id} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'who' ? html`<${Sheet} title=${s.mode === 'live' ? 'החשבון שלי' : 'לראות כ…'}><${WhoList} /></${Sheet}>` : null}
+    ${s.sheet?.kind === 'event' ? html`<${Sheet} title="אירוע חדש"><${EventSheetBody} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'connect' ? html`<${Sheet} title="חיבור ל-Claude" wide><${ConnectSheetBody} /></${Sheet}>` : null}
     <${Toasts} />
   </div>`;
@@ -132,9 +133,11 @@ if (!liveAuth() && !sample) {
   render(html`<${SignIn} />`, document.getElementById('app'));
 } else {
   if (liveAuth()) {
+    const back = gcal.takeReturn(); // home from Google's sign-in
     set({ booting: true });
     startLive().then((ok) => {
       set({ booting: false });
+      if (back) toast(back.error || 'יומן Google מחובר. מעכשיו רואים אותו כאן', { ms: 6000 });
       if (!ok) toast('לא הצלחתי לטעון את הנתונים של הצוות, אז מוצגים נתוני דמה', { ms: 6000 });
     });
   }

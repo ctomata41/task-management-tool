@@ -79,7 +79,14 @@ export async function startLive() {
     return false;
   }
   setRemote(writes);
-  const tick = () => { if (document.visibilityState === 'visible' && !pending) load().catch(() => {}); };
+  set({ events: [], gcal: false, gcalInfo: { live: true, loading: true }, teamBusy: [] });
+  gcal.load().catch(() => {});
+  let ticks = 0;
+  const tick = () => {
+    if (document.visibilityState !== 'visible' || pending) return;
+    load().catch(() => {});
+    if (++ticks % 8 === 0) gcal.load().catch(() => {}); // Google every two minutes
+  };
   timer = setInterval(tick, POLL_MS);
   window.addEventListener('focus', tick);
   document.addEventListener('visibilitychange', () => {
@@ -164,7 +171,7 @@ async function load() {
 
   set({
     mode: 'live', me: me.id, people: ppl, projects: prj, decisions: decs, humanTasks: steps, agents, outputs: outs, feed,
-    meetingAsks: [], events: [], gcal: false, interviews: {}, weekly: weeklyFrom(outs, decs, steps),
+    meetingAsks: [], interviews: {}, weekly: weeklyFrom(outs, decs, steps),
     presence: presenceFrom(humans, presence, runs || []),
     connector: { ready: runs !== null, enabled: settings?.[0]?.connector_enabled ?? false, teamId: settings?.[0]?.team_id },
   });
@@ -286,3 +293,69 @@ export const keys = {
   revoke: (id) => api.rpc('connector_key_revoke', { p_id: id }),
 };
 export const meName = () => person(getState().me).name;
+
+// Google Calendar, through the `gcal` function (site path /gcal/*). The browser that finished the Google sign-in keeps a
+// device token (next.gcal, per person); without it the platform shows only the team's busy times.
+const GCAL_KEY = 'next.gcal';
+const GCAL_ERR = {
+  setup: 'חיבור יומן גוגל עוד לא הוגדר לצוות.', expired: 'החיבור לקח יותר מדי זמן. אפשר לנסות שוב.', denied: 'החיבור ליומן בוטל.',
+  scope: 'בלי אישור לגשת ליומן, הפלטפורמה לא יכולה להציג אותו. אפשר לחבר שוב ולסמן את ההרשאה.', failed: 'לא הצלחתי לחבר את היומן. אפשר לנסות שוב.',
+};
+function gcalDevice() { return (LS.get(GCAL_KEY) || {})[auth?.me] || ''; }
+async function gcalCall(route, body = {}) {
+  const res = await fetch('/gcal/' + route, {
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me, 'x-gcal-device': gcalDevice() },
+  });
+  let out = null;
+  try { out = await res.json(); } catch (e) { /* not JSON */ }
+  if (!res.ok) throw new Error(out?.error || 'החיבור ליומן גוגל לא זמין כרגע.');
+  return out;
+}
+const weekStart = () => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d; };
+export const gcal = {
+  // Back from Google: the address ends in #gcal=<device> or #gcal_error=<why>.
+  takeReturn() {
+    const m = /^#gcal(_error)?=([\w-]+)/.exec(location.hash);
+    if (!m) return null;
+    history.replaceState(null, '', location.pathname + location.search + '#/calendar');
+    if (m[1]) return { error: GCAL_ERR[m[2]] || GCAL_ERR.failed };
+    const a = LS.get(AUTH_KEY);
+    if (a?.me) LS.set(GCAL_KEY, { ...(LS.get(GCAL_KEY) || {}), [a.me]: m[2] });
+    return { ok: true };
+  },
+  async load() {
+    const from = weekStart();
+    const to = new Date(from.getTime() + 14 * DAY);
+    let r;
+    try { r = await gcalCall('events', { from: from.toISOString(), to: to.toISOString() }); } catch (e) {
+      set({ gcalInfo: { live: true, unavailable: true, error: e.message } });
+      return;
+    }
+    set({
+      gcal: !!r.connected,
+      gcalInfo: { live: true, configured: r.configured, connected: r.connected, elsewhere: r.linked_elsewhere, email: r.email, error: r.error },
+      events: (r.events || []).filter((e) => !e.all_day).map((e) => ({
+        id: e.id, title: e.title, start: e.start, mins: e.mins, project: e.project_id, with: [], src: e.here ? 'here' : 'g', link: e.link, meet: e.meet,
+      })),
+      teamBusy: (r.team || []).map((t) => ({ person: t.person_id, busy: (t.busy || []).map((b) => ({ start: b.start, mins: Math.round((Date.parse(b.end) - Date.parse(b.start)) / 6e4) })) })),
+    });
+  },
+  async connect() {
+    const state = await api.rpc('gcal_state_create', { p_return: location.pathname });
+    location.href = '/gcal/start?state=' + encodeURIComponent(state);
+  },
+  async create(ev) {
+    await guard({ title: ev.title, notes: ev.notes });
+    const r = await gcalCall('create', ev);
+    await gcal.load();
+    return r;
+  },
+  async disconnect() {
+    await gcalCall('disconnect');
+    const all = LS.get(GCAL_KEY) || {};
+    delete all[auth.me];
+    LS.set(GCAL_KEY, all);
+    await gcal.load();
+  },
+};
