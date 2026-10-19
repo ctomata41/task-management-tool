@@ -101,7 +101,7 @@ const maybe = (p) => p.catch((e) => { if (e.status === 404 || e.status === 400) 
 
 async function load() {
   const since = new Date(Date.now() - 42 * DAY).toISOString();
-  const [people, projects, decisions, tasks, runs, outputs, activity, settings, presence] = await Promise.all([
+  const [people, projects, decisions, tasks, runs, outputs, activity, settings, presence, meetings] = await Promise.all([
     api.list('people', { archived: 'is.false', order: 'sort.asc' }),
     api.list('projects', { archived: 'is.false', order: 'created_at.asc' }),
     api.list('decisions', { archived: 'is.false', status: 'in.(open,decided)', order: 'created_at.desc', limit: 400 }),
@@ -111,6 +111,7 @@ async function load() {
     api.list('activity', { order: 'at.desc', limit: 150 }),
     maybe(api.list('team_settings', { select: 'team_id,word_hashes,connector_enabled' })).then((r) => r || maybe(api.list('team_settings', { select: 'team_id,word_hashes' }))),
     maybe(api.rpc('connector_presence')),
+    maybe(api.list('meeting_records', { archived: 'is.false', select: 'id,project_id,title,started_at,ended_at,status,summary,output_id,created_by', order: 'started_at.desc', limit: 100 })),
   ]);
   if (!people.length || !people.some((p) => p.id === auth.me)) return false; // a wrong or changed team code reads as no rows
   me = people.find((p) => p.id === auth.me);
@@ -179,6 +180,9 @@ async function load() {
 
   set({
     mode: 'live', me: me.id, people: ppl, projects: prj, decisions: decs, humanTasks: steps, planSteps, agents, outputs: outs, feed,
+    meetings: (meetings || []).filter((m) => !m.project_id || prj.some((p) => p.id === m.project_id)).map((m) => ({
+      id: m.id, project: m.project_id, title: m.title, start: m.started_at, end: m.ended_at, status: m.status, summary: m.summary, output: m.output_id, by: m.created_by,
+    })),
     meetingAsks: [], interviews: {}, weekly: weeklyFrom(outs, decs, steps),
     presence: presenceFrom(humans, presence, runs || []),
     connector: { ready: runs !== null, enabled: settings?.[0]?.connector_enabled ?? false, teamId: settings?.[0]?.team_id },
@@ -251,6 +255,8 @@ async function write(fn) {
 }
 
 // What people do on screen, written back. Claude reads all of it through the connector.
+// Writes for one meeting go out in order: the row exists before its transcript, and its output before the summary.
+let meetingQ = Promise.resolve();
 const writes = {
   refresh: () => load().catch(() => {}),
   // A free-text answer (an open question, or "another answer") is kept as the chosen label; Claude reads it as is.
@@ -283,6 +289,33 @@ const writes = {
   }),
   setPersonal: (p, personal) => write(() => api.update('projects', p.id, { personal })),
   setClaudeUrl: (p, url) => write(() => api.update('projects', p.id, { claude_project_url: url || null })),
+  // A step for a person, said to Jarvis or taken from a meeting summary. It reaches them in "מה מחכה לי".
+  addStep: (t) => write(async () => {
+    await guard({ title: t.title });
+    await api.insert('tasks', { id: t.id, project_id: t.project, title: t.title, kind: 'human', htype: 'other', owner_id: t.owner, due: t.due || null, status: 'todo', created_by: me.id });
+  }),
+  // A meeting: written when the recording starts (so nothing is lost), with the transcript and the summary as they come.
+  // The first save also adds the output that links to the meeting's page.
+  saveMeeting: (m, patch) => (meetingQ = meetingQ.catch(() => {}).then(() => write(async () => {
+    await guard({ title: m.title, transcript: patch.transcript, summary: patch.summary });
+    const row = { project_id: m.project || null, title: m.title, ...(patch.transcript !== undefined ? { transcript: patch.transcript } : {}),
+      ...(patch.summary !== undefined ? { summary: patch.summary } : {}), ...(patch.status ? { status: patch.status } : {}), ...(patch.end ? { ended_at: patch.end } : {}) };
+    if (patch.create) {
+      await api.insert('meeting_records', { id: m.id, started_at: m.start, created_by: me.id, ...row });
+      return;
+    }
+    await api.update('meeting_records', m.id, row);
+    if (patch.status === 'saved' && !m.output) {
+      const out = crypto.randomUUID();
+      await api.insert('outputs', { id: out, project_id: m.project || null, kind: 'doc', title: `תמלול וסיכום: ${m.title}`, summary: 'תמלול הפגישה. הסיכום נכתב עכשיו.', url: `/next/#/meeting/${m.id}`, status: 'info', created_by: me.id });
+      await api.update('meeting_records', m.id, { output_id: out });
+      return;
+    }
+    if (patch.summary) {
+      const oid = m.output || (await api.list('meeting_records', { id: `eq.${m.id}`, select: 'output_id' }))[0]?.output_id;
+      if (oid) await api.update('outputs', oid, { summary: (patch.summary.tldr || '').slice(0, 600) });
+    }
+  }))),
   completeHuman: (t) => write(async () => {
     await api.update('tasks', t.id, { status: 'done', done_at: now() });
     await resumeRun(t.blocks, 'ממשיך מאיפה שנעצר');
@@ -391,6 +424,21 @@ export const keys = {
   revoke: (id) => api.rpc('connector_key_revoke', { p_id: id }),
 };
 export const meName = () => person(getState().me).name;
+
+// Voice, through the `voice` function (site path /voice/*): Jarvis's signed address, a Scribe token, a summary.
+export async function voiceCall(route, body = {}) {
+  const res = await fetch('/voice/' + route, {
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
+  });
+  let out = null;
+  try { out = await res.json(); } catch (e) { /* not JSON */ }
+  if (!res.ok) throw new Error(out?.error || 'החיבור הקולי לא זמין כרגע.');
+  return out;
+}
+// A meeting's full transcript, read only when its page opens.
+export const meetingText = async (id) => (await api.list('meeting_records', { id: `eq.${id}`, select: 'transcript' }))[0]?.transcript || '';
+export const checkText = (value) => guard(value);
 
 // Google Calendar, through the `gcal` function (site path /gcal/*). The browser that finished the Google sign-in keeps a
 // device token (next.gcal, per person); without it the platform shows only the team's busy times.

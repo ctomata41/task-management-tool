@@ -16,6 +16,7 @@ import { Interview } from './views/interview.js';
 import { Insights } from './views/insights.js';
 import { ClaudeSheetBody, LaunchSheetBody } from './views/claude.js';
 import { NewProjectSheetBody, MilestonesSheetBody } from './views/newproject.js';
+import { Meetings, MeetingPage, RecordingPill } from './views/meeting.js';
 
 const NAV = [
   { id: 'today', label: 'היום', icon: 'home' },
@@ -24,7 +25,7 @@ const NAV = [
   { id: 'interview', label: 'ראיון', icon: 'message' },
   { id: 'insights', label: 'תובנות', icon: 'chart' },
 ];
-const EXTRA = [{ id: 'outputs', label: 'תוצרים', icon: 'sparkle' }];
+const EXTRA = [{ id: 'outputs', label: 'תוצרים', icon: 'sparkle' }, { id: 'meeting', label: 'פגישות', icon: 'mic' }];
 
 function useRoute() {
   const [hash, setHash] = useState(location.hash);
@@ -54,8 +55,9 @@ function App() {
   if (s.booting) return html`<div class="boot"><${ClaudeMark} size=${44} live /><span class="muted">טוען את הנתונים של הצוות…</span></div>`;
   const counts = { today: myDecisions().length + myHumanTasks().length, interview: Object.entries(s.interviews).reduce((n, [pid, iv]) => n + iv.questions.filter((q) => !(s.answers[pid] || {})[q.id]).length, 0) };
   const active = r.name === 'project' ? 'projects' : r.name;
+  const mtg = r.name === 'meeting' && r.arg ? s.meetings.find((m) => m.id === r.arg) : null;
   const all = [...NAV, ...EXTRA];
-  const title = r.name === 'project' ? (s.projects.find((p) => p.id === r.arg)?.name || '') : (all.find((n) => n.id === r.name)?.label || 'היום');
+  const title = r.name === 'project' ? (s.projects.find((p) => p.id === r.arg)?.name || '') : mtg ? mtg.title : (all.find((n) => n.id === r.name)?.label || 'היום');
   const running = myAgents().filter((a) => a.state === 'run').length;
   let view;
   if (r.name === 'projects') view = html`<${Projects} />`;
@@ -64,6 +66,7 @@ function App() {
   else if (r.name === 'interview') view = html`<${Interview} id=${r.arg} />`;
   else if (r.name === 'insights') view = html`<${Insights} />`;
   else if (r.name === 'outputs') view = html`<${Outputs} />`;
+  else if (r.name === 'meeting') view = r.arg ? html`<${MeetingPage} key=${r.arg} id=${r.arg} />` : html`<${Meetings} />`;
   else view = html`<${Today} />`;
   const me = person(s.me);
   return html`<div class="shell next">
@@ -85,6 +88,8 @@ function App() {
     <div class="main">
       <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
         ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.startsWith("/next") ? location.pathname : null} title="כניסה עם קוד הצוות">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
+        <${RecordingPill} />
+        <button type="button" class="icon-btn jv-btn" aria-label="לדבר עם ג׳ארביס" title="ג׳ארביס" onClick=${() => openSheet('claude', { jarvis: true })}><${Icon} name="mic" /></button>
         <${ThemeButton} />
         <button type="button" class="icon-btn mobile-only" aria-label="החלפת משתמש" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${30} /></button>
       </header>
@@ -95,7 +100,7 @@ function App() {
         <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[n.id] ? html`<span class="tab-n">${counts[n.id]}</span>` : null}</span>${n.short || n.label}</a>`)}
     </nav>
     <button type="button" class="fab claude-fab" aria-label="Claude" onClick=${() => openSheet('claude')}><${ClaudeMark} size=${34} /></button>
-    ${s.sheet?.kind === 'claude' ? html`<${Sheet} title="Claude" cls="claude-sheet" wide><${ClaudeSheetBody} /></${Sheet}>` : null}
+    ${s.sheet?.kind === 'claude' ? html`<${Sheet} title="Claude" cls="claude-sheet" wide><${ClaudeSheetBody} jarvis=${!!s.sheet.jarvis} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'launch' ? html`<${Sheet} title="הפעלת Claude"><${LaunchSheetBody} ...${s.sheet} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'output' ? html`<${Sheet} title="תוצר"><${OutputSheetBody} id=${s.sheet.id} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'who' ? html`<${Sheet} title=${s.mode === 'live' ? 'החשבון שלי' : 'לראות כ…'}><${WhoList} /></${Sheet}>` : null}

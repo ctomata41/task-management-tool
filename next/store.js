@@ -19,6 +19,11 @@ let state = {
   planSteps: clone(seed.planSteps || []),
   meetingAsks: clone(seed.meetingAsks).map((m) => ({ ...m, booked: null })),
   events: clone(seed.events),
+  meetings: clone(seed.meetings || []),
+  meetingText: clone(seed.meetingText || {}), // demo only: id -> transcript
+  recording: null, // the meeting being recorded now (voice.js)
+  summarizing: {},
+  summaryError: {},
   feed: clone(seed.feed),
   interviews: clone(seed.interviews),
   answers: {}, // project -> { questionId: optionId | text }
@@ -178,6 +183,38 @@ export function bookMeeting(id, slot) {
   log(m.project, `נקבעה פגישה: ${m.title}`, 'meeting');
   haptic('success');
   toast('נקבע ביומן Google, וההזמנה נשלחה');
+}
+
+// A step for a person: said to Jarvis, or taken from a meeting's summary.
+export function addStep({ project: pid, title, owner, due = '' }) {
+  const t = { id: state.mode === 'live' ? crypto.randomUUID() : 't' + Date.now() + Math.random().toString(36).slice(2, 5), project: pid, type: 'other', owner, title: title.trim(),
+    created: new Date().toISOString(), cta: 'בוצע', note: '', done: false, due: due || undefined };
+  set((s) => ({ humanTasks: [t, ...s.humanTasks] }));
+  log(pid, `מטלה חדשה ל${person(owner).name}: ${t.title}`, 'progress');
+  push('addStep', t);
+  return t;
+}
+
+// Meetings: recorded, transcribed, summarized. The record is saved as it goes, so a closed tab loses nothing.
+export const meeting = (id) => state.meetings.find((m) => m.id === id);
+export function startMeeting({ title, project: pid }) {
+  const m = { id: state.mode === 'live' ? crypto.randomUUID() : 'mt' + Date.now(), project: pid || null, title: title.trim() || 'פגישה', start: new Date().toISOString(), end: null, status: 'recording', summary: null, output: null, by: state.me };
+  set((s) => ({ meetings: [m, ...s.meetings] }));
+  push('saveMeeting', m, { create: true });
+  return m;
+}
+export function saveMeeting(id, patch) {
+  const m = meeting(id);
+  if (!m) return;
+  const next = { ...m, ...(patch.status ? { status: patch.status } : {}), ...(patch.end ? { end: patch.end } : {}), ...(patch.summary !== undefined ? { summary: patch.summary } : {}), ...(patch.title ? { title: patch.title } : {}) };
+  if (state.mode !== 'live' && patch.status === 'saved' && !m.output) {
+    const out = 'o' + Date.now();
+    next.output = out;
+    set((s) => ({ outputs: [{ id: out, project: m.project, kind: 'doc', title: `תמלול וסיכום: ${m.title}`, summary: 'תמלול הפגישה. הסיכום נכתב עכשיו.', at: new Date().toISOString(), url: `#/meeting/${m.id}`, review: false, approved: false, fresh: true }, ...s.outputs] }));
+  }
+  if (state.mode !== 'live' && patch.summary) set((s) => ({ outputs: s.outputs.map((o) => (o.id === next.output ? { ...o, summary: patch.summary.tldr } : o)) }));
+  set((s) => ({ meetings: s.meetings.map((x) => (x.id === id ? next : x)), ...(patch.transcript !== undefined && s.mode !== 'live' ? { meetingText: { ...s.meetingText, [id]: patch.transcript } } : {}) }));
+  push('saveMeeting', m, patch);
 }
 
 export function addEvent(ev) {

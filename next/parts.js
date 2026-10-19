@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Seg, Avatar, Faces, ClaudeMark, Bar, ProjectTag, OUT_KIND, HTYPE, ago, dueWord, when, hm, dayWord } from './ui.js';
 import {
-  decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, needsClaude, continueInClaude, hoursLabel, openSheet, toast, getState,
+  decide, completeHuman, bookMeeting, approveOutput, seeOutput, agent, person, project, stopAgent, resumeAgent, waitingOn, needsClaude, continueInClaude, hoursLabel, openSheet, closeSheet, toast, getState,
 } from './store.js';
 import { haptic } from '../app/motion.js';
 
@@ -64,7 +64,7 @@ export function OutputCard({ o, wide }) {
   const real = o.url.startsWith('http');
   const p = project(o.project);
   return html`<article class=${'ocard' + (wide ? ' wide' : '') + (o.fresh ? ' fresh' : '')}>
-    <a class="ocard-thumb" href=${o.url} target=${o.url.startsWith('http') ? '_blank' : null} rel="noopener" onClick=${(e) => { seeOutput(o.id); if (!o.url.startsWith('http')) { e.preventDefault(); openSheet('output', { id: o.id }); } }}
+    <a class="ocard-thumb" href=${o.url} target=${o.url.startsWith('http') ? '_blank' : null} rel="noopener" onClick=${(e) => openOutput(e, o)}
       style=${`--c:${k.color}`}>
       <span class="ocard-glyph"><${Icon} name=${k.icon} size=${28} /></span>
       ${o.duration ? html`<span class="ocard-dur">${o.duration}</span>` : null}
@@ -79,7 +79,7 @@ export function OutputCard({ o, wide }) {
         ${o.review ? html`<span class="row-gap">${real ? html`<button type="button" class="btn sm" onClick=${() => openSheet('output', { id: o.id })}>הערות</button>` : null}<button type="button" class="btn sm btn-primary" onClick=${() => approveOutput(o.id)}>אישור</button></span>`
           : o.approved ? html`<span class="ok-chip"><${Icon} name="check" size=${13} />אושר</span>`
           : o.changes ? html`<span class="spill" style="--c:var(--s-review)">חזר ל-Claude</span>`
-          : html`<a class="btn sm" href=${o.url} target="_blank" rel="noopener" onClick=${(e) => { seeOutput(o.id); if (!o.url.startsWith('http')) { e.preventDefault(); openSheet('output', { id: o.id }); } }}>פתיחה<${Icon} name="external" size=${13} /></a>`}
+          : html`<a class="btn sm" href=${o.url} target="_blank" rel="noopener" onClick=${(e) => openOutput(e, o)}>פתיחה<${Icon} name="external" size=${13} /></a>`}
       </footer>
     </div>
   </article>`;
@@ -143,6 +143,15 @@ const EDITABLE = [
   [/canva\.com/, 'ב-Canva'], [/notion\.(so|site)/, 'ב-Notion'], [/sharepoint\.com|onedrive|office\.com/, 'ב-Office'],
 ];
 const FILE = /\.(pdf|mp4|mov|webm|mp3|wav|zip|pptx?|docx?|xlsx?|csv|html?|png|jpe?g|gif|svg)(\?|#|$)/i;
+// A meeting's transcript and summary open on its page here; another link that is not a web address opens the sheet.
+const inApp = (url = '') => /#\/meeting\/[\w-]+/.exec(url)?.[0];
+function openOutput(e, o) {
+  seeOutput(o.id);
+  const here = inApp(o.url);
+  if (here) { e.preventDefault(); closeSheet(); location.hash = here; return; }
+  if (!o.url.startsWith('http')) { e.preventDefault(); openSheet('output', { id: o.id }); }
+}
+
 export function linkInfo(url = '') {
   if (!/^https?:\/\//.test(url)) return { real: false };
   const edit = EDITABLE.find(([re]) => re.test(url));
@@ -160,7 +169,7 @@ export function OutputActions({ o }) {
   const copy = () => (navigator.clipboard?.writeText(o.url) || Promise.reject()).then(() => { haptic(); toast('הקישור הועתק'); }, () => toast('לא הצלחתי להעתיק'));
   const share = () => navigator.share({ title: o.title, url: o.url }).catch(() => {});
   return html`<div class="oacts">
-    <a class="btn btn-primary" href=${o.url} target="_blank" rel="noopener" onClick=${() => seeOutput(o.id)}><${Icon} name="external" size=${15} />פתיחה</a>
+    <a class="btn btn-primary" href=${o.url} target=${inApp(o.url) ? null : '_blank'} rel="noopener" onClick=${(e) => (inApp(o.url) ? openOutput(e, o) : seeOutput(o.id))}><${Icon} name="external" size=${15} />פתיחה</a>
     ${L.file ? html`<a class="btn" href=${o.url} download target="_blank" rel="noopener"><${Icon} name="download" size=${15} />הורדה</a>` : null}
     ${L.edit ? html`<a class="btn" href=${o.url} target="_blank" rel="noopener"><${Icon} name="edit" size=${15} />עריכה ${L.edit}</a>` : null}
     ${navigator.share ? html`<button type="button" class="btn" onClick=${share}><${Icon} name="send" size=${15} />שיתוף</button>` : null}
