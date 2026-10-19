@@ -98,7 +98,7 @@ export function AgentRow({ a, showProject = true }) {
   return html`<div class=${'arow ' + a.state}>
     <${ClaudeMark} size=${30} live=${a.state === 'run'} />
     <div class="arow-main">
-      <div class="arow-top"><strong>${a.url ? html`<a href=${a.url} target="_blank" rel="noopener">${a.title}</a>` : a.title}</strong><span class="spill" style=${`--c:${st.c}`}>${a.state === 'wait' ? (needsClaude(a) ? 'מחכה שיחזרו ל-Claude' : `מחכה ל${waitingOn(a)}`) : st.label}</span></div>
+      <div class="arow-top"><strong>${a.url ? html`<a href=${a.url} target="_blank" rel="noopener">${a.title}</a>` : a.title}</strong><span class="spill" style=${`--c:${st.c}`}>${needsClaude(a) && a.state !== 'queued' ? 'מחכה שיחזרו ל-Claude' : a.state === 'wait' ? `מחכה ל${waitingOn(a)}` : st.label}</span></div>
       <div class="arow-step">${showProject ? html`<${ProjectTag} id=${a.project} />` : null}<span>${a.step}</span></div>
       ${!['done', 'stopped', 'queued'].includes(a.state) ? html`<${Bar} value=${a.progress} color=${st.c} />` : null}
       ${needsClaude(a) && a.owner === getState().me ? html`<button type="button" class="btn sm arow-go" onClick=${() => continueInClaude(a)}><${ClaudeMark} size=${15} />להמשיך ב-Claude</button>` : null}

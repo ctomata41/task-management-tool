@@ -262,7 +262,10 @@ export function planBrief(p, { result = '', given = '' } = {}) {
 export function needsClaude(a) {
   if (!a || a.stopRequested || ['done', 'stopped', 'review'].includes(a.state)) return false;
   if (a.state === 'queued') return true;
-  if (a.state !== 'wait' || a.step === 'נעצר ביד אדם') return false;
+  // Answering the last question moves the run back to "running" from here; if Claude has not checked in since, no
+  // session is on it.
+  const idle = a.state === 'run' && !!(a.updated && a.lastSeen) && new Date(a.updated) - new Date(a.lastSeen) > 60e3;
+  if (!idle && (a.state !== 'wait' || a.step === 'נעצר ביד אדם')) return false;
   return !state.decisions.some((d) => d.agent === a.id && !d.choice) && !state.humanTasks.some((t) => t.blocks === a.id && !t.done);
 }
 export function continueInClaude(a) {
