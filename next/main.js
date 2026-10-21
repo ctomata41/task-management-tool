@@ -17,6 +17,7 @@ import { Insights } from './views/insights.js';
 import { ClaudeSheetBody, LaunchSheetBody } from './views/claude.js';
 import { NewProjectSheetBody, MilestonesSheetBody } from './views/newproject.js';
 import { Meetings, MeetingPage, RecordingPill } from './views/meeting.js';
+import { JarvisScreen, JarvisTab, openJarvis } from './views/jarvis.js';
 
 const NAV = [
   { id: 'today', label: 'היום', icon: 'home' },
@@ -89,18 +90,18 @@ function App() {
       <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
         ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.startsWith("/next") ? location.pathname : null} title="כניסה עם קוד הצוות">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
         <${RecordingPill} />
-        <button type="button" class="icon-btn jv-btn" aria-label="לדבר עם ג׳ארביס" title="ג׳ארביס" onClick=${() => openSheet('claude', { jarvis: true })}><${Icon} name="mic" /></button>
+        <button type="button" class="jv-btn" aria-label="לדבר עם ג׳ארביס" title="ג׳ארביס" onClick=${openJarvis}><span class="jv-dot" aria-hidden="true"></span>ג׳ארביס</button>
         <${ThemeButton} />
         <button type="button" class="icon-btn mobile-only" aria-label="החלפת משתמש" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${30} /></button>
       </header>
       <main id="content">${view}</main>
     </div>
     <nav class="tabbar" aria-label="ניווט">
-      ${NAV.map((n) => html`<a class=${'tab' + (active === n.id ? ' on' : '')} href=${`#/${n.id}`} aria-current=${active === n.id ? 'page' : null}>
+      ${NAV.map((n, i) => html`${i === 2 ? html`<${JarvisTab} />` : null}<a class=${'tab' + (active === n.id ? ' on' : '')} href=${`#/${n.id}`} aria-current=${active === n.id ? 'page' : null}>
         <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[n.id] ? html`<span class="tab-n">${counts[n.id]}</span>` : null}</span>${n.short || n.label}</a>`)}
     </nav>
     <button type="button" class="fab claude-fab" aria-label="Claude" onClick=${() => openSheet('claude')}><${ClaudeMark} size=${34} /></button>
-    ${s.sheet?.kind === 'claude' ? html`<${Sheet} title="Claude" cls="claude-sheet" wide><${ClaudeSheetBody} jarvis=${!!s.sheet.jarvis} /></${Sheet}>` : null}
+    ${s.sheet?.kind === 'claude' ? html`<${Sheet} title="Claude" cls="claude-sheet" wide><${ClaudeSheetBody} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'launch' ? html`<${Sheet} title="הפעלת Claude"><${LaunchSheetBody} ...${s.sheet} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'output' ? html`<${Sheet} title="תוצר"><${OutputSheetBody} id=${s.sheet.id} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'who' ? html`<${Sheet} title=${s.mode === 'live' ? 'החשבון שלי' : 'לראות כ…'}><${WhoList} /></${Sheet}>` : null}
@@ -108,7 +109,8 @@ function App() {
     ${s.sheet?.kind === 'milestones' ? html`<${Sheet} title="אבני דרך"><${MilestonesSheetBody} id=${s.sheet.id} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'event' ? html`<${Sheet} title="אירוע חדש"><${EventSheetBody} /></${Sheet}>` : null}
     ${s.sheet?.kind === 'connect' ? html`<${Sheet} title="חיבור ל-Claude" wide><${ConnectSheetBody} /></${Sheet}>` : null}
-    <${Toasts} />
+    ${s.jarvis ? html`<${JarvisScreen} />` : null}
+    ${s.jarvis ? null : html`<${Toasts} />`}
   </div>`;
 }
 

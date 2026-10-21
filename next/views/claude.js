@@ -4,13 +4,13 @@ import { useState } from 'preact/hooks';
 import { html, Icon, ClaudeMark } from '../ui.js';
 import { tools } from '../data.js';
 import { useStore, myProjects, project, person, launch, openSheet, closeSheet, getState } from '../store.js';
-import { JarvisPanel } from './jarvis.js';
+import { JarvisRow } from './jarvis.js';
 
 // Claude in one place: Jarvis to talk to, a meeting to record, and every capability of Claude to start on a project.
-export function ClaudeSheetBody({ jarvis = false }) {
+export function ClaudeSheetBody() {
   useStore();
   return html`<div class="csheet">
-    <${JarvisPanel} auto=${jarvis} />
+    <${JarvisRow} />
     <a class="connect-row" href="#/meeting" onClick=${closeSheet}>
       <span class="hrow-ic rec-ic"><${Icon} name="mic" size=${18} /></span>
       <div class="grow"><strong>הקלטת פגישה</strong><span class="muted small">תמלול בעברית בזמן אמת, וסיכום דיון שנשמר בתוצרים</span></div>

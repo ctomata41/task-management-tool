@@ -2,7 +2,7 @@
 // browser) and meetings (live Hebrew transcription with ElevenLabs Scribe, then a discussion summary). The API key never
 // leaves this function: the browser gets a short-lived signed address or a single-use token. Served as the Edge
 // Function `voice` and, through the site's rewrite, at /voice/*:
-//   POST /voice/status      what is set up: {agent, meetings, summary}
+//   POST /voice/status      what is set up: {agent, meetings, summary, missing: [secret names]}
 //   POST /voice/agent       {signed_url} for a Jarvis conversation (valid 15 minutes to start)
 //   POST /voice/scribe      {token} for one realtime transcription (single use, 15 minutes)
 //   POST /voice/summarize   {title, project, transcript}: the summary as {tldr, decisions, actions, open, next}
@@ -122,7 +122,11 @@ export async function handle(req, env) {
     let body = {};
     try { body = await req.json(); } catch (e) { /* empty body */ }
 
-    if (route === 'status') return json(has);
+    // Names of the secrets that are not set (never their values), so the screen can say what to add.
+    if (route === 'status') {
+      const missing = [['ELEVENLABS_API_KEY', env.xiKey], ['ELEVENLABS_AGENT_ID', env.agentId], ['ELEVENLABS_SUMMARY_AGENT_ID', env.summaryAgentId || env.anthropicKey]].filter(([, v]) => !v).map(([k]) => k);
+      return json({ ...has, missing });
+    }
 
     if (route === 'agent') {
       if (!has.agent) fail('ג׳ארביס עוד לא הוגדר: חסר מפתח או סוכן ב-ElevenLabs.', 409);

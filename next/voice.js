@@ -9,11 +9,16 @@ import { haptic } from '../app/motion.js';
 export const CLIENT_CDN = 'https://cdn.jsdelivr.net/npm/@elevenlabs/client@1.26.0/+esm';
 const SCRIBE_WS = 'wss://api.elevenlabs.io/v1/speech-to-text/realtime';
 
-// What the voice function has set up, asked once per page.
+// What the voice function has set up. A good answer is kept for the page; a failure is not, so the next try asks again,
+// and it carries the reason to show.
 let statusP = null;
-export function voiceStatus() {
+export function voiceStatus({ fresh = false } = {}) {
   if (getState().mode !== 'live') return Promise.resolve({ agent: true, meetings: true, summary: true, demo: true });
-  statusP = statusP || voiceCall('status').catch(() => ({ agent: false, meetings: false, summary: false }));
+  if (fresh) statusP = null;
+  statusP = statusP || voiceCall('status').catch((e) => {
+    statusP = null;
+    return { agent: false, meetings: false, summary: false, error: e?.message || 'החיבור הקולי לא זמין כרגע.' };
+  });
   return statusP;
 }
 

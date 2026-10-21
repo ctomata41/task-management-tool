@@ -427,13 +427,16 @@ export const meName = () => person(getState().me).name;
 
 // Voice, through the `voice` function (site path /voice/*): Jarvis's signed address, a Scribe token, a summary.
 export async function voiceCall(route, body = {}) {
-  const res = await fetch('/voice/' + route, {
-    method: 'POST', body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
-  });
+  let res;
+  try {
+    res = await fetch('/voice/' + route, {
+      method: 'POST', body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
+    });
+  } catch (e) { throw new Error(`לא הצלחתי להגיע לשרת הקולי (${e?.message || e}).`); }
   let out = null;
   try { out = await res.json(); } catch (e) { /* not JSON */ }
-  if (!res.ok) throw new Error(out?.error || 'החיבור הקולי לא זמין כרגע.');
+  if (!res.ok) throw new Error(out?.error || `החיבור הקולי לא זמין כרגע (${res.status}).`);
   return out;
 }
 // A meeting's full transcript, read only when its page opens.
