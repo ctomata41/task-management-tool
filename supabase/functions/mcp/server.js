@@ -10,7 +10,7 @@ import { sensitiveHits, textsIn } from './guard.js';
 export const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const SERVER = { name: 'cto-platform', title: 'פלטפורמת הצוות', version: '0.1.0' };
 
-const INSTRUCTIONS = `This connector links you to the CTO team's platform: the shared record of every project, the decisions people owe, the steps only a person can do, and what Claude produced.
+export const INSTRUCTIONS = `This connector links you to the CTO team's platform: the shared record of every project, the decisions people owe, the steps only a person can do, and what Claude produced.
 Work rules:
 - At the start of a session, and whenever you pick work back up, call whats_waiting (or get_updates for a run you already started). People answer you in the platform, not in this chat.
 - When you start real work on a project, call start_run (pass run_id if the person launched you from the platform). Keep the run_id.
@@ -64,7 +64,7 @@ export const TOOLS = [
         project: PROJECT,
         title: str('What you are doing, in a few Hebrew words, for example "סרטון הסבר, גרסה 2".'),
         brief: str('What you were asked to do, in one or two sentences.'),
-        surface: str('Where you run.', { enum: ['claude.ai', 'claude-code', 'cowork', 'other'] }),
+        surface: str('Where you run.', { enum: ['claude.ai', 'claude-code', 'cowork', 'platform', 'other'] }),
         session_url: str('A link back to this conversation or session, if you have one.'),
       },
       additionalProperties: false,
@@ -238,7 +238,7 @@ export const TOOLS = [
 // ---------- helpers ----------
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const enc = encodeURIComponent;
-class UserError extends Error {}
+export class UserError extends Error {}
 const fail = (msg) => { throw new UserError(msg); };
 const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 const day = (s) => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : undefined);

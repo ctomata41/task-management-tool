@@ -80,6 +80,7 @@ export async function startLive() {
   }
   setRemote(writes);
   set({ events: [], gcal: false, gcalInfo: { live: true, loading: true }, teamBusy: [] });
+  brainCall('status').then((o) => set({ brain: !!o?.on })).catch(() => set({ brain: false }));
   gcal.load().catch(() => {});
   let ticks = 0;
   const tick = () => {
@@ -264,11 +265,13 @@ const writes = {
     if (opt.id === 'text') await guard({ answer: opt.label });
     await api.update('decisions', d.id, { status: 'decided', chosen_key: opt.id, chosen_label: opt.label.slice(0, 1000), decided_by: me.id, decided_at: now() });
     await resumeRun(d.agent, `ממשיך: ${opt.label.slice(0, 80)}`);
+    if (d.agent) planByPlatform(d.agent);
   }),
   // A new project, and when asked, the Claude session that builds its plan. Claude opens first, while the tap still
   // counts as the person's; the project is written before the run that points at it.
   createProject: (p, plan) => {
-    const go = plan ? openClaude({ id: plan.id, title: plan.title, brief: plan.brief, project: p, tool: plan.tool }) : null;
+    const byPlatform = !!(plan && getState().brain);
+    const go = plan && !byPlatform ? openClaude({ id: plan.id, title: plan.title, brief: plan.brief, project: p, tool: plan.tool }) : null;
     return write(async () => {
       await guard({ name: p.name, goal: p.goal });
       await api.insert('projects', {
@@ -277,9 +280,10 @@ const writes = {
         milestones: plainMs(p.milestones), target_date: plainMs(p.milestones).at(-1)?.due || null,
         ...(getState().connector?.teamId ? { team_id: getState().connector.teamId } : {}),
       });
-      if (plan) await api.insert('runs', { id: plan.id, project_id: p.id, person_id: me.id, title: plan.title, brief: plan.brief, state: 'queued', step: 'מחכה שסשן של Claude יאסוף', source: 'app', created_by: me.id });
+      if (plan) await api.insert('runs', { id: plan.id, project_id: p.id, person_id: me.id, title: plan.title, brief: plan.brief, state: 'queued', step: byPlatform ? 'Claude מתחיל לכתוב' : 'מחכה שסשן של Claude יאסוף', source: 'app', created_by: me.id });
       await load();
-      if (go) toast(go, { ms: 7000 });
+      if (byPlatform) planByPlatform(plan.id, true);
+      else if (go) toast(go, { ms: 7000 });
     });
   },
   setMilestones: (p, list) => write(async () => {
@@ -319,6 +323,7 @@ const writes = {
   completeHuman: (t) => write(async () => {
     await api.update('tasks', t.id, { status: 'done', done_at: now() });
     await resumeRun(t.blocks, 'ממשיך מאיפה שנעצר');
+    if (t.blocks) planByPlatform(t.blocks);
   }),
   // Approving the last output a run waits on closes the run: a person closes it, never Claude.
   approveOutput: (o) => write(async () => {
@@ -338,6 +343,13 @@ const writes = {
   resumeAgent: (id) => write(() => api.update('runs', id, { stop_requested: false, state: 'queued', step: 'מחכה שסשן של Claude ימשיך' })),
   // Brings Claude back to a run: a new chat that picks up the same run id, reads the answers and goes on.
   continueRun: (a) => {
+    if (getState().brain && /^תוכנית עבודה/.test(a.title)) {
+      write(async () => {
+        if (a.state === 'wait') await api.update('runs', a.id, { state: 'running', step: 'ממשיך מהתשובות' });
+        planByPlatform(a.id, true);
+      });
+      return;
+    }
     const p = project(a.project);
     const text = continuePrompt(a, p);
     const proj = p?.claudeUrl;
@@ -350,12 +362,14 @@ const writes = {
   // the tap still counts as the person's, so the browser does not block it.
   launch: ({ tool, projectId, brief, title }) => {
     const id = crypto.randomUUID();
-    const go = openClaude({ id, title, brief, project: project(projectId), tool });
+    const byPlatform = !!(getState().brain && tool?.id === 'plan');
+    const go = byPlatform ? null : openClaude({ id, title, brief, project: project(projectId), tool });
     return write(async () => {
       await guard({ title, brief });
-      await api.insert('runs', { id, project_id: projectId, person_id: me.id, title, brief, state: 'queued', step: 'מחכה שסשן של Claude יאסוף', source: 'app', created_by: me.id });
+      await api.insert('runs', { id, project_id: projectId, person_id: me.id, title, brief, state: 'queued', step: byPlatform ? 'Claude מתחיל לכתוב' : 'מחכה שסשן של Claude יאסוף', source: 'app', created_by: me.id });
       await load();
-      toast(go || 'נשמר. כשהחיבור ל-Claude יופעל, הסשן הבא שלך יאסוף את זה', { ms: 7000 });
+      if (byPlatform) planByPlatform(id, true);
+      else toast(go || 'נשמר. כשהחיבור ל-Claude יופעל, הסשן הבא שלך יאסוף את זה', { ms: 7000 });
     });
   },
 };
@@ -439,6 +453,30 @@ export async function voiceCall(route, body = {}) {
   if (!res.ok) throw new Error(out?.error || `החיבור הקולי לא זמין כרגע (${res.status}).`);
   return out;
 }
+// The platform's own Claude (/mcp/brain/*, on once the team's Anthropic key is set): it writes and updates work plans
+// by itself, so a plan never waits for someone to open Claude.
+export async function brainCall(route, body = {}) {
+  const res = await fetch('/mcp/brain/' + route, {
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
+  });
+  let out = null;
+  try { out = await res.json(); } catch (e) { /* not JSON */ }
+  if (!res.ok) throw new Error(out?.error || `Claude של הפלטפורמה לא זמין כרגע (${res.status}).`);
+  return out;
+}
+// Hands a plan run to the platform's Claude, which skips anything that is not a plan or still waits on people. said:
+// the person asked for it now, so they hear that it started. The plan shows up on its own with the next refresh.
+function planByPlatform(runId, said = false) {
+  if (!getState().brain) return;
+  brainCall('run', { run_id: runId })
+    .then((o) => {
+      if (said && o?.started) toast('Claude כותב את התוכנית עכשיו. היא תופיע כאן לבד', { ms: 6000 });
+      return load();
+    })
+    .catch((e) => { if (said) toast(e.message, { ms: 7000 }); });
+}
+
 // A meeting's full transcript, read only when its page opens.
 export const meetingText = async (id) => (await api.list('meeting_records', { id: `eq.${id}`, select: 'transcript' }))[0]?.transcript || '';
 export const checkText = (value) => guard(value);
