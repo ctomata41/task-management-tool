@@ -4,6 +4,18 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/mcp/:path*",
+      "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/functions/v1/mcp/:path*"
+    },
+    {
+      "source": "/gcal/:path*",
+      "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/functions/v1/gcal/:path*"
+    },
+    {
+      "source": "/voice/:path*",
+      "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/functions/v1/voice/:path*"
+    },
+    {
       "source": "/sb/:path*",
       "destination": "https://dtsxlaxonvldcdziozgp.supabase.co/:path*"
     }
