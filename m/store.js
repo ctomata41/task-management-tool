@@ -54,7 +54,12 @@ export function toast(text, opts = {}) {
 }
 export const dismissToast = (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
 export const openSheet = (kind, props = {}) => set({ sheet: { kind, ...props } });
-export const closeSheet = () => set({ sheet: null });
+// A sheet opened from inside a task (back) returns to the task however it closes: a choice, X, Escape, the backdrop or a flick.
+export const closeSheet = () => {
+  const sh = state.sheet;
+  set({ sheet: null });
+  if (sh?.back && sh.task) setTimeout(() => openSheet('task', { id: sh.task }), 60);
+};
 
 // ---------- people and permissions ----------
 const NOBODY = { id: null, name: 'לא שובץ', role: 'member', color: '#8e8e93' };
@@ -71,6 +76,8 @@ export function canSee(p, who = state.me) {
   if (person(who).role === 'external') return p.manager === who || p.partners.includes(who);
   return true;
 }
+// A stopped or finished project takes no new people or work.
+export const isOpen = (p) => !!p && p.phase !== 'stopped' && p.phase !== 'done';
 export const canManage = (p, who = state.me) => !!p && (p.personal ? p.personal === who : p.manager === who || isCommander(who));
 export const visibleProjects = () => state.projects.filter((p) => canSee(p));
 export const teamProjects = () => visibleProjects().filter((p) => !p.personal);

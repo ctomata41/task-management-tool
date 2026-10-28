@@ -2,9 +2,9 @@
 // that change in one tap. Rows sit in coloured groups (by date, stage, status, person or project); each group ends
 // with a line to add a task straight into it, and a bar that shows at a glance how much of it is done.
 import { useState, useRef } from 'preact/hooks';
-import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput } from './ui.js';
+import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput, isoDay } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, PRIORITY, PRIORITY_ORDER, setStatus, updateTask, toggleFocus, addTask, openSheet, person, project,
-  canEditTask, canManage, team, isCommander, getState } from './store.js';
+  canEditTask, canManage, isOpen, team, isCommander, getState } from './store.js';
 
 export const COLS = {
   owner: { label: 'אחראי', w: '76px' },
@@ -133,7 +133,7 @@ export function DueLines({ iso, late }) {
 export const ADD = '+partner';
 export function ownerItems(p, pool) {
   const items = pool.map((id) => ({ id, label: person(id).name + (person(id).role === 'external' ? ` · ${person(id).org || 'מבחוץ'}` : ''), person: id }));
-  return p && !p.personal && canManage(p) ? [...items, { id: ADD, label: 'הוספת שותף לפרויקט…', icon: 'plus' }] : items;
+  return p && !p.personal && isOpen(p) && canManage(p) ? [...items, { id: ADD, label: 'הוספת שותף לפרויקט…', icon: 'plus' }] : items;
 }
 
 function AddRow({ defaults, placeholder = 'להוסיף משימה' }) {
@@ -185,7 +185,7 @@ const DATE_GROUPS = [
   { id: 'none', name: 'בלי תאריך', color: 'var(--s-todo)' },
   { id: 'done', name: 'בוצעו', color: 'var(--s-done)' },
 ];
-const isoIn = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString().slice(0, 10); };
+const isoIn = (days) => { const d = new Date(); d.setDate(d.getDate() + days); return isoDay(d); }; // the local day, not the UTC one
 export function groupTasks(tasks, by, base = {}) {
   if (by === 'date') {
     const pick = (t) => { if (t.status === 'done') return 'done'; if (!t.due) return 'none'; const n = dayDiff(t.due); return n < 0 ? 'late' : n === 0 ? 'today' : n <= 6 ? 'week' : 'later'; };

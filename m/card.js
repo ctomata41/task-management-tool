@@ -170,18 +170,17 @@ export function needsCommander(p, tasks = [], now = Date.now()) {
   if (p.needsSenior) out.push({ kind: 'senior', why: 'המנהל ביקש', text: p.needsSenior.what, by: p.needsSenior.by });
   for (const s of p.stages) if (s.state === 'pending') out.push({ kind: 'gate', why: 'שער שמחכה לאישור שלך', text: `לסגור את שלב ${s.name}`, stage: s.id });
   const cur = currentStage(p);
-  const tol = (p.tolDays ?? 14) * DAY;
-  if (cur && cur.target && now > new Date(cur.target).getTime() + tol) {
-    const late = Math.round((now - new Date(cur.target).getTime()) / DAY);
-    out.push({ kind: 'late', why: 'חרג מהסבולת', text: `שלב ${cur.name} באיחור של ${late} ימים` });
+  const late = cur && cur.target ? daysBetween(cur.target, now) : 0;
+  if (late > (p.tolDays ?? 14)) {
+    out.push({ kind: 'late', why: 'חרג מהסבולת', text: `שלב ${cur.name} באיחור של ${late} ימים`, by: cur.target });
   } else if (p.confidence === 'stuck' && p.stuckSince && now - new Date(p.stuckSince).getTime() >= 13 * DAY) {
     out.push({ kind: 'late', why: 'תקוע שבועיים', text: p.confNote || 'הפרויקט מסומן תקוע כבר שבועיים' });
   }
   for (const t of tasks) {
     if (t.project !== p.id || !t.external || t.status === 'done' || !t.due) continue;
-    const due = new Date(t.due).getTime();
-    if (due < now) out.push({ kind: 'commit', why: 'התחייבות חיצונית באיחור', text: `${t.title} (ל${t.external})`, task: t.id });
-    else if (t.status !== 'doing' && workdaysBetween(now, due) < 3) out.push({ kind: 'commit', why: 'התחייבות חיצונית בסכנה', text: `${t.title} (ל${t.external})`, task: t.id });
+    // Late from the day after the due day, as on the task's own date.
+    if (daysBetween(now, t.due) < 0) out.push({ kind: 'commit', why: 'התחייבות חיצונית באיחור', text: `${t.title} (ל${t.external})`, task: t.id, by: t.due });
+    else if (t.status !== 'doing' && workdaysBetween(now, dayStart(t.due)) < 3) out.push({ kind: 'commit', why: 'התחייבות חיצונית בסכנה', text: `${t.title} (ל${t.external})`, task: t.id, by: t.due });
   }
   return out;
 }
@@ -212,13 +211,18 @@ export const HEALTH = {
 // ---------- the stages in time, for the Gantt ----------
 // How long a stage usually takes, to place a stage nobody has given a date yet.
 export const STAGE_DAYS = { scope: 14, research: 21, need: 14, req: 14, spec: 21, resources: 14, mvp: 42, pilot: 42, production: 28, adoption: 56, findings: 14, plan: 14 };
-// A date-only string is a day here, not midnight in London.
-export const dayStart = (v) => {
-  const s = String(v);
-  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) : new Date(v);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-};
+// A date-only string ("2026-10-30") is that day here, not midnight in London. The year is set on its own, so a
+// half-typed year stays the year it is (new Date(26, 9, 30) would be 1926).
+export function localDay(v) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));
+  if (!m) return new Date(v);
+  const d = new Date(2000, 0, 1);
+  d.setFullYear(+m[1], +m[2] - 1, +m[3]);
+  return d;
+}
+export const dayStart = (v) => { const d = localDay(v); d.setHours(0, 0, 0, 0); return d.getTime(); };
+// Whole calendar days from a to b. A clock change makes one day 23 or 25 hours long, so the count is rounded.
+export const daysBetween = (a, b) => Math.round((dayStart(b) - dayStart(a)) / DAY);
 
 // Where each stage sits in time. A closed stage ends when it closed and an open one at its target; a stage with no
 // date yet is estimated from its usual length (est), and an open stage past its target is late. Each stage starts

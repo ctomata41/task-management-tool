@@ -6,7 +6,7 @@ import htm from 'htm';
 import { useLayer, useThumb } from '../app/motion.js';
 import { ICONS } from './icons.js';
 import { useStore, set, person, project, dismissToast, closeSheet } from './store.js';
-import { HEALTH, CLASSIFICATION, status } from './card.js';
+import { HEALTH, CLASSIFICATION, status, localDay } from './card.js';
 
 export const html = htm.bind(h);
 
@@ -112,14 +112,16 @@ export function Empty({ icon = 'check', children }) {
 // A deadline always shows its date, and beside it how far that is: "30/10 (מחר)", "16/10 (לפני 12 ימים)".
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 // A date-only string ("2026-10-30") is that day here, not midnight in London.
-export const parseDay = (v) => { const s = String(v); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) : new Date(v); };
+export const parseDay = localDay;
 export const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const startOf = (d) => { const x = parseDay(d); x.setHours(0, 0, 0, 0); return x; };
 export const dayDiff = (iso) => Math.round((startOf(iso) - startOf(Date.now())) / 864e5);
 export function dueDate(iso) {
   if (!iso) return '';
   const d = parseDay(iso);
-  const y = d.getFullYear() === new Date().getFullYear() ? '' : `/${String(d.getFullYear()).slice(2)}`;
+  // Another year shows as two digits; a mistyped one ("0026") shows in full, so it doesn't pass for 2026.
+  const Y = d.getFullYear();
+  const y = Y === new Date().getFullYear() ? '' : `/${Y >= 2000 && Y < 2100 ? String(Y).slice(2) : String(Y).padStart(4, '0')}`;
   return `${d.getDate()}/${d.getMonth() + 1}${y}`;
 }
 const span = (n, one, two, many) => (n === 1 ? one : n === 2 ? two : `${n} ${many}`);

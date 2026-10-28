@@ -21,24 +21,31 @@ export function NewProjectBody() {
   const [manager, setManager] = useState(s.me);
   const [partners, setPartners] = useState([]);
   const [ext, setExt] = useState(null);
+  const [exts, setExts] = useState([]); // outsiders typed here: they become people only when the project is saved
   const personal = kind === 'personal';
   const ready = name.trim() && (personal || cls);
   const toggle = (id) => setPartners(partners.includes(id) ? partners.filter((x) => x !== id) : [...partners, id]);
   const save = (e) => {
     e.preventDefault();
     if (!ready) return;
-    const p = addProject({ name: name.trim(), classification: cls || 'open', template: personal ? 'blank' : tpl, what: what.trim(), manager, partners: partners.filter((x) => x !== manager), personal });
+    const ids = personal ? [] : partners.filter((x) => x !== manager).map((id) => {
+      const x = exts.find((y) => y.id === id);
+      return x ? addPerson({ name: x.name, org: x.org, account: false }).id : id;
+    });
+    const p = addProject({ name: name.trim(), classification: cls || 'open', template: personal ? 'blank' : tpl, what: what.trim(), manager, partners: ids, personal });
     closeSheet();
     location.hash = `#/project/${p.id}`;
     toast(personal ? 'הפרויקט האישי נפתח. רק את/ה רואה אותו' : 'הפרויקט נפתח. תעודת הזהות מחכה למילוי לאורך הדרך');
   };
-  const pool = s.people.filter((x) => x.id !== manager);
+  const pool = [...s.people.filter((x) => x.id !== manager), ...exts];
   const addExt = () => {
     if (!ext.name.trim()) return;
-    const x = addPerson({ name: ext.name.trim(), org: ext.org.trim(), account: false });
-    setPartners([...partners, x.id]);
+    const id = `new:${exts.length}`;
+    setExts([...exts, { id, name: ext.name.trim(), org: ext.org.trim(), role: 'external' }]);
+    setPartners([...partners, id]);
     setExt(null);
   };
+  const face = (x) => (x.id.startsWith('new:') ? html`<span class="avatar ext pending" style="width:22px;height:22px;font-size:9px">${x.name.slice(0, 2)}</span>` : html`<${Avatar} id=${x.id} size=${22} />`);
   const enterAdds = (e) => { if (e.key === 'Enter') { e.preventDefault(); addExt(); } };
   return html`<form class="form" onSubmit=${save}>
     <${Seg} label="סוג" value=${kind} onChange=${setKind} options=${[{ id: 'team', label: 'פרויקט צוות' }, { id: 'personal', label: 'פרויקט אישי' }]} />
@@ -51,7 +58,7 @@ export function NewProjectBody() {
         <span class="oc-top">${id === 'restricted' ? html`<${Icon} name="lock" size=${16} />` : html`<${Icon} name="unlock" size=${16} />`}<strong>${c.label}</strong></span><span class="muted small">${c.hint}</span></button>`)}</div>
       ${cmd ? html`<span class="lbl">מי מוביל/ה</span><div class="chips-row">${team().map((x) => html`<button type="button" class=${'person-chip' + (manager === x.id ? ' on' : '')} onClick=${() => setManager(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}</button>`)}</div>` : null}
       <span class="lbl">שותפים <span class="muted">(אפשר להוסיף גם אחר כך)</span></span>
-      <div class="chips-row">${pool.map((x) => html`<button type="button" class=${'person-chip' + (partners.includes(x.id) ? ' on' : '')} aria-pressed=${partners.includes(x.id)} onClick=${() => toggle(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}${x.role === 'external' ? html`<span class="muted small">· מבחוץ</span>` : null}</button>`)}
+      <div class="chips-row">${pool.map((x) => html`<button type="button" class=${'person-chip' + (partners.includes(x.id) ? ' on' : '')} aria-pressed=${partners.includes(x.id)} onClick=${() => toggle(x.id)}>${face(x)}${x.name}${x.role === 'external' ? html`<span class="muted small">· מבחוץ</span>` : null}</button>`)}
         <button type="button" class="person-chip add" aria-expanded=${!!ext} onClick=${() => setExt(ext ? null : { name: '', org: '' })}><${Icon} name="plus" size=${16} />גורם מבחוץ</button></div>
       ${ext ? html`<div class="inline-form ext-form">
         <input class="input" value=${ext.name} onInput=${(e) => setExt({ ...ext, name: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="שם" aria-label="שם השותף" />
@@ -248,7 +255,7 @@ export function TaskBody({ id }) {
 
 // ---------- people ----------
 // From a task's owner menu, the new partner also takes the task (and from the task sheet, it opens again after).
-export function PartnerBody({ id, task, back }) {
+export function PartnerBody({ id, task }) {
   const s = useStore();
   const p = project(id);
   const [mode, setMode] = useState('pick');
@@ -263,7 +270,7 @@ export function PartnerBody({ id, task, back }) {
     if (task) updateTask(task, { owner: pid });
     toast(`${person(pid).name} נוסף/ה לפרויקט${task ? ' ואחראי/ת על המשימה' : ''}`);
   };
-  const done = () => { closeSheet(); if (back && task) setTimeout(() => openSheet('task', { id: task }), 60); };
+  const done = closeSheet; // with `back`, closing returns to the task
   return html`<div class="form">
     <${Seg} label="מי" value=${mode} onChange=${setMode} options=${[{ id: 'pick', label: 'מהרשימה' }, { id: 'new', label: 'גורם חיצוני חדש' }]} />
     ${mode === 'pick' ? (pool.length ? html`<div class="who-list">${pool.map((x) => html`<button type="button" class="who-row" onClick=${() => { add(x.id); done(); }}><${Avatar} id=${x.id} size=${34} />

@@ -111,3 +111,17 @@ test('Gantt days stay on midnight across the clock change', () => {
     assert.equal(new Date(r.end).getHours(), 0);
   }
 });
+
+test('a half-typed year stays that year, and the commander sees lateness in calendar days', () => {
+  assert.equal(new Date(dayStart('0026-10-29')).getFullYear(), 26);
+  const now = new Date(2026, 9, 28, 15, 0).getTime();
+  const p = base();
+  p.stages[0].target = '2026-10-08';
+  const late = needsCommander(p, [], now).find((x) => x.kind === 'late');
+  assert.equal(late.text.includes('20 ימים'), true);
+  assert.equal(late.by, '2026-10-08');
+  // Due today is not late yet, even in the afternoon; due yesterday is.
+  const t = { id: 't', project: 'p', external: 'ספק', status: 'doing', title: 'מסמך' };
+  assert.equal(needsCommander(base(), [{ ...t, due: '2026-10-28' }], now).length, 0);
+  assert.equal(needsCommander(base(), [{ ...t, due: '2026-10-27' }], now)[0].why, 'התחייבות חיצונית באיחור');
+});

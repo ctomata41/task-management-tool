@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
 import { TaskTable, BoardBar, Battery, DueLines, groupTasks, matches } from '../table.js';
 import { useStore, project, person, canManage, canSee, isCommander, teamProjects, personalProjects, projectTasks, projectOutputs, openSheet,
-  updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, resolveSenior, team, getState } from '../store.js';
+  updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, resolveSenior, team, getState, isOpen } from '../store.js';
 import { status, currentStage, HILL, CONFIDENCE, HEALTH, STAGES, CLASSIFICATION, needsCommander, cardFill, TEMPLATES } from '../card.js';
 import { OutputCard } from './outputs.js';
 
@@ -89,7 +89,7 @@ export function ProjectPage({ id }) {
         ${p.personal ? null : html`<div class="proj2-people">
           <button type="button" class="ppl-faces" aria-label=${`האנשים בפרויקט: ${ids.map((x) => person(x).name).join(', ')}`} onClick=${() => setTab('people')}><${Faces} ids=${ids} size=${26} max=${5} />
             <span>${p.partners.length ? `${ids.length} אנשים` : 'עוד אין שותפים'}</span></button>
-          ${mgr ? html`<button type="button" class="add-ppl" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${15} />הוספת שותף</button>` : null}
+          ${mgr && isOpen(p) ? html`<button type="button" class="add-ppl" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${15} />הוספת שותף</button>` : null}
         </div>`}
       </div>
       <div class="head-acts">
@@ -260,7 +260,7 @@ function TasksBoard({ p, mgr }) {
   if (by === 'stage') groups.sort((a, b) => (b.hint === 'עכשיו') - (a.hint === 'עכשיו') || (a.hint === 'נסגר') - (b.hint === 'נסגר'));
   return html`<div class="board2">
     <${BoardBar} search=${search} setSearch=${setSearch} people=${[p.manager, ...p.partners]} who=${who} setWho=${setWho} groupBy=${by} setGroupBy=${setBy} groupOptions=${BOARD_GROUPS} showDone=${showDone} setShowDone=${setShowDone}
-      onAddPerson=${mgr && !p.personal ? () => openSheet('partner', { id: p.id }) : null} />
+      onAddPerson=${mgr && !p.personal && isOpen(p) ? () => openSheet('partner', { id: p.id }) : null} />
     <${TaskTable} key=${by} groups=${groups} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
   </div>`;
 }
@@ -306,6 +306,6 @@ function People({ p, mgr }) {
       ${id === p.manager && isCommander() ? html`<button type="button" class="btn sm" onClick=${(e) => openMenu(e, team().map((t) => ({ id: t.id, label: t.name, person: t.id })), { selected: p.manager, onPick: (m) => updateProject(p.id, { manager: m, partners: p.partners.filter((q) => q !== m) }) })}>החלפה</button>` : null}
       ${id !== p.manager && mgr ? html`<button type="button" class="icon-btn sm danger" aria-label=${`להוציא את ${x.name}`} onClick=${() => remove(id)}><${Icon} name="x" size=${16} /></button>` : null}
     </div>`; })}</div>
-    ${mgr && !p.personal ? html`<button type="button" class="btn" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${16} />הוספת שותף</button>` : null}
+    ${mgr && !p.personal && isOpen(p) ? html`<button type="button" class="btn" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${16} />הוספת שותף</button>` : null}
   </div>`;
 }

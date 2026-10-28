@@ -678,3 +678,4 @@ a.prow:active { background: var(--press); }
   .m-tabbar .tab { font-size: 0.625rem; }
   .side-jv { display: none; }
 }
+.avatar.pending { background: var(--s-todo); color: var(--on-accent); }
