@@ -1160,6 +1160,8 @@ details.stopped[open] summary { margin-bottom: 8px; }
   .card, .kpi, .pcard, .bcard, .dcard, .dc, .qcard, .wpart, .rows, .tbl, .rise, .plines, .modal, .drawer, .menu, .toast, .tabbar, .sidebar, .kcard,
   .proj-facts, .col, .kcol, .btn, .input, .seg { box-shadow: 0 0 0 1px var(--line-strong); }
 }
+/* In dark the edges and secondary text get lighter instead, and a status keeps its full colour: mixed with black it
+   would sink into the dark tint behind it. */
 @media (prefers-contrast: more) {
-  :root[data-theme="dark"] { --line: rgba(120, 120, 128, 0.8); --line-strong: rgba(170, 170, 176, 0.85); --sep: rgba(140, 140, 148, 0.9); --fg-2: #e5e5ea; --fg-3: #c7c7cc; }
+  :root[data-theme="dark"] { --line: rgba(120, 120, 128, 0.8); --line-strong: rgba(170, 170, 176, 0.85); --sep: rgba(140, 140, 148, 0.9); --fg-2: #e5e5ea; --fg-3: #c7c7cc; --ink: 100%; }
 }

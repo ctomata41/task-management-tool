@@ -4,7 +4,7 @@
 // project), each stage a capsule in time; tapping one sets its target.
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { html, Icon, Seg, Empty, ProjectTag, isoDay, dueWord, dateInput } from '../ui.js';
-import { useStore, myTasks, teamProjects, personalProjects, project, canManage, canSee, isCommander, openSheet, closeSheet, setStage,
+import { useStore, myTasks, teamProjects, personalProjects, project, canManage, canSeeDetail, isCommander, openSheet, closeSheet, setStage,
   STATUS, PRIORITY_ORDER } from '../store.js';
 import { schedule, dayStart, addDays, STAGE_DAYS, DAY } from '../card.js';
 import { useGcal, GcalCard, GcalChip } from '../gcal.js';
@@ -64,7 +64,8 @@ function dayItems(s, t, events) {
   const out = [];
   for (const e of events) if (e.day === key) out.push({ kind: 'event', key: `e${e.id}`, time: e.allDay ? '' : e.time, title: e.title, link: e.link, rank: `0${e.allDay ? '00:00' : e.time}` });
   for (const m of s.meetings) {
-    if (isoDay(new Date(m.at)) !== key || !(m.by === s.me || canSee(project(m.project)))) continue;
+    // A meeting's summary is a project's detail: a locked project keeps it from those outside it (canSeeDetail).
+    if (isoDay(new Date(m.at)) !== key || !(m.by === s.me || canSeeDetail(project(m.project)))) continue;
     out.push({ kind: 'meeting', key: `m${m.id}`, time: hhmm(m.at), title: m.title, output: m.output, p: project(m.project), rank: `0${hhmm(m.at)}` });
   }
   const mine = [...teamProjects(), ...personalProjects()].filter((p) => p.manager === s.me || p.partners.includes(s.me) || (isCommander() && !p.personal));

@@ -268,6 +268,25 @@ export function MenuLayer() {
 function Menu({ m }) {
   const root = useRef();
   const panel = useRef();
+  const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
+  const W = 240;
+  const H = Math.min(m.items.length * row + 12, 380);
+  let left = m.rect.right - W;
+  left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
+  let top = m.rect.bottom + 6;
+  if (top + H > window.innerHeight - 8) top = Math.max(8, m.rect.top - 6 - H);
+  const up = top < m.rect.bottom;
+  const ox = Math.round(Math.min(W, Math.max(0, m.rect.left + m.rect.width / 2 - left)));
+  const oy = up ? H : 0;
+  // H is an estimate from the row height. A menu that opens upward has to end right above its control and grow from
+  // there, so before its first frame its real height places it.
+  useLayoutEffect(() => {
+    const el = panel.current;
+    if (!up || !el) return;
+    const h = el.offsetHeight;
+    el.style.top = `${Math.max(8, m.rect.top - 6 - h)}px`;
+    el.style.transformOrigin = `${ox}px ${h}px`;
+  }, []);
   useLayer(root, panel, { kind: 'menu' });
   // Focus moves into the menu (to the chosen item or the first), the arrows walk it, and closing hands focus back.
   useEffect(() => {
@@ -288,15 +307,6 @@ function Menu({ m }) {
     else if (e.key === 'End') go(-1);
     else if (e.key === 'Tab') { e.preventDefault(); closeMenu(); }
   };
-  const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
-  const W = 240;
-  const H = Math.min(m.items.length * row + 12, 380);
-  let left = m.rect.right - W;
-  left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
-  let top = m.rect.bottom + 6;
-  if (top + H > window.innerHeight - 8) top = Math.max(8, m.rect.top - 6 - H);
-  const ox = Math.round(Math.min(W, Math.max(0, m.rect.left + m.rect.width / 2 - left)));
-  const oy = top >= m.rect.bottom ? 0 : H;
   return html`<div class="menu-backdrop" ref=${root} onClick=${closeMenu}>
     <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()} onKeyDown=${onKeyDown}>
       ${m.items.map((it) => html`<button type="button" role="menuitem" class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '')}

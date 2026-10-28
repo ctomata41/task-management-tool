@@ -216,11 +216,6 @@
 .file-pick input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 /* ---------- overview ---------- */
-.qcard2 { position: relative; background: var(--surface); border-radius: var(--r-card); overflow: hidden; }
-.qcard2::before { content: ''; position: absolute; inset-inline-start: 0; top: 14px; height: 22px; width: 4px; border-start-end-radius: 4px; border-end-end-radius: 4px; background: var(--bar); }
-.qc-proj { display: flex; align-items: center; gap: 8px; padding: 12px 16px 6px 18px; padding-inline-start: 18px; color: var(--fg); }
-.qc-proj strong { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qc-proj .ic { color: var(--fg-3); margin-inline-start: auto; }
 .qrow { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 0.5px solid var(--line); flex-wrap: wrap; }
 .qrow .grow { min-width: 200px; }
 .q-ic { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex: none; background: color-mix(in srgb, var(--c) 15%, transparent); color: color-mix(in oklab, var(--c) var(--ink), black); }
@@ -233,9 +228,6 @@
 .ovl-sub { display: flex; align-items: center; gap: 6px; }
 .ovl-stage { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ovl-state, .ovl-meta { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.load-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
-.load2 { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: var(--r-card); padding: 12px 14px; flex-wrap: wrap; }
-.load2 .grow { min-width: 0; display: flex; flex-direction: column; }
 
 /* ---------- sheets ---------- */
 .pick-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -358,17 +350,17 @@
   .ocard2:active, .pcard2:active { transform: scale(0.985); transition-duration: 0.1s; }
 }
 .tcheck.on { transition: background-color 0.25s var(--spring), border-color 0.25s; }
-:is(.wait-row, .tpl-opt, .choice, .ov-line, .qc-proj, .who-row):active:not(:has(button:active, a:active, input:active)) { background: var(--press); transition-duration: 0s; }
-.wait-row, .ov-line, .qc-proj { transition: background-color 0.3s; }
+:is(.wait-row, .tpl-opt, .choice, .ov-line, .who-row):active:not(:has(button:active, a:active, input:active)) { background: var(--press); transition-duration: 0s; }
+.wait-row, .ov-line { transition: background-color 0.3s; }
 @media (hover: hover) {
-  .wait-row:hover, .ov-line:hover, .qc-proj:hover, .tpl-opt:hover:not(.on), .choice:hover:not(.on) { background: var(--hover); }
+  .wait-row:hover, .ov-line:hover, .tpl-opt:hover:not(.on), .choice:hover:not(.on) { background: var(--hover); }
   .qchip:hover, .person-chip:hover:not(.on), .add-opt:hover { background: var(--fill-2); }
 }
 @media (prefers-reduced-motion: reduce) {
   .ftext, .tcheck, .qchip { transition: background-color 0.2s, border-color 0.2s; }
 }
 @media (prefers-contrast: more) {
-  .card2, .ocard2, .qcard2, .load2, .qadd, .m-empty, .focus-empty, .opt-card, .person-chip, .hill-opt, .conf-opt, .st-opt { box-shadow: 0 0 0 1px var(--line-strong); }
+  .card2, .ocard2, .qadd, .m-empty, .focus-empty, .opt-card, .person-chip, .hill-opt, .conf-opt, .st-opt { box-shadow: 0 0 0 1px var(--line-strong); }
   .seg-bar { box-shadow: inset 0 0 0 1px var(--line-strong); }
 }
 
@@ -438,7 +430,6 @@ button.th { cursor: pointer; }
 
 /* the portfolio */
 .ptable { --cols: var(--bar-w) minmax(230px, 1.4fr) 72px minmax(150px, 1fr) 108px 150px 100px; }
-a.prow { color: var(--fg); }
 .pdot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .c-pstage { flex-direction: column; align-items: stretch; justify-content: center; gap: 5px; padding: 6px 10px; }
 .c-prog { gap: 8px; padding-inline: 10px; }
@@ -485,7 +476,6 @@ a.prow { color: var(--fg); }
 }
 .tt-task { transition: background-color 0.3s; }
 .tt-task:active:not(:has(button:active, a:active, input:active, label:active)) { background: var(--press); transition-duration: 0s; }
-a.prow:active { background: var(--press); }
 @media (prefers-contrast: more) {
   .tt, .stat, .bbar-search, .bbar-btn, .bbar-people, .ppl-faces, .add-ppl { box-shadow: 0 0 0 1px var(--line-strong); }
   .cell-fill { box-shadow: inset 0 0 0 1px var(--line-strong); }
@@ -691,12 +681,14 @@ a.prow:active { background: var(--press); }
 /* Each part keeps its rules inside its own block below, phone rules and press feedback included. */
 
 /* --- core: the place capsule, the ask's state, the lock (m/ui.js, m/store.js) --- */
-/* A project's place (RankCap): a tinted capsule with tabular numerals, raised above a row's stretched link. The
-   commander's is a button with a 44px hit area; "עוד בלי מקום" is quieter. */
-.rank-cap { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 28px; height: 28px; padding: 0 9px;
+/* A project's place (RankCap): a tinted capsule with tabular numerals; "עוד בלי מקום" is quieter. The commander's is a
+   button with a 44px hit area, raised above a row's stretched link. Anyone else's stays under the link, so a tap on it
+   opens the project like the rest of the row. */
+.rank-cap { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 28px; height: 28px; padding: 0 9px;
   border-radius: 999px; font-size: 0.875rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; white-space: nowrap;
   background: color-mix(in srgb, var(--accent) 15%, transparent); color: color-mix(in oklab, var(--accent) var(--ink), black); }
 .rank-cap.none { font-size: 0.75rem; font-weight: 600; background: var(--fill); color: var(--fg-2); }
+button.rank-cap { position: relative; z-index: 1; }
 button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 /* An ask's state (AskPill) is a .spill; its counts keep their width as they change. */
 .ask-pill { font-variant-numeric: tabular-nums; }
@@ -765,6 +757,9 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .ask-kids .tt-task .tt-open { flex-wrap: wrap; row-gap: 2px; padding-block: 6px; }
 .ask-kids .tt-task .tt-name { flex-basis: 100%; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .ask-kids .tt-sum { display: none; }
+/* Its buttons are 44px to hit, the hit area growing up and down only, so it never reaches the next button. */
+.ask-acts .btn, .ask-form .form-actions .btn { position: relative; }
+.ask-acts .btn::after, .ask-form .form-actions .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
 @media (prefers-contrast: more) {
   .ask-to { box-shadow: 0 0 0 1px var(--line-strong); }
 }
@@ -779,9 +774,12 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .q-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 0 16px; color: var(--accent-2); font-size: 0.875rem; font-weight: 600;
   transition: background-color 0.3s; }
 .q-more:active { background: var(--press); transition-duration: 0s; }
+/* A row's buttons are 44px to hit (up and down only, so never into the next one). */
+.q-acts .btn { position: relative; }
+.q-acts .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
 
 /* The order: each line starts with its place (or the room of one, for a held project) and is a stretched link to the
-   project. The capsule, the asks under the line and the commander's + sit above the link. */
+   project. The commander's capsule and +, and the asks under the line, sit above the link. */
 .ov-line { grid-template-areas: "name stage state meta"; row-gap: 8px; transition: background-color 0.3s, box-shadow 0.3s; }
 .ov-line.can-ask { grid-template-columns: minmax(180px, 1.4fr) minmax(160px, 1.6fr) 130px 120px 28px; grid-template-areas: "name stage state meta add"; }
 .ovl-name { grid-area: name; flex-direction: row; align-items: center; gap: 10px; }
@@ -844,6 +842,9 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .wait-row:has(> .wait-open:focus-visible) { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -3px; }
 .wait-row:has(> .wait-open:active) { background: var(--press); transition-duration: 0s; }
 .wait-acts { position: relative; z-index: 1; display: flex; gap: 6px; flex: none; }
+/* The row's buttons, and the ones in a project's header (בקשה ל…), are 44px to hit, growing up and down only. */
+.wait-acts .btn, .head-acts .btn { position: relative; }
+.wait-acts .btn::after, .head-acts .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
 .wait-ic.cmd { background: var(--wait-bg); color: color-mix(in oklab, var(--s-waiting) var(--ink), black); }
 .wait-moved .wait-open .small { color: var(--fg-2); }
 

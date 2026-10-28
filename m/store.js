@@ -64,8 +64,9 @@ function commit(patch) {
   LS.set(KEY, { v: VERSION, people, projects, tasks, outputs: outputs.map(({ audio, ...o }) => o), meetings });
 }
 export function resetSample() { LS.del(KEY); set({ ...fresh(), sheet: null }); toast('הנתונים חזרו לדוגמה'); }
-// The commander starts from the picture of the whole team; everyone else from their own day.
-export function switchTo(id) { LS.set(ME_KEY, id); set({ me: id, sheet: null }); location.hash = isCommander(id) ? '#/overview' : '#/today'; }
+// The commander starts from the picture of the whole team; everyone else from their own day. Either starts at the top,
+// also when the screen stays the same (no hashchange then).
+export function switchTo(id) { LS.set(ME_KEY, id); set({ me: id, sheet: null }); location.hash = isCommander(id) ? '#/overview' : '#/today'; window.scrollTo(0, 0); }
 
 // ---------- toasts and sheets ----------
 export function toast(text, opts = {}) {

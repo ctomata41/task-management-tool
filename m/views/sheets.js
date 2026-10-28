@@ -1,7 +1,7 @@
 // Every sheet in the manual version: a new project, closing a stage (the gate), the weekly update, the commander's ask
 // to a manager, a task (an ask with its breakdown), people, and recording a meeting. Each is short on purpose: a few
 // taps, then back to work.
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, Seg, Pill, Empty, Classified, AskPill, dueWord, dueDate, dateInput, isoDay, ago, openMenu, OUT_KIND } from '../ui.js';
 import { useStore, project, person, team, isCommander, canManage, canEditTask, closeSheet, openSheet, addProject, closeStage, approveGate, returnGate,
   weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addPerson, updateProject, saveMeeting, projectOutputs,
@@ -262,7 +262,10 @@ export function TaskBody({ id }) {
   const t = s.tasks.find((x) => x.id === id);
   const [title, setTitle] = useState(t?.title || '');
   const [notes, setNotes] = useState(t?.notes || '');
+  const titleRef = useRef();
   useEffect(() => { setTitle(t?.title || ''); setNotes(t?.notes || ''); }, [id]);
+  // The title grows with its words (borders included), measured before the sheet paints, so a long one shows whole.
+  useLayoutEffect(() => { const el = titleRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`; } }, [title]);
   if (!t) return html`<${Empty}>המשימה נמחקה.</${Empty}>`;
   const edit = canEditTask(t);
   const p = project(t.project);
@@ -278,7 +281,7 @@ export function TaskBody({ id }) {
   const pickStage = (e) => openMenu(e, p.stages.map((x) => ({ id: x.id, label: x.name })), { selected: t.stage, onPick: (sid) => save({ stage: sid }) });
   const stage = p?.stages.find((x) => x.id === t.stage);
   return html`<div class="form tsheet">
-    ${edit ? html`<textarea class="input area title-in" rows="1" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} onBlur=${() => title.trim() && title !== t.title && save({ title: title.trim() })} aria-label="כותרת"></textarea>` : html`<h3>${t.title}</h3>`}
+    ${edit ? html`<textarea ref=${titleRef} class="input area title-in" rows="1" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} onBlur=${() => title.trim() && title !== t.title && save({ title: title.trim() })} aria-label="כותרת"></textarea>` : html`<h3>${t.title}</h3>`}
     ${t.ask ? html`<${AskBand} t=${t} p=${p} />` : t.fromCommander ? html`<div class="note-band why"><${Icon} name="flag" size=${16} /><span>הורד/ה מ${person(t.by).name}</span></div>` : null}
     ${t.ask ? html`<div class="ask-kids"><${TaskTable} cols=${['owner', 'status']} star ask=${t.id} memory="m.ask" empty="עוד אין משימות לבקשה."
       groups=${[{ id: t.id, name: lead ? 'לפרק למשימות' : 'המשימות של הבקשה', color: 'var(--s-waiting)', tasks: askTasks(t.id), addLabel: 'משימה לבקשה',
