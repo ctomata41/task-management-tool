@@ -64,7 +64,7 @@ const TABS = [
   { id: 'tasks', label: 'משימות' },
   { id: 'card', label: 'תעודת זהות' },
   { id: 'outputs', label: 'תוצרים' },
-  { id: 'log', label: 'יומן' },
+  { id: 'log', label: 'החלטות' }, // "יומן" is the calendar in the main nav
   { id: 'people', label: 'אנשים' },
 ];
 
@@ -80,6 +80,7 @@ export function ProjectPage({ id }) {
   const outs = projectOutputs(p.id);
   const tabs = TABS.map((t) => ({ ...t, n: t.id === 'tasks' ? openTasks || null : t.id === 'outputs' ? outs.length || null : null }));
   const ids = [p.manager, ...p.partners];
+  const shown = p.partners.length ? `${ids.length} אנשים` : 'עוד אין שותפים';
   return html`<div class="page proj2" style=${`--bar:${p.color}`}>
     <header class="proj2-head">
       <div class="grow">
@@ -87,8 +88,8 @@ export function ProjectPage({ id }) {
         <h1>${p.name}</h1>
         <div class="proj2-tags"><${Health} p=${p} /><${Classified} p=${p} />${st.n ? html`<span class="muted small">${st.where} · שלב ${Math.min(st.idx, st.n)} מתוך ${st.n}</span>` : null}</div>
         ${p.personal ? null : html`<div class="proj2-people">
-          <button type="button" class="ppl-faces" aria-label=${`האנשים בפרויקט: ${ids.map((x) => person(x).name).join(', ')}`} onClick=${() => setTab('people')}><${Faces} ids=${ids} size=${26} max=${5} />
-            <span>${p.partners.length ? `${ids.length} אנשים` : 'עוד אין שותפים'}</span></button>
+          <button type="button" class="ppl-faces" aria-label=${`${shown}: ${ids.map((x) => person(x).name).join(', ')}`} onClick=${() => setTab('people')}><${Faces} ids=${ids} size=${26} max=${5} />
+            <span>${shown}</span></button>
           ${mgr && isOpen(p) ? html`<button type="button" class="add-ppl" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${15} />הוספת שותף</button>` : null}
         </div>`}
       </div>
@@ -291,7 +292,7 @@ function Log({ p, mgr }) {
     ${log.length ? html`<div class="group">${log.map((l) => html`<div class="log-row">
       <span class=${'log-ic ' + l.kind}><${Icon} name=${l.kind === 'decision' ? 'decision' : 'bulb'} size=${15} /></span>
       <div class="grow"><div>${l.text}</div><div class="muted small">${person(l.who).name} · ${ago(l.at)}${l.gate ? ' · החלטת שער' : ''}${l.kind === 'decision' && l.reversible === false ? ' · לא הפיכה' : ''}</div></div>
-    </div>`)}</div>` : html`<${Empty} icon="decision">עוד אין החלטות או הנחות ביומן.</${Empty}>`}
+    </div>`)}</div>` : html`<${Empty} icon="decision">עוד לא נרשמו החלטות או הנחות.</${Empty}>`}
   </div>`;
 }
 

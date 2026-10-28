@@ -117,7 +117,8 @@
 .head-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .proj2-people { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
 .ppl-faces { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0; padding-inline: 5px 12px; border-radius: 999px; background: var(--surface); font-size: 0.8125rem; color: var(--fg-2); }
-.add-ppl { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-2); font-size: 0.8125rem; font-weight: 600; }
+.add-ppl { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--accent-soft); font-size: 0.8125rem; font-weight: 600;
+  color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); /* 4.5:1 on the tint, at rest and on hover */ }
 .proj-tabs { align-self: flex-start; }
 .idcard { display: flex; flex-direction: column; gap: 14px; }
 .card2 { position: relative; background: var(--surface); border-radius: var(--r-card); padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
@@ -253,6 +254,7 @@
 .person-chip.add { padding-inline-start: 10px; color: var(--accent-2); background: transparent; border: 1.5px dashed color-mix(in srgb, var(--accent) 45%, transparent); }
 .ext-form { flex-wrap: wrap; }
 .ext-form .input { flex: 1 1 200px; }
+.ext-form .input + .input { margin-top: 0; }
 .gate-q { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; background: var(--surface-2); border-radius: 14px; }
 .gate-q strong { font-size: 1.0625rem; line-height: 1.35; }
 .gate-facts { display: flex; flex-direction: column; gap: 2px; font-size: 0.875rem; color: var(--fg-2); margin-top: 10px; }
@@ -304,6 +306,7 @@
   .head-acts .btn { flex: 1 1 auto; }
   .proj-tabs { max-width: calc(100% + 32px); margin-inline: -16px; padding-inline: 16px; border-radius: 0; background: transparent; }
   .proj-tabs.seg { display: flex; width: calc(100% + 32px); overflow-x: auto; scrollbar-width: none; }
+  .page > .proj-tabs.seg { max-width: none; }
   /* All five parts of a project fit across a phone; with larger text the strip still scrolls. */
   .proj-tabs.seg button { flex: 1 0 auto; justify-content: center; gap: 4px; padding-inline: 7px; font-size: 0.8125rem; }
   .proj-tabs .seg-n { padding: 0 5px; }
@@ -406,7 +409,7 @@ button.th { cursor: pointer; }
 .cell-fill.empty { background: transparent; }
 .cell-fill:disabled { opacity: 1; cursor: default; }
 .cell-date { position: relative; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-height: 36px; padding: 3px 10px;
-  border-radius: 8px; font-size: 0.8125rem; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  border-radius: 999px; font-size: 0.8125rem; line-height: 1.15; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .cell-date input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
 /* A date cell has the date itself on top and how far it is under it. */
 .cd-date { display: inline-flex; align-items: center; gap: 3px; font-weight: 600; }
@@ -449,7 +452,8 @@ a.prow { color: var(--fg); }
 .pf { position: relative; border-radius: 50%; padding: 1px; opacity: 0.9; }
 .pf::after { content: ''; position: absolute; inset: -6px -2px; }
 .bbar-people:has(.pf.on) .pf:not(.on, .pf-add) { opacity: 0.4; }
-.pf-add { display: grid; place-items: center; width: 30px; height: 30px; opacity: 1; background: var(--accent-soft); color: var(--accent-2); }
+.pf-add { display: grid; place-items: center; width: 30px; height: 30px; opacity: 1; background: var(--accent-soft); color: var(--accent-2); margin-inline-start: 4px; }
+.pf-add::after { inset: -7px; }
 .pf.on { box-shadow: 0 0 0 2px var(--accent); }
 .bbar-btn { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--surface); font-size: 0.8125rem; font-weight: 500; color: var(--fg-2); }
 .bbar-btn.on { background: var(--accent-soft); color: var(--accent-2); }

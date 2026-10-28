@@ -100,7 +100,7 @@ export function GateBody({ id }) {
         <button type="button" class="btn" disabled=${!note.trim()} onClick=${() => { returnGate(p.id, note.trim()); closeSheet(); }}>להחזיר עם ההכוונה</button>
       </div></div>`;
   }
-  if (pending) return html`<div class="form"><div class="note-band why"><${Icon} name="clock" size=${16} /><span>שלב ${cur.name} מחכה לאישור של המפקד מאז ${ago(cur.askedAt)}. אין צורך לעשות כלום. אם משהו השתנה, אפשר לכתוב ביומן.</span></div></div>`;
+  if (pending) return html`<div class="form"><div class="note-band why"><${Icon} name="clock" size=${16} /><span>שלב ${cur.name} מחכה לאישור של המפקד מאז ${ago(cur.askedAt)}. אין צורך לעשות כלום. אם משהו השתנה, אפשר לרשום את זה בהחלטות.</span></div></div>`;
   const outs = projectOutputs(p.id).filter((o) => o.stage === cur.id);
   const tasks = s.tasks.filter((t) => t.project === p.id && t.stage === cur.id);
   const open = tasks.filter((t) => t.status !== 'done').length;
@@ -125,7 +125,7 @@ export function GateBody({ id }) {
     ${choice === 'back' ? html`<label class="lbl" for="g-back">לאיזה שלב</label><select id="g-back" class="input" value=${backTo} onChange=${(e) => setBackTo(e.currentTarget.value)}>
       <option value="">לשלב הקודם</option>${before.map((x) => html`<option value=${x.id}>${x.name}</option>`)}</select>` : null}
     <label class="lbl" for="g-note">${choice === 'stop' ? 'למה עוצרים (חובה)' : 'מה למדנו, במשפט'}</label>
-    <textarea id="g-note" class="input area" rows="2" value=${note} onInput=${(e) => setNote(e.currentTarget.value)} placeholder=${choice === 'stop' ? 'עצירה היא החלטה טובה כשיודעים למה. זה נשמר ביומן' : 'לא חובה. נשמר ביומן ההחלטות'}></textarea>
+    <textarea id="g-note" class="input area" rows="2" value=${note} onInput=${(e) => setNote(e.currentTarget.value)} placeholder=${choice === 'stop' ? 'עצירה היא החלטה טובה כשיודעים למה. זה נשמר בהחלטות' : 'לא חובה. נשמר בהחלטות הפרויקט'}></textarea>
     ${waits ? html`<p class="note-band why"><${Icon} name="shield" size=${16} /><span>שלב ${cur.name} נסגר באישור המפקד. הבקשה תגיע אליו עם הראיות, ועד אז השלב מסומן "מחכה לאישור".</span></p>` : null}
     <div class="form-actions"><button type="button" class=${'btn ' + (choice === 'stop' ? 'danger' : 'btn-primary')} disabled=${choice === 'stop' && !note.trim()} onClick=${save}>${waits ? 'לבקש אישור' : choice === 'next' ? `לסגור את ${cur.name}` : GATE_CHOICES[choice].label}</button>
       <button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
@@ -146,7 +146,7 @@ export function ReturnBody({ id }) {
   const p = project(id);
   if (!p) return null;
   return html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (note.trim()) { returnGate(id, note.trim()); closeSheet(); } }}>
-    <p class="muted">השלב יחזור ל${person(p.manager).name} עם מה שכתבת, ויירשם ביומן.</p>
+    <p class="muted">השלב יחזור ל${person(p.manager).name} עם מה שכתבת, וזה יירשם בהחלטות.</p>
     <textarea class="input area" rows="3" value=${note} onInput=${(e) => setNote(e.currentTarget.value)} placeholder="מה חסר כדי לאשר" aria-label="הכוונה"></textarea>
     <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!note.trim()}>להחזיר</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
   </form>`;
@@ -352,7 +352,7 @@ export function MeetingBody({ project: pid }) {
       <label class="lbl" for="m-purpose">מטרה</label><input id="m-purpose" class="input" value=${purpose} onInput=${(e) => setPurpose(e.currentTarget.value)} placeholder="מה רוצים לצאת איתו מהפגישה" />
       <label class="lbl" for="m-proj">פרויקט</label><select id="m-proj" class="input" value=${proj} onChange=${(e) => setProj(e.currentTarget.value)}>
         <option value="">בלי פרויקט</option>${visibleProjects().filter((x) => x.phase !== 'stopped').map((x) => html`<option value=${x.id}>${x.name}</option>`)}</select>
-      ${restricted ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>זה פרויקט שמור/סודי. לא מקליטים כאן את הפגישות שלו. אפשר לרשום ביומן את ההחלטות, בלי פרטים מסווגים.</span></div>`
+      ${restricted ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>זה פרויקט שמור/סודי. לא מקליטים כאן את הפגישות שלו. אפשר לרשום את ההחלטות בלשונית "החלטות", בלי פרטים מסווגים.</span></div>`
         : html`<p class="muted small">מבקשים רשות מכל המשתתפים לפני שמקליטים. בסוף נשמר סיכום כתוצר, וההקלטה המקורית מצורפת אליו.</p>`}
       <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim() || restricted}><${Icon} name="mic" size=${16} />להתחיל להקליט</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
     </form>`;

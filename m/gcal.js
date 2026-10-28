@@ -42,7 +42,7 @@ export function takeReturn() {
   if (m[1]) { toast(ERR[m[2]] || ERR.failed, { ms: 6000 }); return; }
   const a = LS.get(AUTH_KEY);
   if (a?.me) LS.set(DEVICE_KEY, { ...(LS.get(DEVICE_KEY) || {}), [a.me]: m[2] });
-  toast('יומן Google מחובר. האירועים שלך מופיעים עכשיו ביומן', { ms: 6000 });
+  toast('יומן Google מחובר. האירועים שלך מופיעים עכשיו בשבוע שלך', { ms: 6000 });
 }
 
 // One event becomes one entry per day it covers here: a timed event on the day it starts, an all-day one on each day.

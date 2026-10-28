@@ -229,7 +229,7 @@ export function weeklyUpdate(pid, u) {
 export function resolveSenior(pid, note) {
   const p = project(pid);
   updateProject(pid, { needsSenior: null, log: [{ id: uid('l'), kind: 'decision', text: `${person(state.me).name}: ${note || 'טופל'} (${p.needsSenior?.what || ''})`, who: state.me, at: new Date().toISOString(), reversible: true }, ...(p.log || [])] });
-  toast('נרשם ביומן הפרויקט');
+  toast('נרשם בהחלטות הפרויקט');
 }
 export function addLog(pid, entry) {
   updateProject(pid, (p) => ({ log: [{ id: uid('l'), who: state.me, at: new Date().toISOString(), ...entry }, ...(p.log || [])] }));

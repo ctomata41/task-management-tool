@@ -342,17 +342,25 @@ export function useLayer(rootRef, panelRef, { kind = 'modal', onClose } = {}) {
 }
 
 // The selected segment's background slides to a new choice, from wherever it is now.
+function placeThumb(root, slide) {
+  const thumb = root?.querySelector(':scope > .seg-thumb');
+  if (!thumb) return;
+  const on = root.querySelector(':scope > .on');
+  thumb.style.visibility = on ? '' : 'hidden';
+  if (!on) return;
+  const m = motion(thumb, (el, mm) => { el.style.transform = `translate3d(${mm.get('x')}px, 0, 0)`; el.style.width = `${mm.get('w')}px`; });
+  const x = on.offsetLeft;
+  const w = on.offsetWidth;
+  if (!slide || !thumb.__placed || reducedMotion()) { m.set({ x, w }); thumb.__placed = true; } else if (m.spring('x').goal !== x || m.spring('w').goal !== w) m.to({ x, w }, { damping: 1, response: 0.3 });
+}
 export function useThumb(ref) {
+  useLayoutEffect(() => placeThumb(ref.current, true));
+  // A resize (a turned phone, a wider window) moves the segments under the thumb, so it goes straight back on.
   useLayoutEffect(() => {
     const root = ref.current;
-    const thumb = root?.querySelector(':scope > .seg-thumb');
-    if (!thumb) return;
-    const on = root.querySelector(':scope > .on');
-    thumb.style.visibility = on ? '' : 'hidden';
-    if (!on) return;
-    const m = motion(thumb, (el, mm) => { el.style.transform = `translate3d(${mm.get('x')}px, 0, 0)`; el.style.width = `${mm.get('w')}px`; });
-    const x = on.offsetLeft;
-    const w = on.offsetWidth;
-    if (!thumb.__placed || reducedMotion()) { m.set({ x, w }); thumb.__placed = true; } else if (m.spring('x').goal !== x || m.spring('w').goal !== w) m.to({ x, w }, { damping: 1, response: 0.3 });
-  });
+    if (!root || typeof ResizeObserver !== 'function') return undefined;
+    const ro = new ResizeObserver(() => placeThumb(root, false));
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, []);
 }
