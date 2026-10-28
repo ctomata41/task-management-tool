@@ -6,7 +6,7 @@ import * as seed from './data.js';
 import * as card from './card.js';
 import { haptic } from '../app/motion.js';
 
-const KEY = 'm.state.v1';
+const KEY = 'm.state.v2';
 const ME_KEY = 'm.me';
 const clone = (x) => JSON.parse(JSON.stringify(x));
 const LS = {
@@ -93,12 +93,19 @@ export const updatesDue = () => managedProjects().filter((p) => p.phase !== 'sto
 
 // ---------- tasks ----------
 export const STATUS = {
-  todo: { label: 'לביצוע', color: 'var(--s-todo)' },
+  todo: { label: 'לא התחיל', color: 'var(--s-todo)' },
   doing: { label: 'בעבודה', color: 'var(--s-progress)' },
-  stuck: { label: 'תקוע', color: 'var(--s-blocked)' },
+  stuck: { label: 'תקוע', color: 'var(--bad)', ink: 'light' },
   done: { label: 'בוצע', color: 'var(--s-done)' },
 };
 export const STATUS_ORDER = ['todo', 'doing', 'stuck', 'done'];
+export const PRIORITY = {
+  critical: { label: 'קריטי', color: 'var(--bad)', ink: 'light' },
+  high: { label: 'גבוהה', color: 'var(--s-progress)' },
+  medium: { label: 'בינונית', color: 'var(--accent)', ink: 'light' },
+  low: { label: 'נמוכה', color: 'var(--s-todo)' },
+};
+export const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
 
 export function addTask(t) {
   const task = { id: uid('t'), status: 'todo', by: state.me, owner: state.me, project: null, stage: null, due: null, createdAt: new Date().toISOString(), ...t };

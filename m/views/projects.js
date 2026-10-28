@@ -1,9 +1,9 @@
-// Projects: the list of cards, and a project's page. The page opens on the ID card (the core, the stage path, the weekly
-// state) and keeps the rest one tab away: tasks by stage in the style of a Monday board, outputs, meetings, the log of
-// decisions and assumptions, and the people.
+// Projects: the portfolio as one table (a row per project: stage, health, how much is done, what is next), and a
+// project's page. The page opens on its board (tasks grouped by stage, Monday style); the ID card, outputs, the log of
+// decisions and assumptions, and the people are one tab away.
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, openMenu, dueWord, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
-import { TaskRow, QuickAdd, ProjectCard } from '../parts.js';
+import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
+import { TaskTable, BoardBar, Battery, groupTasks, matches } from '../table.js';
 import { useStore, project, person, canManage, canSee, isCommander, teamProjects, personalProjects, projectTasks, projectOutputs, openSheet,
   updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, resolveSenior, team, getState } from '../store.js';
 import { status, currentStage, HILL, CONFIDENCE, HEALTH, STAGES, CLASSIFICATION, needsCommander, cardFill, TEMPLATES } from '../card.js';
@@ -14,22 +14,54 @@ export function Projects() {
   const [filter, setFilter] = useState('all');
   const all = teamProjects();
   const live = all.filter((p) => p.phase !== 'stopped' && p.phase !== 'done');
-  const shown = filter === 'mine' ? live.filter((p) => p.manager === s.me || p.partners.includes(s.me)) : filter === 'closed' ? all.filter((p) => p.phase === 'stopped' || p.phase === 'done') : live;
-  const mineN = live.filter((p) => p.manager === s.me || p.partners.includes(s.me)).length;
+  const isMine = (p) => p.manager === s.me || p.partners.includes(s.me);
   const personal = personalProjects();
+  let groups;
+  if (filter === 'closed') groups = [{ id: 'closed', name: 'נסגרו', color: 'var(--s-todo)', list: all.filter((p) => p.phase === 'stopped' || p.phase === 'done') }];
+  else {
+    groups = [
+      { id: 'mine', name: 'הפרויקטים שלי', color: 'var(--accent)', list: live.filter(isMine) },
+      { id: 'team', name: 'שאר הצוות', color: 'var(--s-waiting)', list: filter === 'mine' ? [] : live.filter((p) => !isMine(p)) },
+      { id: 'personal', name: 'אישי', hint: 'רק את/ה רואה', color: 'var(--s-progress)', list: personal },
+    ];
+  }
   return html`<div class="page">
     <header class="page-head2"><h1>פרויקטים</h1>
       <button type="button" class="btn btn-primary" onClick=${() => openSheet('newproject')}><${Icon} name="plus" size=${16} />פרויקט חדש</button></header>
-    <${Seg} label="סינון" value=${filter} onChange=${setFilter} options=${[{ id: 'all', label: 'כל הפעילים', n: live.length }, { id: 'mine', label: 'שלי', n: mineN }, { id: 'closed', label: 'נסגרו' }]} />
-    ${shown.length ? html`<div class="pgrid">${shown.map((p) => html`<${ProjectCard} key=${p.id} p=${p} />`)}</div>` : html`<${Empty} icon="layers">אין כאן פרויקטים.</${Empty}>`}
-    ${personal.length && filter !== 'closed' ? html`<section class="sec"><div class="sec-head"><h2>הפרויקטים האישיים שלי</h2><span class="muted small">רק את/ה רואה אותם</span></div>
-      <div class="pgrid">${personal.map((p) => html`<${ProjectCard} key=${p.id} p=${p} />`)}</div></section>` : null}
+    <${Seg} label="סינון" value=${filter} onChange=${setFilter} options=${[{ id: 'all', label: 'פעילים', n: live.length }, { id: 'mine', label: 'שלי' }, { id: 'closed', label: 'נסגרו' }]} />
+    ${groups.some((g) => g.list.length) ? html`<div class="ttable ptable">${groups.filter((g) => g.list.length).map((g) => html`<section class="tgrp" key=${g.id} style=${`--gc:${g.color}`}>
+      <header class="tgrp-head"><span class="tgrp-tog"><h3>${g.name}</h3></span><span class="tgrp-n">${g.list.length}</span>${g.hint ? html`<span class="muted small">${g.hint}</span>` : null}</header>
+      <div class="tt" role="table" aria-label=${g.name}>
+        <div class="tt-row tt-th" role="row"><span class="tc-bar"></span><span class="tc th-title">פרויקט</span><span class="tc th c-owner">מוביל/ה</span><span class="tc th c-pstage">שלב</span><span class="tc th c-status">מצב</span><span class="tc th c-prog">משימות</span><span class="tc th c-due">הבא בתור</span></div>
+        ${g.list.map((p) => html`<${ProjectRow} key=${p.id} p=${p} />`)}
+      </div></section>`)}</div>` : html`<${Empty} icon="layers">אין כאן פרויקטים.</${Empty}>`}
   </div>`;
 }
 
+// One project as a row of the portfolio table: where it stands, how it feels, how much of its work is done.
+function ProjectRow({ p }) {
+  const s = getState();
+  const st = status(p);
+  const h0 = HEALTH[st.health];
+  const tasks = s.tasks.filter((t) => t.project === p.id);
+  const done = tasks.filter((t) => t.status === 'done').length;
+  const next = tasks.filter((t) => t.status !== 'done' && t.due).sort((a, b) => String(a.due).localeCompare(String(b.due)))[0];
+  const asks = isCommander() ? needsCommander(p, s.tasks) : [];
+  return html`<a class="tt-row tt-task prow" role="row" href=${`#/project/${p.id}`} style=${`--pc:${p.color}`}>
+    <span class="tc-bar" aria-hidden="true"></span>
+    <span class="tc tc-title" role="cell"><span class="pdot" style=${`background:${p.color}`}></span><span class="tt-open"><span class="tt-name">${p.name}</span>
+      <span class="tt-chips"><${Classified} p=${p} small />${st.pending ? html`<${Pill} color="var(--s-waiting)">מחכה לאישור</${Pill}>` : null}${asks.length ? html`<${Pill} color="var(--h-off)">צריך אותך · ${asks.length}</${Pill}>` : null}${st.stale ? html`<span class="stale">לא עודכן</span>` : null}</span></span></span>
+    <span class="tc c-owner" role="cell"><${Avatar} id=${p.manager} size=${28} /></span>
+    <span class="tc c-pstage" role="cell"><span class="small"><b>${st.where}</b>${st.n ? html` <span class="muted">${Math.min(st.idx, st.n)}/${st.n}</span>` : null}</span><${StageStrip} p=${p} /></span>
+    <span class="tc c-status" role="cell"><span class=${'cell-fill' + (st.health === 'hold' || st.health === 'stopped' ? ' quiet' : '') + (st.health === 'stuck' ? ' light' : '')} style=${`--c:${h0.color}`}>${h0.label}</span></span>
+    <span class="tc c-prog" role="cell">${tasks.length ? html`<${Battery} tasks=${tasks} /><span class="muted small">${done}/${tasks.length}</span>` : html`<span class="muted small">—</span>`}</span>
+    <span class="tc c-due" role="cell">${next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : '')} title=${next.title}>${dueWord(next.due)}</span>` : html`<span class="muted small">—</span>`}</span>
+  </a>`;
+}
+
 const TABS = [
-  { id: 'card', label: 'תעודת זהות' },
   { id: 'tasks', label: 'משימות' },
+  { id: 'card', label: 'תעודת זהות' },
   { id: 'outputs', label: 'תוצרים' },
   { id: 'log', label: 'יומן' },
   { id: 'people', label: 'אנשים' },
@@ -38,7 +70,7 @@ const TABS = [
 export function ProjectPage({ id }) {
   const s = useStore();
   const p = project(id);
-  const [tab, setTab] = useState('card');
+  const [tab, setTab] = useState('tasks');
   if (!p || !canSee(p)) return html`<div class="page"><${Empty} icon="lock">הפרויקט לא נמצא, או שאין לך גישה אליו.</${Empty}></div>`;
   const mgr = canManage(p);
   const st = status(p);
@@ -198,24 +230,30 @@ function AddStage({ p }) {
   </div>`;
 }
 
-// ---------- tasks: a board grouped by stage ----------
+// ---------- tasks: the project's board, grouped by stage by default ----------
+const BOARD_GROUPS = [{ id: 'stage', label: 'שלב' }, { id: 'status', label: 'סטטוס' }, { id: 'owner', label: 'אחראי' }, { id: 'priority', label: 'עדיפות' }, { id: 'date', label: 'תאריך' }];
 function TasksBoard({ p, mgr }) {
   const s = useStore();
   const [by, setBy] = useState('stage');
-  const tasks = projectTasks(p.id);
+  const [search, setSearch] = useState('');
+  const [who, setWho] = useState(null);
+  const [showDone, setShowDone] = useState(true);
+  const all = projectTasks(p.id);
+  const tasks = all.filter((t) => matches(t, search, who) && (showDone || t.status !== 'done'));
   const cur = currentStage(p);
-  const groups = by === 'stage'
-    ? [...p.stages.filter((st) => tasks.some((t) => t.stage === st.id) || st === cur).map((st) => ({ id: st.id, name: st.name, cur: st === cur, list: tasks.filter((t) => t.stage === st.id) })),
-      { id: 'none', name: 'בלי שלב', list: tasks.filter((t) => !t.stage || !p.stages.some((x) => x.id === t.stage)) }]
-    : [p.manager, ...p.partners].map((id) => ({ id, name: person(id).name, list: tasks.filter((t) => t.owner === id) }));
   const isMember = mgr || p.partners.includes(s.me);
+  const base = isMember ? { project: p.id } : null;
+  const PAL = ['var(--accent)', 'var(--s-waiting)', 'var(--s-done)', 'var(--s-progress)', 'var(--h-risk)', 'var(--s-blocked)'];
+  const groups = by === 'stage'
+    ? [...p.stages.filter((st) => tasks.some((t) => t.stage === st.id) || st === cur).map((st) => ({ id: st.id, name: st.name, color: st.state === 'done' ? 'var(--s-done)' : st === cur ? 'var(--accent)' : PAL[(p.stages.indexOf(st) + 1) % PAL.length],
+        hint: st === cur ? 'עכשיו' : st.state === 'done' ? 'נסגר' : st.state === 'skipped' ? 'דילגנו' : null, tasks: tasks.filter((t) => t.stage === st.id), add: base ? { ...base, stage: st.id } : null })),
+      { id: 'none', name: 'בלי שלב', color: 'var(--s-todo)', tasks: tasks.filter((t) => !t.stage || !p.stages.some((x) => x.id === t.stage)), add: null }]
+    : groupTasks(tasks, by, base);
+  // Groups already in order of stage: the current stage leads, closed stages fold away to the end.
+  if (by === 'stage') groups.sort((a, b) => (b.hint === 'עכשיו') - (a.hint === 'עכשיו') || (a.hint === 'נסגר') - (b.hint === 'נסגר'));
   return html`<div class="board2">
-    <div class="board2-bar">${isMember ? html`<div class="grow"><${QuickAdd} project=${p.id} placeholder=${cur ? `משימה לשלב ${cur.name}…` : 'משימה חדשה…'} /></div>` : html`<div class="grow"></div>`}
-      <${Seg} label="קיבוץ" value=${by} onChange=${setBy} options=${[{ id: 'stage', label: 'לפי שלב' }, { id: 'owner', label: 'לפי אחראי' }]} /></div>
-    ${groups.filter((g) => g.list.length || g.cur).map((g) => html`<section class="tgroup" key=${g.id}>
-      <div class="tgroup-head"><strong>${g.name}</strong>${g.cur ? html`<${Pill} color="var(--accent)">עכשיו</${Pill}>` : null}<span class="muted small">${g.list.filter((t) => t.status === 'done').length}/${g.list.length}</span></div>
-      ${g.list.length ? html`<div class="group">${g.list.sort((a, b) => (a.status === 'done') - (b.status === 'done')).map((t) => html`<${TaskRow} key=${t.id} t=${t} showProject=${false} />`)}</div>` : html`<div class="muted small tgroup-empty">עוד אין משימות בשלב הזה.</div>`}
-    </section>`)}
+    <${BoardBar} search=${search} setSearch=${setSearch} people=${[p.manager, ...p.partners]} who=${who} setWho=${setWho} groupBy=${by} setGroupBy=${setBy} groupOptions=${BOARD_GROUPS} showDone=${showDone} setShowDone=${setShowDone} />
+    <${TaskTable} key=${by} groups=${groups} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
   </div>`;
 }
 

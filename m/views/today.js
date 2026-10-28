@@ -1,9 +1,9 @@
-// "היום שלי": the first screen for everyone. Up to three tasks in focus, then everything that is mine by date, with team
-// work and personal work kept apart by one switch. Above them, only what waits for me: weekly updates of projects I
-// manage, stages ready to close, and (for the commander) what the overview raised.
+// "היום שלי": the first screen for everyone, as one table of my tasks (Monday's "My work"). The focus group comes
+// first, then the rest by date (or project, status, priority), with team and personal work kept apart by one switch.
+// Above it, a line of counts and only what waits for me: weekly updates, stages ready to close, the commander's queue.
 import { useState } from 'preact/hooks';
-import { html, Icon, Seg, Pill, Empty, ProjectTag } from '../ui.js';
-import { TaskRow, QuickAdd } from '../parts.js';
+import { html, Icon, Seg } from '../ui.js';
+import { TaskTable, BoardBar, groupTasks, matches } from '../table.js';
 import { useStore, myTasks, updatesDue, managedProjects, openSheet, isCommander, commanderQueue, person, getState } from '../store.js';
 import { stageReady, currentStage } from '../card.js';
 import { dayDiff } from '../ui.js';
@@ -14,73 +14,63 @@ const MONTHS = ['בינואר', 'בפברואר', 'במרץ', 'באפריל', '�
 const hello = () => { const h = new Date().getHours(); return h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : 'ערב טוב'; };
 const savedMode = () => { try { return localStorage.getItem(MODE_KEY) || 'team'; } catch (e) { return 'team'; } };
 
-function groupTasks(list) {
-  const g = { late: [], today: [], week: [], later: [], none: [] };
-  for (const t of list) {
-    if (!t.due) { g.none.push(t); continue; }
-    const n = dayDiff(t.due);
-    if (n < 0) g.late.push(t); else if (n === 0) g.today.push(t); else if (n <= 6) g.week.push(t); else g.later.push(t);
-  }
-  for (const k of Object.keys(g)) g[k].sort((a, b) => String(a.due).localeCompare(String(b.due)));
-  return g;
-}
-const GROUPS = [['late', 'באיחור'], ['today', 'היום'], ['week', 'השבוע'], ['later', 'בהמשך'], ['none', 'בלי תאריך']];
+const GROUP_KEY = 'm.today.group';
+const savedGroup = () => { try { return localStorage.getItem(GROUP_KEY) || 'date'; } catch (e) { return 'date'; } };
+const GROUP_OPTIONS = [{ id: 'date', label: 'תאריך' }, { id: 'project', label: 'פרויקט' }, { id: 'status', label: 'סטטוס' }, { id: 'priority', label: 'עדיפות' }];
 
 export function Today() {
   const s = useStore();
   const [mode, setModeRaw] = useState(savedMode);
+  const [groupBy, setGroupRaw] = useState(savedGroup);
+  const [search, setSearch] = useState('');
   const [showDone, setShowDone] = useState(false);
   const setMode = (m) => { setModeRaw(m); try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* storage blocked */ } };
-  const mine = myTasks().filter((t) => (mode === 'personal' ? t.personal : !t.personal));
+  const setGroupBy = (g) => { setGroupRaw(g); try { localStorage.setItem(GROUP_KEY, g); } catch (e) { /* storage blocked */ } };
+  const personal = mode === 'personal';
+  const mine = myTasks().filter((t) => (personal ? t.personal : !t.personal));
   const open = mine.filter((t) => t.status !== 'done');
-  const focus = open.filter((t) => t.focus);
-  const rest = open.filter((t) => !t.focus);
-  const doneToday = mine.filter((t) => t.status === 'done' && t.doneAt && dayDiff(t.doneAt) === 0);
-  const g = groupTasks(rest);
+  const list = mine.filter((t) => (showDone ? t.status !== 'done' || (t.doneAt && dayDiff(t.doneAt) > -7) : t.status !== 'done') && matches(t, search));
+  const focus = list.filter((t) => t.focus && t.status !== 'done');
+  const base = { owner: s.me, personal };
+  let groups;
+  if (groupBy === 'date') {
+    groups = [{ id: 'focus', name: 'הפוקוס של היום', hint: focus.length ? `${focus.length} מתוך 3` : 'מסמנים בכוכב עד שלוש משימות', color: 'var(--s-progress)', tasks: focus, add: null },
+      ...groupTasks(list.filter((t) => !focus.includes(t)), 'date', base)];
+  } else groups = groupTasks(list, groupBy, base);
   const due = updatesDue();
   const ready = managedProjects().filter((p) => stageReady(p, s.tasks));
   const queue = isCommander() ? commanderQueue() : [];
   const d = new Date();
   const lateN = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
   const todayN = open.filter((t) => t.due && dayDiff(t.due) === 0).length;
-  const waiting = mode === 'team' ? due.length + ready.length + (queue.length ? 1 : 0) : 0;
+  const waitN = !personal ? due.length + ready.length + queue.length : 0;
   return html`<div class="page today2">
     <header class="hello">
       <div class="eyebrow">יום ${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}</div>
       <h1>${hello()}, ${person(s.me).name}</h1>
-      <p class="hello-sum">${open.length === 0 ? 'אין משימות פתוחות. יום שקט.' : html`${todayN ? html`<b>${todayN}</b> להיום` : 'אין משימות להיום'}${lateN ? html`, <b class="bad">${lateN} באיחור</b>` : null}${focus.length ? html`, ${focus.length} בפוקוס` : null}.`}</p>
     </header>
-    <${Seg} label="איזו עבודה" value=${mode} onChange=${setMode} cls="mode-seg" options=${[{ id: 'team', label: 'עבודת הצוות', n: waiting || null }, { id: 'personal', label: 'אישי' }]} />
+    <div class="stat-row">
+      <div class=${'stat' + (lateN ? ' bad' : '')}><b>${lateN}</b><span>באיחור</span></div>
+      <div class="stat"><b>${todayN}</b><span>להיום</span></div>
+      <div class="stat"><b>${open.filter((t) => t.focus).length}<small>/3</small></b><span>בפוקוס</span></div>
+      <div class="stat"><b>${open.length}</b><span>פתוחות</span></div>
+      ${waitN ? html`<div class="stat wait"><b>${waitN}</b><span>מחכים לך</span></div>` : null}
+    </div>
 
-    ${mode === 'team' && (queue.length || due.length || ready.length) ? html`<section class="sec">
-      <div class="sec-head"><h2>מחכה לך</h2></div>
-      <div class="group">
+    ${!personal && (queue.length || due.length || ready.length) ? html`<section class="group wait-group" aria-label="מחכה לך">
         ${queue.length ? html`<a class="wait-row" href="#/overview"><span class="wait-ic red"><${Icon} name="flag" /></span>
           <div class="grow"><strong>${queue.length} דברים בפרויקטים צריכים אותך</strong><span class="muted small">${queue.slice(0, 2).map((x) => x.text).join(' · ')}</span></div><${Icon} name="chevronLeft" /></a>` : null}
         ${ready.map((p) => html`<button type="button" class="wait-row" onClick=${() => openSheet('gate', { id: p.id })}><span class="wait-ic green"><${Icon} name="check" /></span>
           <div class="grow"><strong>כל המשימות של שלב ${currentStage(p).name} בוצעו</strong><span class="muted small">${p.name} · לסגור את השלב?</span></div><${Icon} name="chevronLeft" /></button>`)}
         ${due.map((p) => html`<button type="button" class="wait-row" onClick=${() => openSheet('weekly', { id: p.id })}><span class="wait-ic"><${Icon} name="hill" /></span>
           <div class="grow"><strong>עדכון שבועי</strong><span class="muted small">${p.name} · שלוש נגיעות, חצי דקה</span></div><${Icon} name="chevronLeft" /></button>`)}
-      </div>
     </section>` : null}
 
-    <section class="sec">
-      <div class="sec-head"><h2><${Icon} name="star" size=${18} cls="focus-ic" />הפוקוס של היום</h2><span class="muted small">${focus.length}/3</span></div>
-      ${focus.length ? html`<div class="group">${focus.map((t) => html`<${TaskRow} key=${t.id} t=${t} star showOwner=${false} />`)}</div>`
-        : html`<div class="focus-empty">בוחרים עד שלוש משימות שהן הכי חשובות היום. לוחצים על הכוכב ליד משימה, או בתוך המשימה עצמה.</div>`}
-    </section>
-
-    <${QuickAdd} key=${mode} personal=${mode === 'personal'} placeholder=${mode === 'personal' ? 'משימה אישית חדשה…' : 'משימה חדשה…'} />
-
-    ${GROUPS.map(([k, label]) => (g[k].length ? html`<section class="sec" key=${k}>
-      <div class="sec-head"><h2 class=${k === 'late' ? 'bad' : ''}>${label}</h2><span class="muted small">${g[k].length}</span></div>
-      <div class="group">${g[k].map((t) => html`<${TaskRow} key=${t.id} t=${t} star showOwner=${false} />`)}</div>
-    </section>` : null))}
-    ${!open.length ? html`<${Empty}>${mode === 'personal' ? 'אין משימות אישיות פתוחות.' : 'אין משימות צוות פתוחות.'}</${Empty}>` : null}
-
-    ${doneToday.length ? html`<section class="sec">
-      <button type="button" class="link-btn" onClick=${() => setShowDone(!showDone)}><${Icon} name=${showDone ? 'chevronUp' : 'chevronDown'} size=${16} />בוצעו היום · ${doneToday.length}</button>
-      ${showDone ? html`<div class="group">${doneToday.map((t) => html`<${TaskRow} key=${t.id} t=${t} showOwner=${false} />`)}</div>` : null}
-    </section>` : null}
+    <${BoardBar} search=${search} setSearch=${setSearch} groupBy=${groupBy} setGroupBy=${setGroupBy} groupOptions=${GROUP_OPTIONS} showDone=${showDone} setShowDone=${setShowDone}>
+      <${Seg} label="איזו עבודה" value=${mode} onChange=${setMode} cls="mode-seg" options=${[{ id: 'team', label: 'צוות' }, { id: 'personal', label: 'אישי' }]} />
+    </${BoardBar}>
+    <${TaskTable} key=${mode + groupBy} groups=${groups} star memory=${`m.today.${mode}.${groupBy}`}
+      cols=${personal ? ['status', 'priority', 'due'] : ['project', 'status', 'priority', 'due']}
+      empty=${search ? 'לא נמצאו משימות.' : personal ? 'אין משימות אישיות פתוחות.' : 'אין משימות צוות פתוחות.'} />
   </div>`;
 }
