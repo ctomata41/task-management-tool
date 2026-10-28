@@ -4,8 +4,8 @@
 // one Yahali hasn't answered yet (t11), and one Yarden accepted and has started breaking down (t21).
 import { stagesFromTemplate, makeStage } from './card.js';
 
-const DAY = 864e5;
-const at = (days, h = 10) => { const d = new Date(Date.now() + days * DAY); d.setHours(h, 0, 0, 0); return d.toISOString(); };
+// Days on the calendar here, not 24-hour steps, so a clock change between then and now doesn't move a date.
+const at = (days, h = 10) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return d.toISOString(); };
 const date = (days) => at(days).slice(0, 10);
 
 export const people = [

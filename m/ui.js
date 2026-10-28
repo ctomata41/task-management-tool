@@ -1,7 +1,7 @@
 // Building blocks for the manual version: icons, avatars, capsules, the stage strip, sheets and toasts. Sheets and toasts
 // use the app's layer classes and springs (app/motion.js), so they move exactly like the rest of the platform.
 import { h } from 'preact';
-import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import htm from 'htm';
 import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
@@ -262,24 +262,32 @@ function useGlide(ref) {
     }
   });
 }
-// A toast stays while the pointer or focus is on it (store.holdToast), and starts its time again when they leave. When it
-// goes with focus in it (its ביטול, its X, or the time ran out), focus goes back to where it was when the toast came
-// (t.back), or else to where it came into the toast from, never to the top of the page.
+// A toast stays while a mouse or focus is on it (store.holdToast), and starts its time again when they leave; a finger
+// that tapped it doesn't hold it, since it never leaves. Held, it still shows when a newer toast docks over a sheet
+// (m.css: .held). When it goes with focus in it (its ביטול, its X, or the time ran out), focus goes back to where it
+// was when the toast came (t.back), or else to where it came into the toast from, never to the top of the page. After a
+// tap or a click, though, never into a text field, which on a phone would raise the keyboard: for a field in an open
+// sheet focus goes to the sheet itself, and for one on the page it stays where the press left it.
 function Toast({ t }) {
   const ref = useRef();
-  const on = useRef({ hover: false, focus: false, from: null });
+  const on = useRef({ hover: false, focus: false, from: null, pressed: false });
+  const [held, setHeld] = useState(false);
   useLayer(ref, ref, { kind: 'toast' });
-  const hold = (k, v) => { on.current[k] = v; holdToast(t.id, on.current.hover || on.current.focus); };
+  const hold = (k, v) => { on.current[k] = v; const h = on.current.hover || on.current.focus; holdToast(t.id, h); setHeld(h); };
   useEffect(() => () => {
     if (!ref.current?.contains(document.activeElement)) return;
+    const { from, pressed } = on.current;
     requestAnimationFrame(() => {
       const back = typeof t.back === 'function' ? t.back() : t.back;
-      const to = [back, on.current.from].find((x) => x?.isConnected && x !== document.body && !x.closest('.toasts, [inert]'));
+      const live = [back, from].filter((x) => x?.isConnected && x !== document.body && !x.closest('.toasts, [inert]'));
+      const to = !pressed ? live[0] : live.find((x) => !x.matches(TYPING)) || live.map((x) => x.closest('[role=dialog]')).find(Boolean);
       to?.focus({ preventScroll: true });
     });
   }, []);
   const out = (e) => !e.currentTarget.contains(e.relatedTarget); // its own node: focus can leave after it unmounted
-  return html`<div class="toast" ref=${ref} onMouseEnter=${() => hold('hover', true)} onMouseLeave=${() => hold('hover', false)}
+  const mouse = (v) => (e) => { if (e.pointerType === 'mouse') hold('hover', v); };
+  return html`<div class=${'toast' + (held ? ' held' : '')} ref=${ref} onPointerEnter=${mouse(true)} onPointerLeave=${mouse(false)}
+    onPointerDown=${() => { on.current.pressed = true; }} onKeyDown=${() => { on.current.pressed = false; }}
     onFocusIn=${(e) => { if (out(e)) { on.current.from = e.relatedTarget; hold('focus', true); } }} onFocusOut=${(e) => { if (out(e)) hold('focus', false); }}>
     <span>${t.text}</span>
     ${t.action ? html`<button type="button" onClick=${() => { dismissToast(t.id); t.action.run(); }}>${t.action.label}</button>` : null}
@@ -326,8 +334,8 @@ export function ago(iso) {
   if (m < 1) return 'עכשיו';
   if (m < 60) return `לפני ${m} דק׳`;
   const hh = Math.round(m / 60);
-  if (hh < 24) return hh === 1 ? 'לפני שעה' : `לפני ${hh} שעות`;
-  const d = Math.round(hh / 24);
+  const d = -dayDiff(iso); // past a day, days on the calendar here, as dueWord counts: Sunday seen Wednesday night is 3
+  if (hh < 24 || d < 1) return hh === 1 ? 'לפני שעה' : `לפני ${hh} שעות`;
   return d === 1 ? 'אתמול' : d === 2 ? 'לפני יומיים' : `לפני ${d} ימים`;
 }
 export const dateInput = (iso) => (iso ? String(iso).slice(0, 10) : '');
@@ -372,7 +380,7 @@ function Menu({ m }) {
   const panel = useRef();
   const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
   const W = 240;
-  const H = Math.min(m.items.length * row + 12, 380);
+  const H = Math.min(m.items.reduce((h, it) => h + row + (it.hint ? 8 : 0), 12), 380); // a hint's line makes a row 46px
   let left = m.rect.right - W;
   left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
   let top = m.rect.bottom + 6;
@@ -416,7 +424,7 @@ function Menu({ m }) {
         ${it.person ? html`<${Avatar} id=${it.person} size=${22} />` : null}
         ${it.dot ? html`<span class="dot" style=${`background:${it.dot}`}></span>` : null}
         ${it.icon ? html`<${Icon} name=${it.icon} size=${16} />` : null}
-        <span class="menu-label">${it.label}</span>
+        <span class="menu-label">${it.label}${it.hint ? html`<small class="menu-hint">${it.hint}</small>` : null}</span>
         ${it.id === m.selected ? html`<${Icon} name="check" size=${15} cls="menu-check" />` : null}
       </button>`)}
     </div>

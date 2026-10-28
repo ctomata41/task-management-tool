@@ -572,9 +572,11 @@ button.th { cursor: pointer; }
 .mg-month { position: absolute; top: 1.5rem; font-size: 0.75rem; font-weight: 700; color: var(--fg); white-space: nowrap; }
 .mg-month span { position: sticky; inset-inline-start: var(--nw); padding-inline-start: 6px; }
 .mg-week { position: absolute; bottom: 6px; padding-inline-start: 5px; font-size: 0.6875rem; color: var(--fg-3); white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+/* Today's line passes behind a date or a month it crosses, so the label stays whole. */
+.mg-week, .mg-month span { background: var(--surface); }
 .mg-now-tag { position: absolute; top: 4px; z-index: 1; padding: 1px 7px; border-radius: 999px; border-start-start-radius: 0; background: color-mix(in oklab, var(--s-blocked) 84%, black); color: var(--on-accent);
   font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.01em; }
-.mg-lines { position: absolute; inset-block: 0; inset-inline-start: var(--nw); width: var(--tw); pointer-events: none; }
+.mg-lines { position: absolute; inset-block: 0 8px; inset-inline-start: var(--nw); width: var(--tw); pointer-events: none; } /* to the last row, as the names */
 .mg-lines i { position: absolute; inset-block: 4rem 0; width: 0.5px; background: var(--line); }
 .mg-lines b { position: absolute; inset-block: 0; width: 2px; margin-inline-start: -1px; background: var(--s-blocked); opacity: 0.85; }
 .mg-proj { --c: var(--accent); }
@@ -757,6 +759,8 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .ask-when .conf-opt.on small { color: color-mix(in oklab, var(--accent) var(--ink), black); }
 .ask-to { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); font-size: 0.875rem; color: var(--fg-2); }
 .ask-form .note-band { margin-top: 10px; }
+/* In the commander's project menu, a project he doesn't run says under its name that the task goes there as an ask. */
+.menu-hint { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 0.75rem; font-weight: 400; letter-spacing: 0.01em; color: var(--fg-3); }
 /* The top of an ask's drawer, then the tasks it was broken into, grouped on the sheet's own grey. */
 .ask-band .grow { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ask-band-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -919,8 +923,9 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
      that falls through onto the dimmed backdrop of a short sheet doesn't close it (ui.Sheet). */
   .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast { pointer-events: none; }
   .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast button { pointer-events: auto; }
-  /* Docked, only the newest toast shows, so the stack never grows down over the sheet's title and its buttons. */
-  .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast:not(:last-child) { display: none; }
+  /* Docked, only the newest toast shows, so the stack never grows down over the sheet's title and its buttons; one that
+     holds focus or a mouse (m/ui.js: .held) stays, so focus never drops out of a toast hidden under it. */
+  .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast:not(:last-child):not(.held) { display: none; }
   .wait-row:has(> .wait-acts) { flex-wrap: wrap; }
   .wait-row:has(> .wait-acts) > .wait-open { flex-basis: 0; }
   .wait-row > .wait-acts { flex-basis: 100%; padding-inline-start: 44px; }

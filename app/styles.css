@@ -225,7 +225,7 @@ select.input { padding-inline-end: 8px; }
 @media (hover: hover) { .side-me:hover { background: var(--hover); } }
 .side-me div { flex: 1; min-width: 0; }
 .side-me strong { display: block; font-size: 0.875rem; }
-.side-me span { font-size: 0.75rem; color: var(--fg-3); }
+.side-me div span { font-size: 0.75rem; color: var(--fg-3); } /* the line under the name, not the avatar's initials */
 .main { min-width: 0; display: flex; flex-direction: column; }
 /* The top bar is clear at the top of a page and turns to glass once content scrolls under it (main.js sets data-scroll). */
 .topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 8px; height: 58px; padding: 0 24px;

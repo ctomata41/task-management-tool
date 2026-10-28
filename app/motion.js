@@ -118,6 +118,7 @@ const scrimOf = (root) => (p) => root.style.setProperty('--scrim', Math.min(1, M
 const POP = { dialog: 0.92, alert: 1.1, menu: 0.86, toast: 0.92 };
 
 function enter(root, panel, mode) {
+  root.__layer = { mode, at: performance.now() }; // see shield()
   const m = motion(panel);
   const scrim = scrimOf(root);
   if (reducedMotion()) { // a cross-fade instead of a slide
@@ -197,9 +198,31 @@ function copyOf(root, panel) {
   return { host, root: copy, panel: p };
 }
 
+// While a layer leaves, a press where it was (a second tap on its X, the second click of a double click) is still meant
+// for it, so it doesn't reach what the layer uncovers until the layer has gone, as on iOS. A toast, which sits above
+// every layer, and a layer that opens meanwhile (the next sheet of a hand-over) take presses as usual, and a key's click
+// (Enter, Space) always goes through. A toast that leaves has no shield: one docked over a sheet's head lets drags
+// through to it (m/m.css), and it leaves on a timer.
+function shield(r, since, done) {
+  const stop = (e) => {
+    if ((e.type === 'click' && !e.detail) || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    for (let n = e.target; n; n = n.parentElement) if (n.__layer && (n.__layer.mode === 'toast' || n.__layer.at > since)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener('pointerdown', stop, true);
+  document.addEventListener('click', stop, true);
+  Promise.race([done, new Promise((ok) => setTimeout(ok, 700))]).then(() => {
+    document.removeEventListener('pointerdown', stop, true);
+    document.removeEventListener('click', stop, true);
+  });
+}
+
 function leave(root, panel, mode) {
   const m = panel.__motion;
   m?.stop();
+  const since = performance.now();
+  const rect = panel.getBoundingClientRect();
   const copy = copyOf(root, panel);
   if (!copy) return;
   const g = motion(copy.panel);
@@ -224,6 +247,7 @@ function leave(root, panel, mode) {
     done = g.to({ scale: mode === 'toast' ? 0.94 : 0.97, opacity: 0, ...(mode === 'toast' ? { y: 10 * edgeSign(copy.panel) } : {}) }, { damping: 1, response: mode === 'menu' ? 0.18 : 0.24 });
   }
   done.then(() => copy.host.remove());
+  if (mode !== 'toast') shield(rect, since, done);
 }
 
 // A sheet follows the finger 1:1 from its handle, or from its content when that is scrolled to the top. Past its open

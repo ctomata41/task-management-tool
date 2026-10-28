@@ -307,9 +307,11 @@ export function TaskBody({ id, from }) {
   const save = (patch) => updateTask(t.id, patch);
   const pickOwner = (e) => openMenu(e, ownerItems(p, ownerPool(t, p)), { selected: t.owner, onPick: (o) => (o === ADD ? openSheet('partner', { id: p.id, task: t.id, back: true }) : save({ owner: o })) });
   // A move to another project leaves the ask it served, goes to that project's manager when its owner isn't in it, and
-  // from the commander into a project he doesn't run goes as an ask: store.updateTask holds all three. Anyone else moves
-  // a task only into a project they're in.
-  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => isOpen(x) && (t.personal ? x.personal : !x.personal && (isCommander() || inProject(x))) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
+  // from the commander into a project he doesn't run goes as an ask: store.updateTask holds all three, and the menu
+  // says so under each such project. Anyone else moves a task only into a project they're in.
+  const asAsk = (x) => isCommander() && !x.personal && !leads(x);
+  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => isOpen(x) && (t.personal ? x.personal : !x.personal && (isCommander() || inProject(x))) && canSeeDetail(x))
+    .map((x) => ({ id: x.id, label: x.name, dot: x.color, hint: asAsk(x) ? `תישלח כבקשה ל${person(x.manager).name}` : null }))],
     { selected: t.project || '', onPick: (pid) => { const np = project(pid); save({ project: pid || null, stage: np ? currentStage(np)?.id || null : null }); } });
   const pickStage = (e) => openMenu(e, p.stages.map((x) => ({ id: x.id, label: x.name })), { selected: t.stage, onPick: (sid) => save({ stage: sid }) });
   const stage = p?.stages.find((x) => x.id === t.stage);
@@ -327,7 +329,7 @@ export function TaskBody({ id, from }) {
       ${p && p.stages.length ? html`<div class="fact-row"><span class="core-l">שלב</span><button type="button" class="fact-btn" disabled=${!edit} onClick=${pickStage}>${stage ? stage.name : 'בלי שלב'}</button></div>` : null}
       <div class="fact-row"><span class="core-l">תאריך יעד</span><label class="fact-btn"><input type="date" value=${dateInput(t.due)} disabled=${!edit} onInput=${(e) => save({ due: e.currentTarget.value || null })} />${t.due ? dueWord(t.due) : 'בלי תאריך'}</label></div>
       ${!t.personal ? html`<div class="fact-row"><span class="core-l">התחייבות חיצונית</span>
-        <input class="input sm" value=${t.external || ''} disabled=${!edit} placeholder="למי הבטחנו, אם למישהו מחוץ לצוות" onChange=${(e) => save({ external: e.currentTarget.value.trim() || null })} aria-label="התחייבות חיצונית" /></div>` : null}
+        <input class="input sm" value=${t.external || ''} disabled=${!edit} placeholder="למי מבחוץ הבטחנו" onChange=${(e) => save({ external: e.currentTarget.value.trim() || null })} aria-label="התחייבות חיצונית" /></div>` : null}
     </div>
     ${t.external ? html`<p class="muted small">התחייבות לגורם חיצוני מגיעה למפקד אם היא באיחור או בסכנה (פחות משלושה ימי עבודה והיא לא בעבודה).</p>` : null}
     <label class="lbl" for="t-notes">הערות</label>

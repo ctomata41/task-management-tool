@@ -339,15 +339,19 @@ function Log({ p, mgr }) {
   </div>`;
 }
 
+// The commander replaces a manager (החלפה): the old one stays in the team as a partner, with their work and their
+// stars, and only taking them out (×) hands it over. The commander, who sees every project anyway, steps out instead,
+// and his own open work there becomes his asks to the new manager (store.updateProject).
 function People({ p, mgr }) {
   useStore();
   const ids = [p.manager, ...p.partners];
   const remove = (id) => updateProject(p.id, { partners: p.partners.filter((x) => x !== id) });
+  const replace = (m) => m !== p.manager && updateProject(p.id, { manager: m, partners: [...p.partners.filter((q) => q !== m), ...(isCommander(p.manager) ? [] : [p.manager])] });
   return html`<div class="sec">
     <div class="group">${ids.map((id) => { const x = person(id); return html`<div class="person-row">
       <${Avatar} id=${id} size=${36} />
       <div class="grow"><strong>${x.name}</strong><div class="muted small">${id === p.manager ? 'מנהל/ת הפרויקט' : 'שותף/ה'}${x.role === 'external' ? ` · ${x.org || 'מחוץ לצוות'}` : ''}${x.role === 'external' ? (x.account ? ' · עובד/ת במערכת, רק בפרויקטים שלו' : ' · לא משתמש/ת במערכת') : ''}</div></div>
-      ${id === p.manager && isCommander() ? html`<button type="button" class="btn sm" onClick=${(e) => openMenu(e, team().map((t) => ({ id: t.id, label: t.name, person: t.id })), { selected: p.manager, onPick: (m) => updateProject(p.id, { manager: m, partners: p.partners.filter((q) => q !== m) }) })}>החלפה</button>` : null}
+      ${id === p.manager && isCommander() ? html`<button type="button" class="btn sm" onClick=${(e) => openMenu(e, team().map((t) => ({ id: t.id, label: t.name, person: t.id })), { selected: p.manager, onPick: replace })}>החלפה</button>` : null}
       ${id !== p.manager && mgr ? html`<button type="button" class="icon-btn sm danger" aria-label=${`להוציא את ${x.name}`} onClick=${() => remove(id)}><${Icon} name="x" size=${16} /></button>` : null}
     </div>`; })}</div>
     ${mgr && !p.personal && isOpen(p) ? html`<button type="button" class="btn" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${16} />הוספת שותף</button>` : null}

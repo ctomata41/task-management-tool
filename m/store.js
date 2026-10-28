@@ -23,9 +23,11 @@ const fresh = () => ({ v: VERSION, people: clone(seed.people), projects: clone(s
 // tasks to a project's own manager become accepted asks. Every place counts as seen, so nothing nags anyone. Nobody set
 // this first order, so it carries no name or time (rankBy, rankAt) until the commander moves a project.
 // v2 also let anyone in the team add a task to any project or move one there. A task in a team project belongs to
-// someone in it now: only the people in a project change its tasks (canEditTask), and a locked project shows them to
-// nobody outside it (canSeeTask). So an open task whose owner isn't in its project goes to the project's manager, out
-// of focus.
+// someone in it now (canEditTask), so an open task whose owner isn't in its project: someone in the team who may read
+// the project keeps it, star and all, and joins the project; anyone else's (an outside partner's, the commander's, or
+// one behind a lock) goes to the project's manager, out of focus. What the commander made there then becomes his
+// accepted ask, so it stays on his order line and his to change. (Only the saved people and projects here: the state
+// isn't set yet.)
 export function migrate(saved) {
   if ((saved.v || 2) >= VERSION) return saved;
   const at = new Date().toISOString();
@@ -38,11 +40,18 @@ export function migrate(saved) {
   });
   const projectOf = (pid) => projects.find((x) => x.id === pid);
   const managerOf = (pid) => projectOf(pid)?.manager;
-  const outside = (t) => { const p = projectOf(t.project); return !!p && !p.personal && !t.ask && t.status !== 'done' && !!t.owner && !inProject(p, t.owner); };
+  const cmdr = people.find((x) => x.role === 'commander')?.id;
+  const keeps = (p, id) => { const x = people.find((y) => y.id === id); return !!x && x.role !== 'external' && x.id !== cmdr && (p.classification !== 'restricted' || !!x.command); };
+  const joins = new Map(); // project id → the people who join it with their own work
   const tasks = (saved.tasks || [])
-    .map((t) => (t.fromCommander && !t.ask && t.project && managerOf(t.project) === t.owner ? { ...t, ask: true, ack: { state: 'ok', at } } : t))
-    .map((t) => (outside(t) ? { ...t, owner: managerOf(t.project), focus: false, focusBy: null } : t));
-  return { ...saved, v: VERSION, people, projects, tasks };
+    .map((t) => {
+      const p = projectOf(t.project);
+      if (!p || p.personal || t.ask || t.status === 'done' || !t.owner || p.manager === t.owner || p.partners.includes(t.owner)) return t;
+      if (keeps(p, t.owner)) { joins.set(p.id, new Set([...(joins.get(p.id) || []), t.owner])); return t; }
+      return { ...t, owner: p.manager, focus: false, focusBy: null, fromCommander: p.manager !== cmdr && (!!t.fromCommander || t.by === cmdr) };
+    })
+    .map((t) => (t.fromCommander && !t.ask && t.project && managerOf(t.project) === t.owner ? { ...t, ask: true, ack: { state: 'ok', at } } : t));
+  return { ...saved, v: VERSION, people, projects: projects.map((p) => (joins.has(p.id) ? { ...p, partners: [...p.partners, ...joins.get(p.id)] } : p)), tasks };
 }
 
 const saved = LS.get(KEY);
@@ -147,7 +156,7 @@ export function canSeeDetail(p, who = state.me) {
 // Whoever runs a project: its manager, or a personal project's owner.
 export const leads = (p, who = state.me) => !!p && (p.personal ? p.personal === who : p.manager === who);
 // Who is in a project: its manager and its partners. Only they own its tasks and change them (canEditTask), and only
-// they add to it (addTask). (A declaration, since migrate() asks it while the saved state loads.)
+// they add to it (addTask).
 export function inProject(p, who = state.me) {
   return !!p && (p.manager === who || p.partners.includes(who));
 }
@@ -281,7 +290,8 @@ export function addTask(t) {
 // - an ask stays with its project's manager: its owner changes only with the manager (updateProject);
 // - a task that moves to another project leaves the ask it served, so an ask counts only its own project's tasks;
 // - the commander never reaches past a manager: a task he moves into a team project he doesn't run, or gives someone
-//   else there, goes to that project's manager as an ask (as addTask does);
+//   else there, goes to that project's manager as an ask (as addTask does), and the toast's ביטול takes it back as it
+//   was;
 // - a task in a team project belongs to someone in it: one that moves to a project its owner isn't in, or comes back
 //   to work (a done task reopened) after its owner left the project, goes to that project's manager, so it never drops
 //   out of sight or stays with someone who can't work on it.
@@ -296,11 +306,13 @@ export function updateTask(id, patch) {
   const p = project(change.project !== undefined ? change.project : t.project);
   const owner = change.owner !== undefined ? change.owner : t.owner;
   let say = null;
+  let undo = null;
   if (p && !p.personal && !t.ask && (moved || owner !== t.owner || reopened)) {
     if (isCommander() && !leads(p) && (moved || (owner !== t.owner && owner !== state.me))) {
       if (!isOpen(p)) { toast(CLOSED); return; }
       Object.assign(change, { owner: p.manager, by: state.me, ask: true, ack: null, priority: 'high', fromCommander: true, parent: null });
       say = `הבקשה נשלחה ל${person(p.manager).name}`;
+      undo = { label: 'ביטול', run: () => commit((s) => ({ tasks: s.tasks.map((x) => (x.id === id ? t : x)) })) };
     } else if (owner && !inProject(p, owner)) {
       change.owner = p.manager;
       say = handedTo(p, owner);
@@ -314,7 +326,7 @@ export function updateTask(id, patch) {
     return next;
   }) }));
   if (change.ask && !t.ask) haptic('success');
-  if (say) toast(say);
+  if (say) toast(say, undo ? { action: undo } : {});
 }
 export function setStatus(id, status) {
   const before = state.tasks.find((t) => t.id === id);
@@ -323,7 +335,11 @@ export function setStatus(id, status) {
   if (done) {
     haptic('success');
     const p = project(before?.project);
-    toast('בוצע', { action: { label: 'ביטול', run: () => updateTask(id, { status: before.status, focus: before.focus, focusBy: before.focusBy ?? null }) } });
+    // Its ביטול hands focus back to the task's own check, on the row it brings back (not one behind a dialog), or else
+    // to where focus was when it came (the status in the task's sheet).
+    const was = typeof document === 'undefined' ? null : document.activeElement;
+    const back = () => [...document.querySelectorAll(`.tt-task[data-task="${id}"] .tcheck`)].find((x) => !x.closest('[inert]')) || was;
+    toast('בוצע', { back, action: { label: 'ביטול', run: () => updateTask(id, { status: before.status, focus: before.focus, focusBy: before.focusBy ?? null }) } });
     // A moment later, and only to the same person: a switch of person in between drops the offer.
     const who = state.me;
     const later = (f) => setTimeout(() => { if (state.me === who) f(); }, 500);
@@ -441,9 +457,10 @@ const TEMPLATE_TRL = (id) => card.TEMPLATES.find((t) => t.id === id)?.trl;
 // stays unplaced until the commander places it. (One held before rankWas existed has no record and goes to the end.)
 // A new manager takes over the project's open asks, unanswered again; the commander's own asks become his tasks. The
 // old manager's pins come out with them: a pin is the call of whoever runs the project.
-// Whoever this change takes out of the project (a partner taken out, the manager replaced) or out of its detail (a
-// project made שמור/סודי) hands their open tasks there to its manager, so none is left with someone who can no longer
-// see it or work on it (canEditTask).
+// Whoever this change takes out of the project (a partner taken out, the commander handing over a project he ran) or
+// out of its detail (a project made שמור/סודי) hands their open tasks there to its manager, so none is left with someone
+// who can no longer see it or work on it (canEditTask). The commander's own become his asks to the manager, unanswered,
+// as anything he adds in a project he doesn't run does.
 export function updateProject(id, patch) {
   const handed = [];
   commit((s) => {
@@ -465,7 +482,8 @@ export function updateProject(id, patch) {
       const o = t.owner;
       if (o && ((inProject(was, o) && !inProject(now, o)) || (canSeeDetail(was, o) && !canSeeDetail(now, o)))) {
         handed.push(o);
-        return { ...t, owner: now.manager, focus: false, focusBy: null };
+        const asks = isCommander(o) && t.by === o ? { ask: true, ack: null, fromCommander: true, parent: null } : {};
+        return { ...t, owner: now.manager, focus: false, focusBy: null, ...asks };
       }
       return newManager && t.focus && t.focusBy === was.manager ? { ...t, focus: false, focusBy: null } : t;
     });

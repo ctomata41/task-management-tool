@@ -2,7 +2,7 @@
 // that change in one tap. Rows sit in coloured groups (by date, stage, status, person or project); each group ends
 // with a line to add a task straight into it, and a bar that shows at a glance how much of it is done.
 import { useState, useRef } from 'preact/hooks';
-import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput, isoDay } from './ui.js';
+import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput, isoDay, keepFocus } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, PRIORITY, PRIORITY_ORDER, setStatus, updateTask, toggleFocus, addTask, openSheet, person, project,
   canEditTask, canSeeTask, isOpen, team, isCommander, leads, inProject, getState, focusCount } from './store.js';
 import { byRank } from './card.js';
@@ -142,7 +142,7 @@ function Row({ t, cols, star, ask }) {
   return html`<div class=${'tt-row tt-task' + (done ? ' is-done' : '')} role="row" data-task=${t.id}>
     <span class="tc-bar" aria-hidden="true"></span>
     <div class="tc tc-title" role="cell">
-      <button type="button" class=${'tcheck' + (done ? ' on' : '')} disabled=${!edit} aria-label=${done ? 'להחזיר לעבודה' : 'סימון כבוצע'} onClick=${(e) => { e.stopPropagation(); setStatus(t.id, done ? 'todo' : 'done'); }}>${done ? html`<${Icon} name="check" size=${13} />` : null}</button>
+      <button type="button" class=${'tcheck' + (done ? ' on' : '')} disabled=${!edit} aria-label=${done ? 'להחזיר לעבודה' : 'סימון כבוצע'} onClick=${(e) => { e.stopPropagation(); keepFocus(e, '.tt-task'); setStatus(t.id, done ? 'todo' : 'done'); }}>${done ? html`<${Icon} name="check" size=${13} />` : null}</button>
       <button type="button" class="tt-open" onClick=${open}>
         <span class="tt-name">${t.title}</span>
         <span class="tt-chips">
