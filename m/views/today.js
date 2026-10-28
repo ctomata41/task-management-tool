@@ -1,10 +1,11 @@
 // "היום שלי": the first screen for everyone, as one table of my tasks (Monday's "My work"). The focus group comes
 // first, then the rest by date (or project, status, priority), with team and personal work kept apart by one switch.
-// Above it, a line of counts and only what waits for me: weekly updates, stages ready to close, the commander's queue.
+// Above it, a line of counts and only what waits for me: the commander's asks to answer, a new place for a project I
+// run, weekly updates, stages ready to close, the commander's queue.
 import { useState } from 'preact/hooks';
-import { html, Icon, Seg } from '../ui.js';
+import { html, Icon, Seg, dueWord } from '../ui.js';
 import { TaskTable, BoardBar, groupTasks, matches } from '../table.js';
-import { useStore, myTasks, updatesDue, managedProjects, openSheet, isCommander, commanderQueue, person, getState } from '../store.js';
+import { useStore, myTasks, updatesDue, managedProjects, openSheet, isCommander, commanderQueue, person, project, asksWaiting, movedProjects, ackAsk, ackRank } from '../store.js';
 import { stageReady, currentStage } from '../card.js';
 import { dayDiff } from '../ui.js';
 
@@ -40,10 +41,12 @@ export function Today() {
   const due = updatesDue();
   const ready = managedProjects().filter((p) => stageReady(p, s.tasks));
   const queue = isCommander() ? commanderQueue() : [];
+  const asks = asksWaiting();
+  const moved = movedProjects();
   const d = new Date();
   const lateN = open.filter((t) => t.due && dayDiff(t.due) < 0).length;
   const todayN = open.filter((t) => t.due && dayDiff(t.due) === 0).length;
-  const waitN = !personal ? due.length + ready.length + queue.length : 0;
+  const waitN = !personal ? due.length + ready.length + queue.length + asks.length + moved.length : 0;
   return html`<div class="page today2">
     <header class="hello">
       <div class="eyebrow">יום ${DAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}</div>
@@ -57,9 +60,11 @@ export function Today() {
       ${waitN ? html`<div class="stat wait"><b>${waitN}</b><span>מחכים לך</span></div>` : null}
     </div>
 
-    ${!personal && (queue.length || due.length || ready.length) ? html`<section class="group wait-group" aria-label="מחכה לך">
+    ${!personal && (queue.length || asks.length || moved.length || due.length || ready.length) ? html`<section class="group wait-group" aria-label="מחכה לך">
         ${queue.length ? html`<a class="wait-row" href="#/overview"><span class="wait-ic red"><${Icon} name="flag" /></span>
           <div class="grow"><strong>${queue.length} דברים בפרויקטים צריכים אותך</strong><span class="muted small">${queue.slice(0, 2).map((x) => x.text).join(' · ')}</span></div><${Icon} name="chevronLeft" /></a>` : null}
+        ${asks.map((t) => html`<${AskRow} key=${t.id} t=${t} />`)}
+        ${moved.length ? html`<${MovedRow} list=${moved} />` : null}
         ${ready.map((p) => html`<button type="button" class="wait-row" onClick=${() => openSheet('gate', { id: p.id })}><span class="wait-ic green"><${Icon} name="check" /></span>
           <div class="grow"><strong>כל המשימות של שלב ${currentStage(p).name} בוצעו</strong><span class="muted small">${p.name} · לסגור את השלב?</span></div><${Icon} name="chevronLeft" /></button>`)}
         ${due.map((p) => html`<button type="button" class="wait-row" onClick=${() => openSheet('weekly', { id: p.id })}><span class="wait-ic"><${Icon} name="hill" /></span>
@@ -72,5 +77,30 @@ export function Today() {
     <${TaskTable} key=${mode + groupBy} groups=${groups} star memory=${`m.today.${mode}.${groupBy}`}
       cols=${personal ? ['status', 'priority', 'due'] : ['project', 'status', 'priority', 'due']}
       empty=${search ? 'לא נמצאו משימות.' : personal ? 'אין משימות אישיות פתוחות.' : 'אין משימות צוות פתוחות.'} />
+  </div>`;
+}
+
+// An ask from the commander that waits for my answer, answered right on the row; the rest of the row opens the ask.
+function AskRow({ t }) {
+  const p = project(t.project);
+  const meta = [t.why, p?.name, t.due ? `עד ${dueWord(t.due)}` : null].filter(Boolean).join(' · ');
+  return html`<div class="wait-row wait-ask">
+    <span class="wait-ic cmd"><${Icon} name="flag" /></span>
+    <button type="button" class="grow wait-open" onClick=${() => openSheet('task', { id: t.id })}><strong>בקשה מ${person(t.by).name}</strong><span>${t.title}</span>
+      ${meta ? html`<span class="muted small">${meta}</span>` : null}</button>
+    <div class="wait-acts">
+      <button type="button" class="btn btn-primary sm" onClick=${() => ackAsk(t.id, 'ok')}>קיבלתי</button>
+      <button type="button" class="btn sm" onClick=${() => ackAsk(t.id, 'talk')}>צריך לדבר</button>
+    </div>
+  </div>`;
+}
+
+// One row for every project I run that the commander moved, until "הבנתי"; the rest of the row opens the order.
+function MovedRow({ list }) {
+  return html`<div class="wait-row wait-moved">
+    <span class="wait-ic"><${Icon} name="list" /></span>
+    <a class="grow wait-open" href="#/overview"><strong>סדר העדיפויות השתנה</strong>
+      ${list.map((p) => html`<span class="small" key=${p.id}>${p.name}: עכשיו במקום ${p.rank} (${p.rankSeen ? `היה ${p.rankSeen}` : 'קודם בלי מקום'})</span>`)}</a>
+    <div class="wait-acts"><button type="button" class="btn sm" onClick=${() => ackRank()}>הבנתי</button></div>
   </div>`;
 }

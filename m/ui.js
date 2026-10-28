@@ -49,11 +49,13 @@ export function Health({ p }) {
 // ---------- the order and the asks ----------
 // A project's place in the order as a capsule. The commander moves it from here, with a menu that grows from the
 // capsule; the team reads it; outside partners never see places. Held, stopped, finished and personal projects have none.
-export function RankCap({ p }) {
+// On a row of the order it is the number alone; `full` spells it out for a project's own page: "מקום 2 מתוך 4".
+export function RankCap({ p, full = false }) {
   if (!inOrder(p) || person(getState().me).role === 'external') return null;
   const cls = 'rank-cap' + (p.rank ? '' : ' none');
-  const text = p.rank ? String(p.rank) : 'עוד בלי מקום';
-  if (!isCommander()) return html`<span class=${cls}>${p.rank ? html`<span class="sr">מקום </span>` : null}${text}</span>`;
+  const words = p.rank ? `מקום ${p.rank}${full ? ` מתוך ${rankedProjects().length}` : ''}` : '';
+  const text = !p.rank ? 'עוד בלי מקום' : full ? words : String(p.rank);
+  if (!isCommander()) return html`<span class=${cls}>${p.rank && !full ? html`<span class="sr">מקום </span>` : null}${text}</span>`;
   const pick = (e) => {
     e.preventDefault(); // it may sit on a row that is a link
     e.stopPropagation();
@@ -63,7 +65,7 @@ export function RankCap({ p }) {
     openMenu(e, items, { selected: p.rank || null, onPick: (k) => setRank(p.id, k) });
   };
   return html`<button type="button" class=${cls} aria-haspopup="menu" onClick=${pick}
-    aria-label=${p.rank ? `מקום ${p.rank} בסדר העדיפויות. לשנות את המקום` : 'עוד בלי מקום בסדר העדיפויות. לקבוע מקום'}>${text}</button>`;
+    aria-label=${p.rank ? `${words} בסדר העדיפויות. לשנות את המקום` : 'עוד בלי מקום בסדר העדיפויות. לקבוע מקום'}>${text}</button>`;
 }
 
 // When the rows of a list change order, each row slides from where it was on screen to its new place, on a spring
