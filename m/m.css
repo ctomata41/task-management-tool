@@ -686,3 +686,25 @@ a.prow:active { background: var(--press); }
   .side-jv { display: none; }
 }
 .avatar.pending { background: var(--s-todo); color: var(--on-accent); }
+
+/* ===================== priorities: the order, asks, focus pins and the command view ===================== */
+/* Each part keeps its rules inside its own block below, phone rules and press feedback included. */
+
+/* --- core: the place capsule, the ask's state, the lock (m/ui.js, m/store.js) --- */
+/* end of core */
+
+
+/* --- rows: the manager's star and the chips (m/table.js, m/parts.js) --- */
+/* end of rows */
+
+
+/* --- the ask sheet and the ask's band (m/views/sheets.js) --- */
+/* end of ask sheet */
+
+
+/* --- מצב: the queue and the order (m/views/overview.js) --- */
+/* end of overview */
+
+
+/* --- today and the portfolio (m/views/today.js, m/views/projects.js) --- */
+/* end of today and portfolio */
