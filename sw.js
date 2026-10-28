@@ -32,7 +32,7 @@ self.addEventListener('fetch', (e) => {
       if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
       return res;
     })
-    .catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' && !url.pathname.startsWith('/next') ? caches.match('/index.html') : Response.error()))));
+    .catch(() => caches.match(req).then((hit) => hit || (req.mode === 'navigate' && !url.pathname.startsWith('/next') && !url.pathname.startsWith('/m/') ? caches.match('/index.html') : Response.error()))));
 });
 
 // Every push is shown: browsers drop a subscription whose pushes show nothing.
