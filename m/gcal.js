@@ -151,7 +151,9 @@ const TEXT = {
   setup: 'חיבור יומן גוגל עוד לא הוגדר לצוות.',
 };
 
-// The card above the week until the calendar is connected. "אחר כך" folds it into the chip in the week's header.
+// The card above the week until the calendar is connected. "אחר כך" folds it into the chip in the week's header, and
+// the chip brings it back; focus goes along to the one that takes the other's place.
+const fold = (gc, later, to) => { gc.setLater(later); requestAnimationFrame(() => document.querySelector(to)?.focus()); };
 export function GcalCard({ gc }) {
   if (gc.state === 'on' || gc.state === 'loading' || gc.later) return null;
   const text = gc.state === 'error' ? gc.error : TEXT[gc.state];
@@ -165,7 +167,7 @@ export function GcalCard({ gc }) {
       ${signin ? html`<a class="btn btn-primary sm" href=${signin}>כניסה לצוות</a>` : null}
       ${gc.state === 'connect' || gc.state === 'elsewhere' ? html`<button type="button" class="btn btn-primary sm" onClick=${connect}>חיבור יומן Google</button>` : null}
       ${gc.state === 'error' && !gc.signin ? html`<button type="button" class="btn sm" onClick=${reload}>לנסות שוב</button>` : null}
-      <button type="button" class="btn sm ghost" onClick=${() => gc.setLater(true)}>אחר כך</button>
+      <button type="button" class="btn sm ghost" onClick=${() => fold(gc, true, '.gc-chip')}>אחר כך</button>
     </div>
   </div>`;
 }
@@ -180,5 +182,5 @@ export function GcalChip({ gc }) {
     return html`<button type="button" class="gc-chip is-on" onClick=${menu} title=${gc.email || ''}><span class="gc-dot"></span>יומן Google<${Icon} name="chevronDown" size=${14} /></button>`;
   }
   if (!gc.later) return null;
-  return html`<button type="button" class="gc-chip" onClick=${() => gc.setLater(false)}><${Icon} name="calendar" size=${14} />חיבור יומן Google</button>`;
+  return html`<button type="button" class="gc-chip" onClick=${() => fold(gc, false, '.gc-card .gc-acts :is(a, button)')}><${Icon} name="calendar" size=${14} />חיבור יומן Google</button>`;
 }

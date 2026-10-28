@@ -5,7 +5,7 @@ import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, Seg, Empty, Classified, AskPill, dueWord, dueDate, dateInput, isoDay, ago, openMenu, OUT_KIND } from '../ui.js';
 import { useStore, project, person, team, isCommander, canManage, canEditTask, closeSheet, openSheet, addProject, closeStage, approveGate, returnGate,
   weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addPerson, updateProject, saveMeeting, projectOutputs,
-  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, canSeeDetail, canSeeTask, projectAsks, askTasks, isOpen } from '../store.js';
+  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, inProject, canSeeDetail, canSeeTask, projectAsks, askTasks, isOpen } from '../store.js';
 import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, askState } from '../card.js';
 import { MeetingSummary } from './outputs.js';
 import { ownerItems, ownerPool, ADD, TaskTable, focusStar } from '../table.js';
@@ -244,8 +244,8 @@ export function AskBody({ id }) {
 // The top of an ask's drawer: who asked, why, by when and where it stands. The manager answers it here (קיבלתי or
 // צריך לדבר) while the project is open, and can still take a צריך לדבר back with קיבלתי until they talk; after a talk
 // the commander marks it talked through, which accepts it again. Once all of its tasks are done, whoever can close it
-// is offered to. Each answer hands focus on, since its buttons go: after קיבלתי to the line that breaks the ask down,
-// otherwise to the band.
+// is offered to. Each answer hands focus on, since its buttons go: after קיבלתי from the keyboard to the line that breaks
+// the ask down, otherwise to the band (a tap that answers shouldn't bring up the keyboard over the drawer).
 function AskBand({ t, p }) {
   const s = getState();
   const band = useRef();
@@ -254,10 +254,11 @@ function AskBand({ t, p }) {
   const retract = live && t.ack?.state === 'talk';
   const talk = isCommander() && t.ack?.state === 'talk' && t.status !== 'done';
   const ready = t.status !== 'done' && canEditTask(t) && askState(t, s.tasks).state === 'ready';
-  const then = (f, next) => () => {
+  const then = (f, next) => (e) => {
+    const keys = next === 'add' && e.detail === 0; // a click from Enter or Space has no presses to count
     f();
     requestAnimationFrame(() => {
-      const add = next === 'add' ? band.current?.closest('.tsheet')?.querySelector('.tt-add input') : null;
+      const add = keys ? band.current?.closest('.tsheet')?.querySelector('.tt-add input') : null;
       (add || band.current)?.focus({ preventScroll: !add });
     });
   };
@@ -276,13 +277,23 @@ function AskBand({ t, p }) {
 }
 
 // ---------- one task ----------
-export function TaskBody({ id }) {
+export function TaskBody({ id, from }) {
   const s = useStore();
   const t = s.tasks.find((x) => x.id === id);
   const [title, setTitle] = useState(t?.title || '');
   const [notes, setNotes] = useState(t?.notes || '');
   const titleRef = useRef();
   useEffect(() => { setTitle(t?.title || ''); setNotes(t?.notes || ''); }, [id]);
+  // Back from one of its tasks (store.closeSheet), an ask puts focus on that task's row and scrolls it into view, so
+  // the way through the breakdown goes on from there (ui.useDialogFocus leaves focus where it is).
+  useEffect(() => {
+    const row = from && document.querySelector(`.ask-kids .tt-task[data-task="${from}"]`);
+    const body = row?.closest('.modal-body');
+    if (!body) return;
+    row.querySelector('.tt-open')?.focus({ preventScroll: true });
+    const below = row.getBoundingClientRect().bottom - body.getBoundingClientRect().bottom; // both move with the sheet
+    if (below > 0) body.scrollTop += below + 16;
+  }, []);
   // The title grows with its words (borders included), measured before the sheet paints, so a long one shows whole.
   useLayoutEffect(() => { const el = titleRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`; } }, [title]);
   if (!t) return html`<${Empty}>המשימה נמחקה.</${Empty}>`;
@@ -296,17 +307,18 @@ export function TaskBody({ id }) {
   const save = (patch) => updateTask(t.id, patch);
   const pickOwner = (e) => openMenu(e, ownerItems(p, ownerPool(t, p)), { selected: t.owner, onPick: (o) => (o === ADD ? openSheet('partner', { id: p.id, task: t.id, back: true }) : save({ owner: o })) });
   // A move to another project leaves the ask it served, goes to that project's manager when its owner isn't in it, and
-  // from the commander into a project he doesn't run goes as an ask: store.updateTask holds all three.
-  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => isOpen(x) && (t.personal ? x.personal : !x.personal) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
+  // from the commander into a project he doesn't run goes as an ask: store.updateTask holds all three. Anyone else moves
+  // a task only into a project they're in.
+  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => isOpen(x) && (t.personal ? x.personal : !x.personal && (isCommander() || inProject(x))) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
     { selected: t.project || '', onPick: (pid) => { const np = project(pid); save({ project: pid || null, stage: np ? currentStage(np)?.id || null : null }); } });
   const pickStage = (e) => openMenu(e, p.stages.map((x) => ({ id: x.id, label: x.name })), { selected: t.stage, onPick: (sid) => save({ stage: sid }) });
   const stage = p?.stages.find((x) => x.id === t.stage);
   return html`<div class="form tsheet">
     ${edit ? html`<textarea ref=${titleRef} class="input area title-in" rows="1" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} onBlur=${() => title.trim() && title !== t.title && save({ title: title.trim() })} aria-label="כותרת"></textarea>` : html`<h3>${t.title}</h3>`}
     ${t.ask ? html`<${AskBand} t=${t} p=${p} />` : t.fromCommander ? html`<div class="note-band why"><${Icon} name="flag" size=${16} /><span>הורד/ה מ${person(t.by).name}</span></div>` : null}
-    ${t.ask ? html`<div class="ask-kids"><${TaskTable} cols=${['owner', 'status']} star ask=${t.id} memory="m.ask" empty="עוד אין משימות לבקשה."
+    ${t.ask ? html`<div class="ask-kids"><${TaskTable} cols=${['owner', 'status']} star ask=${t.id} memory="m.ask" empty="עוד אין משימות לבקשה." emptyIcon="list"
       groups=${[{ id: t.id, name: lead ? 'לפרק למשימות' : 'המשימות של הבקשה', color: 'var(--s-waiting)', tasks: askTasks(t.id), addLabel: 'משימה לבקשה',
-        add: lead && t.status !== 'done' ? { project: t.project, stage: t.stage, parent: t.id, priority: t.priority } : null }]} /></div>` : null}
+        add: lead && isOpen(p) && t.status !== 'done' ? { project: t.project, stage: t.stage, parent: t.id, priority: t.priority } : null }]} /></div>` : null}
     <div class="st-pick">${STATUS_ORDER.map((k) => html`<button type="button" class=${'st-opt' + (t.status === k ? ' on' : '')} style=${`--c:${STATUS[k].color}`} disabled=${!edit} aria-pressed=${t.status === k} onClick=${() => setStatus(t.id, k)}>${STATUS[k].label}</button>`)}</div>
     <div class="facts">
       ${up ? html`<div class="fact-row"><span class="core-l">בקשת ${person(up.by).name}</span><button type="button" class="fact-btn" onClick=${() => openSheet('task', { id: up.id })}><${Icon} name="flag" size=${15} />${up.title}</button></div>` : null}

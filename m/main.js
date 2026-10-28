@@ -4,7 +4,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
 import { QuickAdd } from './parts.js';
-import { useStore, openSheet, handOver, person, isCommander, canSee, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount } from './store.js';
+import { useStore, openSheet, handOver, person, isCommander, canSee, canSeeTask, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount } from './store.js';
 import { Today } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
 import { Overview } from './views/overview.js';
@@ -103,6 +103,8 @@ function App() {
   const me = person(s.me);
   const sh = s.sheet && SHEETS[s.sheet.kind];
   const Body = sh?.body;
+  // A task that is an ask is titled as one, for whoever may see it.
+  const ask = s.sheet?.kind === 'task' && s.tasks.find((x) => x.id === s.sheet.id && x.ask && canSeeTask(x));
   const mine = myProjects().filter((p) => p.phase !== 'stopped' && p.phase !== 'done');
   return html`<div class=${'shell m-app' + (s.reopening ? ' reopening' : '')}>
     <aside class="sidebar">
@@ -136,7 +138,7 @@ function App() {
       })}
     </nav>
     <button type="button" class="fab" aria-label="להוסיף" onClick=${() => openSheet('add')}><${Icon} name="plus" size=${28} /></button>
-    ${Body ? html`<${Sheet} key=${s.sheet.kind + (s.sheet.id || '')} title=${sh.title} wide=${sh.wide} kind=${sh.kind || 'modal'} cls=${'s-' + s.sheet.kind}><${Body} ...${s.sheet} /></${Sheet}>` : null}
+    ${Body ? html`<${Sheet} key=${s.sheet.kind + (s.sheet.id || '')} title=${ask ? 'בקשה' : sh.title} wide=${sh.wide} kind=${sh.kind || 'modal'} cls=${'s-' + s.sheet.kind}><${Body} ...${s.sheet} /></${Sheet}>` : null}
     ${s.jarvis ? html`<${JarvisScreen} />` : null}
     <${MenuLayer} />
     <${Toasts} />

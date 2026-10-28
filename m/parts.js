@@ -1,11 +1,12 @@
 // The one-line add the + sheet uses: a title, and optional chips for project, owner and date.
 import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, openMenu, dueWord } from './ui.js';
-import { useStore, person, project, addTask, team, visibleProjects, canSeeDetail, isCommander, leads, isOpen } from './store.js';
+import { useStore, person, project, addTask, team, visibleProjects, isCommander, leads, isOpen, inProject } from './store.js';
 
 // One line to add a task: the title, and optional chips for project, owner and date. Enter adds it. A task added under an
 // ask carries its parent and the ask's priority. What the commander adds in a project someone else runs goes to its
-// manager as an ask (addTask), so the line says so and offers only the manager.
+// manager as an ask (addTask), so the line says so and offers only the manager. Anyone else adds only to a project
+// they're in, for its people; an outside partner only for themselves.
 export function QuickAdd({ project: pid, stage, parent, priority, personal, placeholder = 'משימה חדשה…', ownerDefault }) {
   const s = useStore();
   const [title, setTitle] = useState('');
@@ -16,8 +17,9 @@ export function QuickAdd({ project: pid, stage, parent, priority, personal, plac
   const p = proj ? project(proj) : null;
   const asAsk = isCommander() && !!p && !p.personal && !leads(p);
   const people = p ? [p.manager, ...p.partners].filter((id, i, a) => a.indexOf(id) === i) : [s.me];
-  const pool = asAsk ? [p.manager] : p ? people : (isCommander() ? team().map((x) => x.id) : [s.me]);
-  const who = pool.includes(owner) ? owner : asAsk ? p.manager : s.me;
+  const pool = asAsk ? [p.manager] : person(s.me).role === 'external' ? [s.me] : p ? people : (isCommander() ? team().map((x) => x.id) : [s.me]);
+  // Someone the pool doesn't hold (another project's partner) gives way to me, or where I'm not in it, to its manager.
+  const who = pool.includes(owner) ? owner : pool.includes(s.me) ? s.me : pool[0];
   const submit = (e) => {
     e.preventDefault();
     const v = title.trim();
@@ -26,7 +28,7 @@ export function QuickAdd({ project: pid, stage, parent, priority, personal, plac
     setTitle(''); setDue('');
     ref.current?.focus();
   };
-  const pickProject = (e) => openMenu(e, [{ id: '', label: personal ? 'בלי פרויקט' : 'בלי פרויקט (רק אצלי)', icon: 'user' }, ...visibleProjects().filter((x) => (personal ? x.personal : !x.personal) && isOpen(x) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
+  const pickProject = (e) => openMenu(e, [{ id: '', label: personal ? 'בלי פרויקט' : 'בלי פרויקט (רק אצלי)', icon: 'user' }, ...visibleProjects().filter((x) => (personal ? x.personal : !x.personal && (isCommander() || inProject(x))) && isOpen(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
     { selected: proj || '', onPick: (id) => setProj(id || null) });
   const pickOwner = (e) => openMenu(e, pool.map((id) => ({ id, label: person(id).name + (person(id).role === 'external' ? ` · ${person(id).org || 'מבחוץ'}` : ''), person: id })), { selected: who, onPick: setOwner });
   return html`<form class="qadd" onSubmit=${submit}>

@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
-import { useStore, set, getState, person, project, dismissToast, closeSheet, isCommander, setRank, rankedProjects, canSeeTask } from './store.js';
+import { useStore, set, getState, person, project, dismissToast, holdToast, closeSheet, isCommander, setRank, rankedProjects, canSeeTask } from './store.js';
 import { HEALTH, CLASSIFICATION, ASK_STATE, status, localDay, inOrder, askState } from './card.js';
 
 export const html = htm.bind(h);
@@ -59,10 +59,11 @@ export function RankCap({ p, full = false }) {
   const pick = (e) => {
     e.preventDefault(); // it may sit on a row that is a link
     e.stopPropagation();
+    const cap = e.currentTarget; // the toast's ביטול hands focus back to it
     // Every place there is, and one more at the end for a project that has none yet.
     const n = rankedProjects().filter((x) => x.id !== p.id).length + 1;
     const items = Array.from({ length: n }, (_, i) => ({ id: i + 1, label: i ? `למקום ${i + 1}` : 'לראש הסדר' }));
-    openMenu(e, items, { selected: p.rank || null, onPick: (k) => setRank(p.id, k) });
+    openMenu(e, items, { selected: p.rank || null, onPick: (k) => setRank(p.id, k, cap) });
   };
   return html`<button type="button" class=${cls} aria-haspopup="menu" onClick=${pick}
     aria-label=${p.rank ? `${words} בסדר העדיפויות. לשנות את המקום` : 'עוד בלי מקום בסדר העדיפויות. לקבוע מקום'}>${text}</button>`;
@@ -167,22 +168,34 @@ export function keepFocus(e, rowSel) {
   requestAnimationFrame(() => {
     const a = document.activeElement;
     if (a && a !== document.body && a.isConnected) return;
-    const to = [...near, after].find((x) => x?.isConnected && !x.disabled && x.getClientRects().length);
+    // First the row now in its place (one that came out from behind "ועוד"), else the one now before it.
+    const now = list.isConnected ? [...list.children].filter((x) => x.matches(rowSel)) : [];
+    const here = [now[i], now[i - 1]].filter(Boolean).map(first);
+    const to = [...here, ...near, after].find((x) => x?.isConnected && !x.disabled && x.getClientRects().length);
     if (to) to.focus(); else focusTitle();
   });
 }
 
-// A dialog takes focus when it opens (unless a field in it already did) and gives it back to what opened it, or to the
-// page's title when that is gone (an ask that was answered or done, a row that moved away).
+// A dialog takes focus when it opens (unless something in it already did) and gives it back to what opened it, or to
+// the page's title when that is gone (an ask that was answered or done, a row that moved away). While it is open the
+// page behind it is inert, so Tab stays in the dialog and Enter can't reach a control behind it; the menus and the
+// toasts stay live, so a toast's ביטול is still in reach.
+const BEHIND = '.m-app > :is(.sidebar, .main, .m-tabbar, .fab)';
+let dialogs = 0;
 export function useDialogFocus(panel) {
+  // What had focus before this dialog came, in case focus is already inside it when it settles (TaskBody back on a row).
+  const before = useRef(document.activeElement);
   useEffect(() => {
-    const opener = document.activeElement;
     const el = panel.current;
+    const opener = el.contains(document.activeElement) ? before.current : document.activeElement;
+    dialogs++;
+    document.querySelectorAll(BEHIND).forEach((x) => { x.inert = true; });
     if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
     return () => {
+      if (!--dialogs) document.querySelectorAll(BEHIND).forEach((x) => { x.inert = false; });
       const a = document.activeElement;
       if (a && a !== document.body && !el.contains(a)) return;
-      if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+      if (opener?.isConnected && opener !== document.body && !el.contains(opener)) opener.focus({ preventScroll: true });
       else focusTitle();
     };
   }, []);
@@ -249,10 +262,25 @@ function useGlide(ref) {
     }
   });
 }
+// A toast stays while the pointer or focus is on it (store.holdToast), and starts its time again when they leave. When it
+// goes with focus in it (its ביטול, its X, or the time ran out), focus goes back to where it was when the toast came
+// (t.back), or else to where it came into the toast from, never to the top of the page.
 function Toast({ t }) {
   const ref = useRef();
+  const on = useRef({ hover: false, focus: false, from: null });
   useLayer(ref, ref, { kind: 'toast' });
-  return html`<div class="toast" ref=${ref}>
+  const hold = (k, v) => { on.current[k] = v; holdToast(t.id, on.current.hover || on.current.focus); };
+  useEffect(() => () => {
+    if (!ref.current?.contains(document.activeElement)) return;
+    requestAnimationFrame(() => {
+      const back = typeof t.back === 'function' ? t.back() : t.back;
+      const to = [back, on.current.from].find((x) => x?.isConnected && x !== document.body && !x.closest('.toasts, [inert]'));
+      to?.focus({ preventScroll: true });
+    });
+  }, []);
+  const out = (e) => !e.currentTarget.contains(e.relatedTarget); // its own node: focus can leave after it unmounted
+  return html`<div class="toast" ref=${ref} onMouseEnter=${() => hold('hover', true)} onMouseLeave=${() => hold('hover', false)}
+    onFocusIn=${(e) => { if (out(e)) { on.current.from = e.relatedTarget; hold('focus', true); } }} onFocusOut=${(e) => { if (out(e)) hold('focus', false); }}>
     <span>${t.text}</span>
     ${t.action ? html`<button type="button" onClick=${() => { dismissToast(t.id); t.action.run(); }}>${t.action.label}</button>` : null}
     <button type="button" class="toast-x" aria-label="סגירה" onClick=${() => dismissToast(t.id)}><${Icon} name="x" size=${14} /></button>

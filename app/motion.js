@@ -292,8 +292,9 @@ function dragToDismiss(panel, close) {
     end(e.timeStamp);
     setTimeout(() => panel.removeEventListener('click', swallow, true), 0);
   };
-  // From the content: only a pull down while it is scrolled to the top, decided on the first movement.
-  const body = panel.querySelector('.modal-body, .drawer-body');
+  // From the content (Jarvis's stage included): only a pull down while it is scrolled to the top, decided on the first
+  // movement.
+  const body = panel.querySelector('.modal-body, .drawer-body, .jv-stage');
   const tStart = (e) => { touch = !drag && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, mode: null } : null; };
   const tMove = (e) => {
     if (!touch) return;

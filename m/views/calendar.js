@@ -38,6 +38,7 @@ export function Calendar() {
 function Week() {
   const s = useStore();
   const [offset, setOffset] = useState(0);
+  const nextBtn = useRef();
   const today = dayStart(Date.now());
   const sunday = addDays(today, -new Date(today).getDay() + offset * 7);
   const days = Array.from({ length: 7 }, (_, i) => addDays(sunday, i));
@@ -49,8 +50,8 @@ function Week() {
     <div class="wk-head">
       <button type="button" class="icon-btn" aria-label="השבוע הקודם" onClick=${() => setOffset(offset - 1)}><${Icon} name="chevronRight" /></button>
       <h2>${label}</h2>
-      <button type="button" class="icon-btn" aria-label="השבוע הבא" onClick=${() => setOffset(offset + 1)}><${Icon} name="chevronLeft" /></button>
-      ${offset ? html`<button type="button" class="btn sm" onClick=${() => setOffset(0)}>חזרה להשבוע</button>` : null}
+      <button type="button" class="icon-btn" aria-label="השבוע הבא" ref=${nextBtn} onClick=${() => setOffset(offset + 1)}><${Icon} name="chevronLeft" /></button>
+      ${offset ? html`<button type="button" class="btn sm" onClick=${() => { setOffset(0); requestAnimationFrame(() => nextBtn.current?.focus()); }}>חזרה להשבוע</button>` : null}
       <span class="grow"></span>
       <${GcalChip} gc=${gc} />
     </div>

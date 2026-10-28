@@ -279,6 +279,8 @@
 
 /* ---------- phones ---------- */
 @media (max-width: 900px) {
+  /* A control reached with the keyboard, or scrolled to, stops clear of the floating tab bar and of the top bar. */
+  html { scroll-padding-block: calc(env(safe-area-inset-top, 0px) + 64px) calc(env(safe-area-inset-bottom, 0px) + var(--tab-h) + 34px); }
   .grabber { display: block; }
   .page-head2 .btn { width: 100%; }
   .head-acts { width: 100%; }
@@ -917,6 +919,8 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
      that falls through onto the dimmed backdrop of a short sheet doesn't close it (ui.Sheet). */
   .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast { pointer-events: none; }
   .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast button { pointer-events: auto; }
+  /* Docked, only the newest toast shows, so the stack never grows down over the sheet's title and its buttons. */
+  .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast:not(:last-child) { display: none; }
   .wait-row:has(> .wait-acts) { flex-wrap: wrap; }
   .wait-row:has(> .wait-acts) > .wait-open { flex-basis: 0; }
   .wait-row > .wait-acts { flex-basis: 100%; padding-inline-start: 44px; }

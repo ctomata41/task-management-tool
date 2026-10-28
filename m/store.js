@@ -22,6 +22,10 @@ const fresh = () => ({ v: VERSION, people: clone(seed.people), projects: clone(s
 // for the live team projects (the sample's order first, the rest after it as they were saved), and the commander's
 // tasks to a project's own manager become accepted asks. Every place counts as seen, so nothing nags anyone. Nobody set
 // this first order, so it carries no name or time (rankBy, rankAt) until the commander moves a project.
+// v2 also let anyone in the team add a task to any project or move one there. A task in a team project belongs to
+// someone in it now: only the people in a project change its tasks (canEditTask), and a locked project shows them to
+// nobody outside it (canSeeTask). So an open task whose owner isn't in its project goes to the project's manager, out
+// of focus.
 export function migrate(saved) {
   if ((saved.v || 2) >= VERSION) return saved;
   const at = new Date().toISOString();
@@ -32,8 +36,12 @@ export function migrate(saved) {
     const rank = live.includes(p) ? live.indexOf(p) + 1 : null;
     return { ...p, rank, rankSeen: rank };
   });
-  const managerOf = (pid) => projects.find((x) => x.id === pid)?.manager;
-  const tasks = (saved.tasks || []).map((t) => (t.fromCommander && !t.ask && t.project && managerOf(t.project) === t.owner ? { ...t, ask: true, ack: { state: 'ok', at } } : t));
+  const projectOf = (pid) => projects.find((x) => x.id === pid);
+  const managerOf = (pid) => projectOf(pid)?.manager;
+  const outside = (t) => { const p = projectOf(t.project); return !!p && !p.personal && !t.ask && t.status !== 'done' && !!t.owner && !inProject(p, t.owner); };
+  const tasks = (saved.tasks || [])
+    .map((t) => (t.fromCommander && !t.ask && t.project && managerOf(t.project) === t.owner ? { ...t, ask: true, ack: { state: 'ok', at } } : t))
+    .map((t) => (outside(t) ? { ...t, owner: managerOf(t.project), focus: false, focusBy: null } : t));
   return { ...saved, v: VERSION, people, projects, tasks };
 }
 
@@ -70,14 +78,26 @@ export function resetSample() { LS.del(KEY); set({ ...fresh(), sheet: null }); t
 export function switchTo(id) { LS.set(ME_KEY, id); set({ me: id, sheet: null, menu: null, toasts: [] }); location.hash = isCommander(id) ? '#/overview' : '#/today'; window.scrollTo(0, 0); }
 
 // ---------- toasts and sheets ----------
-// Returns the toast's id, so an action can take back its own toast (dismissToast).
+// Returns the toast's id, so an action can take back its own toast (dismissToast). One that offers an action (ביטול,
+// לסגירה) stays long enough for a keyboard to reach it, and none goes while the pointer or focus is on it (ui.Toast
+// holds it). `back` is where focus returns when the toast goes with focus in it: an element, a function that finds one,
+// or else whatever had focus when the toast came.
+const toastTimers = new Map();
 export function toast(text, opts = {}) {
   const id = uid('t');
-  set((s) => ({ toasts: [...s.toasts, { id, text, action: opts.action }] }));
-  setTimeout(() => dismissToast(id), opts.ms || 4200);
+  const ms = opts.ms || (opts.action ? 8000 : 4200);
+  const back = opts.back || (typeof document === 'undefined' ? null : document.activeElement);
+  set((s) => ({ toasts: [...s.toasts, { id, text, action: opts.action, ms, back }] }));
+  holdToast(id, false);
   return id;
 }
-export const dismissToast = (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+// Stops a toast's clock (hold), or starts it again from the full time.
+export function holdToast(id, hold) {
+  clearTimeout(toastTimers.get(id));
+  const t = state.toasts.find((x) => x.id === id);
+  if (!hold && t) toastTimers.set(id, setTimeout(() => dismissToast(id), t.ms));
+}
+export const dismissToast = (id) => { clearTimeout(toastTimers.get(id)); toastTimers.delete(id); set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })); };
 export const openSheet = (kind, props = {}) => set({ sheet: { kind, ...props } });
 // One sheet handing over to the next closes, and the next opens a moment later. `reopening` holds the gap, so a toast
 // docked at the top while a sheet is open (m.css) stays there instead of dropping toward the tab bar and back.
@@ -87,11 +107,12 @@ export function handOver(kind, props = {}) {
 }
 // A sheet opened from inside a task returns to it however it closes: a choice, X, Escape, the backdrop or a flick.
 // `back` returns to the task the sheet is about (the partner sheet from a task's owner menu); `backTo` to the task it
-// was opened from (a task, or the partner sheet, from the table that breaks an ask down returns to the ask).
+// was opened from (a task, or the partner sheet, from the table that breaks an ask down returns to the ask). `from` is
+// the task the sheet was about, so the ask puts focus back on its row (TaskBody).
 export const closeSheet = () => {
   const sh = state.sheet;
   const to = sh?.backTo || (sh?.back && sh.task);
-  if (to) handOver('task', { id: to });
+  if (to) handOver('task', { id: to, from: sh.kind === 'task' ? sh.id : sh.task });
   else set({ sheet: null });
 };
 
@@ -125,6 +146,11 @@ export function canSeeDetail(p, who = state.me) {
 }
 // Whoever runs a project: its manager, or a personal project's owner.
 export const leads = (p, who = state.me) => !!p && (p.personal ? p.personal === who : p.manager === who);
+// Who is in a project: its manager and its partners. Only they own its tasks and change them (canEditTask), and only
+// they add to it (addTask). (A declaration, since migrate() asks it while the saved state loads.)
+export function inProject(p, who = state.me) {
+  return !!p && (p.manager === who || p.partners.includes(who));
+}
 // A stopped or finished project takes no new people or work.
 export const isOpen = (p) => !!p && p.phase !== 'stopped' && p.phase !== 'done';
 // Gates, the ID card and the project's people: its manager, and the commander everywhere.
@@ -134,23 +160,24 @@ export const teamProjects = () => visibleProjects().filter((p) => !p.personal);
 export const personalProjects = () => visibleProjects().filter((p) => p.personal);
 export const myProjects = () => teamProjects().filter((p) => p.manager === state.me || p.partners.includes(state.me));
 const managedProjects = () => teamProjects().filter((p) => p.manager === state.me);
-// Outside partners never see asks, and a locked project shows nobody its tasks. A person keeps their own task in sight
-// only while they still see its project: someone in the team outside a locked one reads it (canEditTask keeps them
-// from changing it), and an outside partner taken out of a project loses it with the project.
+// Outside partners never see asks, and a project's tasks are part of its detail: a locked project shows them to nobody
+// outside it, not even a task they own (one taken out of it, or one done there before they left, and anything written
+// on it since). Everyone else sees them past the one line (canSeeDetail).
 export function canSeeTask(t, who = state.me) {
   if (t.personal) return t.owner === who;
   if (!t.project) return t.owner === who || t.by === who || isCommander(who);
   if (t.ask && person(who).role === 'external') return false;
-  const p = project(t.project);
-  if (t.owner === who && canSee(p, who)) return true;
-  return canSeeDetail(p, who);
+  return canSeeDetail(project(t.project), who);
 }
-// A task is edited by its owner, whoever created it (the commander's own asks too) and whoever runs its project, and
-// only by someone who sees the project past its one line. The commander edits nothing else in a project he doesn't
-// run: what he adds there becomes an ask (addTask).
+// A task in a project is edited by whoever runs the project, by the commander when it is his own ask, and by the people
+// in the project: their own tasks, and the ones they created (an outside partner only their own). Nobody else changes
+// it, not someone out of the project and never past its lock; what the commander adds in a project he doesn't run
+// becomes an ask (addTask). A task without a project is its owner's and its creator's.
 export const canEditTask = (t, who = state.me) => {
+  if (!t.project) return t.owner === who || t.by === who;
   const p = project(t.project);
-  return (!t.project || canSeeDetail(p, who)) && (t.owner === who || t.by === who || leads(p, who));
+  return canSeeDetail(p, who) && (leads(p, who) || (!!t.ask && t.by === who)
+    || (inProject(p, who) && (t.owner === who || (t.by === who && person(who).role !== 'external'))));
 };
 export const myTasks = () => state.tasks.filter((t) => t.owner === state.me && canSeeTask(t));
 export const projectTasks = (id) => state.tasks.filter((t) => t.project === id && canSeeTask(t));
@@ -192,8 +219,9 @@ const myAsks = () => state.tasks.filter((t) => t.ask && t.status !== 'done' && t
 export const asksWaiting = () => myAsks().filter((t) => !t.ack && card.askState(t, state.tasks).state !== 'ready');
 // Asks whose tasks are all done (card.askState 'ready'): each waits for me to close it.
 export const asksReady = () => myAsks().filter((t) => card.askState(t, state.tasks).state === 'ready');
-// The tasks an ask was broken into.
-export const askTasks = (id) => state.tasks.filter((t) => t.parent === id && canSeeTask(t));
+// The tasks an ask was broken into, in the order they were written (the store keeps the newest first, so ties too).
+export const askTasks = (id) => state.tasks.filter((t) => t.parent === id && canSeeTask(t)).reverse()
+  .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')));
 // What waits for me in Today's מחכה לך, one per row: each ask to answer or to close, one row for every project of mine
 // that moved in the order, each stage ready to close and each weekly update due. Today's "מחכים לך" and the היום badge
 // both count this; the commander's queue is counted on מצב.
@@ -229,20 +257,34 @@ function insertTask(t) {
   commit((s) => ({ tasks: [task, ...s.tasks.map((x) => (up && x.id === up.id ? { ...x, ack: { state: 'ok', at: task.createdAt } } : x))] }));
   return task;
 }
+// Whoever takes a task because its owner isn't in its project: the project's manager.
+const handedTo = (p, owner) => `המשימה עברה ${p.manager === state.me ? 'אליך' : `ל${person(p.manager).name}`}, כי ${person(owner).name} לא בפרויקט`;
+// Every new task passes here, whichever add line made it: a stopped or finished project takes no new work, only someone
+// in a project adds to it, and its tasks go to people in it (anyone else's goes to its manager); an outside partner adds
+// only their own.
 export function addTask(t) {
   const p = project(t.project);
-  // The commander never reaches past a manager: a task he adds in a project someone else runs is an ask to its manager.
-  if (isCommander() && p && !p.personal && !leads(p) && !t.ask) return sendAsk({ project: p.id, title: t.title, why: t.why, due: t.due, stage: t.stage });
+  let say = null;
+  if (p && !p.personal) {
+    // The commander never reaches past a manager: a task he adds in a project someone else runs is an ask to its manager.
+    if (isCommander() && !leads(p) && !t.ask) return sendAsk({ project: p.id, title: t.title, why: t.why, due: t.due, stage: t.stage });
+    if (!isOpen(p)) { toast('הפרויקט נעצר או הסתיים, אז אי אפשר להוסיף לו משימות'); return null; }
+    if (!inProject(p)) { toast('רק מי שבפרויקט מוסיף לו משימות'); return null; }
+    if (person(state.me).role === 'external') t = { ...t, owner: state.me }; // an outside partner adds only their own
+    else if (t.owner && !inProject(p, t.owner)) { say = handedTo(p, t.owner); t = { ...t, owner: p.manager }; }
+  }
   const task = insertTask(t);
-  if (task.owner !== state.me) toast(`המשימה עברה ל${person(task.owner).name}`);
+  if (say || task.owner !== state.me) toast(say || `המשימה עברה ל${person(task.owner).name}`);
   return task;
 }
 // Every change to a task passes here, so these hold whichever screen made it:
 // - an ask stays with its project's manager: its owner changes only with the manager (updateProject);
 // - a task that moves to another project leaves the ask it served, so an ask counts only its own project's tasks;
-// - the commander never reaches past a manager: a task he gives someone else in a team project he doesn't run, by
-//   moving it there or by a new owner, goes to that project's manager as an ask (as addTask does);
-// - a task that moves to a project its owner can't see goes to that project's manager, so it never drops out of sight.
+// - the commander never reaches past a manager: a task he moves into a team project he doesn't run, or gives someone
+//   else there, goes to that project's manager as an ask (as addTask does);
+// - a task in a team project belongs to someone in it: one that moves to a project its owner isn't in, or comes back
+//   to work (a done task reopened) after its owner left the project, goes to that project's manager, so it never drops
+//   out of sight or stays with someone who can't work on it.
 export function updateTask(id, patch) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
@@ -250,17 +292,18 @@ export function updateTask(id, patch) {
   if (t.ask) delete change.owner;
   const moved = change.project !== undefined && (change.project || null) !== (t.project || null);
   if (moved) change.parent = null;
+  const reopened = t.status === 'done' && !!change.status && change.status !== 'done';
   const p = project(change.project !== undefined ? change.project : t.project);
   const owner = change.owner !== undefined ? change.owner : t.owner;
   let say = null;
-  if (p && !p.personal && !t.ask && (moved || owner !== t.owner)) {
-    if (isCommander() && !leads(p) && owner !== state.me) {
+  if (p && !p.personal && !t.ask && (moved || owner !== t.owner || reopened)) {
+    if (isCommander() && !leads(p) && (moved || (owner !== t.owner && owner !== state.me))) {
       if (!isOpen(p)) { toast(CLOSED); return; }
       Object.assign(change, { owner: p.manager, by: state.me, ask: true, ack: null, priority: 'high', fromCommander: true, parent: null });
       say = `הבקשה נשלחה ל${person(p.manager).name}`;
-    } else if (moved && owner && !canSeeDetail(p, owner)) {
+    } else if (owner && !inProject(p, owner)) {
       change.owner = p.manager;
-      say = `המשימה עברה ${p.manager === state.me ? 'אליך' : `ל${person(p.manager).name}`}, כי ${person(owner).name} לא בפרויקט`;
+      say = handedTo(p, owner);
     }
   }
   commit((s) => ({ tasks: s.tasks.map((x) => {
@@ -323,8 +366,9 @@ export function toggleFocus(id) {
 // ---------- the order of the projects ----------
 // Only the commander sets it: a pick moves one project and renumbers the rest, and the toast can take it all back.
 // Only the latest move keeps its toast, so a ביטול never takes back a later move (or puts back an earlier one).
+// `cap` is the place capsule the move was picked from: focus goes back to it from the toast.
 let rankToast = null;
-export function setRank(pid, n) {
+export function setRank(pid, n, cap = null) {
   if (!isCommander()) return;
   const ranks = card.placeProject(state.projects, pid, n);
   if (state.projects.every((p) => (p.rank ?? null) === ranks[p.id])) return;
@@ -334,7 +378,7 @@ export function setRank(pid, n) {
     : { ...p, rank: ranks[p.id], rankAt: at, rankBy: s.me, ...(p.manager === s.me ? { rankSeen: ranks[p.id] } : {}) })) }));
   haptic('success');
   if (rankToast) dismissToast(rankToast);
-  rankToast = toast('הסדר עודכן', { action: { label: 'ביטול', run: () => commit((s) => ({ projects: s.projects.map((p) => ({ ...p, ...before.find((x) => x.id === p.id) })) })) } });
+  rankToast = toast('הסדר עודכן', { back: cap, action: { label: 'ביטול', run: () => commit((s) => ({ projects: s.projects.map((p) => ({ ...p, ...before.find((x) => x.id === p.id) })) })) } });
 }
 // "הבנתי": the manager has seen the project's new place. With no id, every project of mine that moved.
 export function ackRank(pid) {
@@ -395,10 +439,11 @@ const TEMPLATE_TRL = (id) => card.TEMPLATES.find((t) => t.id === id)?.trl;
 // A project that leaves the order (held, stopped, finished) gives up its place and the rest close up, remembering
 // whether it had one (rankWas): back from a hold, one that had a place goes to the end, and one that never had a place
 // stays unplaced until the commander places it. (One held before rankWas existed has no record and goes to the end.)
-// A new manager takes over the project's open asks, unanswered again; the commander's own asks become his tasks.
-// Whoever this change takes out of the project's detail (a partner taken out, an outside one above all, or an old
-// manager of a locked project) hands their open tasks there to its manager, so none is left with someone who can no
-// longer see it or work on it (canEditTask).
+// A new manager takes over the project's open asks, unanswered again; the commander's own asks become his tasks. The
+// old manager's pins come out with them: a pin is the call of whoever runs the project.
+// Whoever this change takes out of the project (a partner taken out, the manager replaced) or out of its detail (a
+// project made שמור/סודי) hands their open tasks there to its manager, so none is left with someone who can no longer
+// see it or work on it (canEditTask).
 export function updateProject(id, patch) {
   const handed = [];
   commit((s) => {
@@ -413,12 +458,16 @@ export function updateProject(id, patch) {
     let projects = s.projects.map((p) => (p.id === id ? now : p));
     if (left || back) projects = withRanks(projects, card.placeProject(projects, placeBack ? id : null, Infinity));
     const newManager = now.manager !== was.manager;
-    const tasks = !newManager && now.partners === was.partners ? s.tasks : s.tasks.map((t) => {
+    const access = newManager || now.partners !== was.partners || now.classification !== was.classification;
+    const tasks = !access ? s.tasks : s.tasks.map((t) => {
       if (t.project !== id || t.status === 'done') return t;
       if (t.ask) return newManager ? { ...t, owner: now.manager, ack: null, focus: false, focusBy: null, ...(t.by === now.manager ? { ask: false, fromCommander: false } : {}) } : t;
-      if (!t.owner || t.owner === now.manager || !canSeeDetail(was, t.owner) || canSeeDetail(now, t.owner)) return t;
-      handed.push(t.owner);
-      return { ...t, owner: now.manager, focus: false, focusBy: null };
+      const o = t.owner;
+      if (o && ((inProject(was, o) && !inProject(now, o)) || (canSeeDetail(was, o) && !canSeeDetail(now, o)))) {
+        handed.push(o);
+        return { ...t, owner: now.manager, focus: false, focusBy: null };
+      }
+      return newManager && t.focus && t.focusBy === was.manager ? { ...t, focus: false, focusBy: null } : t;
     });
     return { projects, tasks };
   });
@@ -474,7 +523,8 @@ export function closeStage(pid, opts) {
   haptic('success');
   if (opts.choice === 'next' && cur?.gate === 'commander' && !isCommander()) toast(`שלב ${cur.name} מחכה לאישור של ${person(state.people.find((x) => x.role === 'commander')?.id).name}`);
   else if (opts.choice === 'next') toast(cur ? `שלב ${cur.name} נסגר` : 'נשמר');
-  else toast(card.GATE_CHOICES[opts.choice].label.replace('לעצור את הפרויקט', 'הפרויקט נעצר'));
+  // What happened, not the choice's command: "להשהות" reads as an order.
+  else toast({ hold: 'הפרויקט הושהה', stop: 'הפרויקט נעצר', back: `חזרנו לשלב ${card.currentStage(project(pid))?.name || 'הקודם'}` }[opts.choice]);
 }
 export function approveGate(pid, note = '') {
   closeStage(pid, { choice: 'next', note: note || 'אושר' });

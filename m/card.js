@@ -214,7 +214,7 @@ export const KIND_ORDER = ['gate', 'senior', 'talk', 'late', 'asklate', 'commit'
 export function needsCommander(p, tasks = [], now = Date.now()) {
   if (p.personal || p.phase === 'stopped' || p.phase === 'done') return [];
   const out = [];
-  if (p.needsSenior) out.push({ kind: 'senior', why: 'המנהל ביקש', text: p.needsSenior.what, by: p.needsSenior.by });
+  if (p.needsSenior) out.push({ kind: 'senior', why: 'בקשת עזרה', text: p.needsSenior.what, by: p.needsSenior.by });
   for (const s of p.stages) if (s.state === 'pending') out.push({ kind: 'gate', why: 'שער שמחכה לאישור שלך', text: `לסגור את שלב ${s.name}`, stage: s.id });
   const cur = currentStage(p);
   const late = cur && cur.target ? daysBetween(cur.target, now) : 0;
