@@ -148,9 +148,12 @@ function focusTitle() {
   h.focus({ preventScroll: true });
 }
 // A button that takes its own row away (an answer, הבנתי, דיברנו, לאשר) hands focus on, so a keyboard or screen-reader
-// user doesn't start again from the top: to the next row of the list, else the one before it, else to what follows the
-// list, else to the page's title. Called before the change; it acts after the render, and only if focus was lost.
+// user doesn't start again from the top: to the next row of the list, else the one before it, else to the next control
+// after the list, else to the page's title. Never to a text field after the list (the board's search): on a phone,
+// focus there after a tap would show its ring and could raise the keyboard. Called before the change; it acts after
+// the render, and only if focus was lost.
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+const TYPING = 'input:not([type=checkbox]):not([type=radio]), textarea';
 export function keepFocus(e, rowSel) {
   const row = e.currentTarget.closest(rowSel);
   const list = row?.parentElement;
@@ -159,7 +162,8 @@ export function keepFocus(e, rowSel) {
   const i = rows.indexOf(row);
   const first = (x) => (x.matches(FOCUSABLE) ? x : x.querySelector(FOCUSABLE));
   const near = [...rows.slice(i + 1), ...rows.slice(0, i).reverse()].map(first).filter(Boolean);
-  const after = [...document.querySelectorAll(FOCUSABLE)].find((x) => !list.contains(x) && (list.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
+  const after = [...document.querySelectorAll(FOCUSABLE)].find((x) => !list.contains(x) && !x.matches(TYPING) && x.getClientRects().length
+    && (list.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
   requestAnimationFrame(() => {
     const a = document.activeElement;
     if (a && a !== document.body && a.isConnected) return;
@@ -184,6 +188,14 @@ export function useDialogFocus(panel) {
   }, []);
 }
 
+// A toast docked at the top while a sheet is open lets presses through to what is under it (m.css), so a tap on its
+// words, or just beside its buttons, can land on the dimmed backdrop of a short sheet. That tap was meant for the toast:
+// the sheet stays open, with what was typed in it.
+const onToast = (e) => [...document.querySelectorAll('.toasts .toast')].some((t) => {
+  const b = t.getBoundingClientRect();
+  return e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom;
+});
+
 // A bottom sheet on phones (drag down to close), a dialog that grows from what was pressed on desktop.
 export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, kind = 'modal' }) {
   const root = useRef();
@@ -195,7 +207,7 @@ export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, k
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   useDialogFocus(panel);
-  return html`<div class=${'overlay' + (kind === 'drawer' ? ' side-ov' : '')} ref=${root} onClick=${onClose}>
+  return html`<div class=${'overlay' + (kind === 'drawer' ? ' side-ov' : '')} ref=${root} onClick=${(e) => { if (!onToast(e)) onClose(); }}>
     <div class=${'modal ' + (kind === 'drawer' ? 'pdrawer ' : '') + (wide ? 'wide ' : '') + cls} ref=${panel} role="dialog" aria-modal="true" aria-label=${title} tabindex="-1" onClick=${(e) => e.stopPropagation()}>
       <div class="grabber" aria-hidden="true"></div>
       <header class="modal-head"><h2>${title}</h2>

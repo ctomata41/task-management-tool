@@ -4,7 +4,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
 import { QuickAdd } from './parts.js';
-import { useStore, openSheet, closeSheet, person, isCommander, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount } from './store.js';
+import { useStore, openSheet, handOver, person, isCommander, canSee, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount } from './store.js';
 import { Today } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
 import { Overview } from './views/overview.js';
@@ -88,7 +88,11 @@ function App() {
     today: myTasks().filter((t) => t.status !== 'done' && t.due && dayDiff(t.due) <= 0 && !t.personal && !rows.has(t.id)).length + waitingCount(),
     overview: cmd ? commanderQueue().length : 0,
   };
-  const title = r.name === 'project' ? (s.projects.find((p) => p.id === r.arg)?.name || '') : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');
+  // A project's name goes in the bar only for someone who may see the project (a locked one's line included): a link
+  // to someone else's personal project, or an outside partner's link to a project they're not in, never names it,
+  // not even to a screen reader.
+  const shown = r.name === 'project' ? s.projects.find((p) => p.id === r.arg) : null;
+  const title = r.name === 'project' ? (shown && canSee(shown) ? shown.name : '') : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');
   let view;
   if (r.name === 'projects') view = html`<${Projects} />`;
   else if (r.name === 'project') view = html`<${ProjectPage} key=${r.arg} id=${r.arg} />`;
@@ -100,7 +104,7 @@ function App() {
   const sh = s.sheet && SHEETS[s.sheet.kind];
   const Body = sh?.body;
   const mine = myProjects().filter((p) => p.phase !== 'stopped' && p.phase !== 'done');
-  return html`<div class="shell m-app">
+  return html`<div class=${'shell m-app' + (s.reopening ? ' reopening' : '')}>
     <aside class="sidebar">
       <div class="brand"><span class="logo-m"><${Icon} name="layers" size=${18} /></span><div><strong>צוות CTO</strong><span>פרויקטים ומשימות</span></div></div>
       <button type="button" class="btn btn-primary block new-task" onClick=${() => openSheet('add')}><${Icon} name="plus" size=${16} />חדש</button>
@@ -142,7 +146,7 @@ function App() {
 // The + button: a task in one line, or one of the bigger things.
 function AddBody() {
   const s = useStore();
-  const go = (kind, props) => { closeSheet(); setTimeout(() => openSheet(kind, props), 60); };
+  const go = handOver; // the + sheet closes and the chosen one opens (store.handOver)
   return html`<div class="form add-sheet">
     <span class="lbl">משימה</span>
     <${QuickAdd} placeholder="מה צריך לעשות…" />

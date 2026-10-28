@@ -710,9 +710,13 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 /* In dark, a system colour as it is reads below 4.5:1 on its own 15% tint (blue, purple, red). A capsule's text there
    is the colour lightened toward white, the way the light theme darkens it through --ink. */
 .rank-cap { --c: var(--accent); }
-.ask-chip { --c: var(--s-waiting); }
+.ask-chip, .cmd-chip { --c: var(--s-waiting); }
 .pin-chip { --c: var(--s-progress); }
-:root[data-theme="dark"] :is(.spill, .rank-cap:not(.unplaced), .ask-chip, .pin-chip, .ask-when .conf-opt.on small) { color: color-mix(in oklab, var(--c) 72%, white); }
+:root[data-theme="dark"] :is(.spill, .rank-cap:not(.unplaced), .ask-chip, .cmd-chip, .pin-chip, .ask-when .conf-opt.on small) { color: color-mix(in oklab, var(--c) 72%, white); }
+/* Under the pointer the commander's capsule takes a deeper tint, so in dark its number goes lighter still. */
+@media (hover: hover) {
+  :root[data-theme="dark"] .m-app button.rank-cap:not(.unplaced):hover { color: color-mix(in oklab, var(--c) 64%, white); }
+}
 /* end of core */
 
 
@@ -786,7 +790,6 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .q-proj .ptag::after { content: ''; position: absolute; inset: 0; }
 .q-proj .ptag:focus-visible { outline: none; }
 .qrow:has(.q-proj .ptag:focus-visible) { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -3px; }
-.qrow:has(.q-proj .ptag:active) { background: var(--press); transition-duration: 0s; }
 .q-acts { position: relative; z-index: 1; }
 /* A row's buttons are 44px to hit (up and down only, so never into the next one). */
 .q-acts .btn { position: relative; }
@@ -827,7 +830,11 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
   .qrow:has(.q-proj .ptag:hover):not(:has(.q-acts:hover)) { background: var(--hover); }
   .ov-add:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
   .ov-ask:hover { background: var(--hover); }
+  /* The pointer on an ask lights the ask alone: the two tints stacked would take its state capsule below 4.5:1. */
+  .ov-line:not(.flip-lift):has(.ov-ask:hover) { background: transparent; }
 }
+/* A press on a queue row shows with a pointer too: this outranks the hover rule above. */
+.qrow:has(.q-proj .ptag:active):not(:has(.q-acts:active)) { background: var(--press); transition-duration: 0s; }
 @media (prefers-reduced-motion: no-preference) {
   .ov-add, .ov-ask { transition: transform 0.44s var(--spring), background-color 0.2s, color 0.2s, box-shadow 0.2s; }
   .ov-add:active, .ov-ask:active { transform: scale(0.95); transition-duration: 0.08s; }
@@ -901,11 +908,15 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 }
 @media (max-width: 900px) {
   /* While a sheet is open, toasts dock at the top of the screen, clear of the sheet's close button at the inline end,
-     instead of covering its controls; they come in from above (app/motion.js) and glide back down when it closes. */
-  .m-app:has(> .overlay) .toasts { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 8px); padding-inline: 16px 60px; }
-  /* Docked over the sheet's grabber and head, a toast lets a drag through to them; only its buttons take a press. */
-  .m-app:has(> .overlay) .toast { pointer-events: none; }
-  .m-app:has(> .overlay) .toast button { pointer-events: auto; }
+     instead of covering its controls; they come in from above (app/motion.js) and glide back down when it closes.
+     They stay docked while one sheet hands over to the next (store.handOver: .reopening), so nothing dips in between.
+     Jarvis's screen has its close button at the inline start, so over it toasts stay at the bottom, clear of both its
+     controls. */
+  .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toasts { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 8px); padding-inline: 16px 60px; }
+  /* Docked over the sheet's grabber and head, a toast lets a drag through to them; only its buttons take a press. A tap
+     that falls through onto the dimmed backdrop of a short sheet doesn't close it (ui.Sheet). */
+  .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast { pointer-events: none; }
+  .m-app:is(:has(> .overlay:not(.jv-ov)), .reopening) .toast button { pointer-events: auto; }
   .wait-row:has(> .wait-acts) { flex-wrap: wrap; }
   .wait-row:has(> .wait-acts) > .wait-open { flex-basis: 0; }
   .wait-row > .wait-acts { flex-basis: 100%; padding-inline-start: 44px; }
