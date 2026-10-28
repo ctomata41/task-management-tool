@@ -3,7 +3,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, Faces, Pill, ProjectTag, Classified, StageStrip, Health, openMenu, dueWord, dayDiff } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, setStatus, updateTask, toggleFocus, openSheet, person, project, canEditTask, addTask,
-  team, visibleProjects, canSee, isCommander, getState } from './store.js';
+  team, visibleProjects, canSee, canSeeDetail, isCommander, leads, getState } from './store.js';
 import { status, HILL, needsCommander, cardFill } from './card.js';
 
 export function StatusButton({ t }) {
@@ -49,8 +49,10 @@ export function TaskRow({ t, showProject = true, showOwner = true, star = false 
   </div>`;
 }
 
-// One line to add a task: the title, and optional chips for project, owner and date. Enter adds it.
-export function QuickAdd({ project: pid, stage, personal, placeholder = 'משימה חדשה…', ownerDefault }) {
+// One line to add a task: the title, and optional chips for project, owner and date. Enter adds it. A task added under an
+// ask carries its parent and the ask's priority. What the commander adds in a project someone else runs goes to its
+// manager as an ask (addTask), so the line says so and offers only the manager.
+export function QuickAdd({ project: pid, stage, parent, priority, personal, placeholder = 'משימה חדשה…', ownerDefault }) {
   const s = useStore();
   const [title, setTitle] = useState('');
   const [proj, setProj] = useState(pid || null);
@@ -58,24 +60,26 @@ export function QuickAdd({ project: pid, stage, personal, placeholder = 'משי�
   const [due, setDue] = useState('');
   const ref = useRef();
   const p = proj ? project(proj) : null;
+  const asAsk = isCommander() && !!p && !p.personal && !leads(p);
   const people = p ? [p.manager, ...p.partners].filter((id, i, a) => a.indexOf(id) === i) : [s.me];
-  const pool = p ? people : (isCommander() ? team().map((x) => x.id) : [s.me]);
+  const pool = asAsk ? [p.manager] : p ? people : (isCommander() ? team().map((x) => x.id) : [s.me]);
+  const who = pool.includes(owner) ? owner : asAsk ? p.manager : s.me;
   const submit = (e) => {
     e.preventDefault();
     const v = title.trim();
     if (!v) return;
-    addTask({ title: v, project: proj, stage: stage || null, owner: pool.includes(owner) ? owner : s.me, due: due || null, personal: !!personal });
+    addTask({ title: v, project: proj, stage: stage || null, owner: who, due: due || null, personal: !!personal, ...(parent ? { parent } : {}), ...(priority ? { priority } : {}) });
     setTitle(''); setDue('');
     ref.current?.focus();
   };
-  const pickProject = (e) => openMenu(e, [{ id: '', label: personal ? 'בלי פרויקט' : 'בלי פרויקט (רק אצלי)', icon: 'user' }, ...visibleProjects().filter((x) => (personal ? x.personal : !x.personal) && x.phase !== 'stopped').map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
+  const pickProject = (e) => openMenu(e, [{ id: '', label: personal ? 'בלי פרויקט' : 'בלי פרויקט (רק אצלי)', icon: 'user' }, ...visibleProjects().filter((x) => (personal ? x.personal : !x.personal) && x.phase !== 'stopped' && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
     { selected: proj || '', onPick: (id) => setProj(id || null) });
-  const pickOwner = (e) => openMenu(e, pool.map((id) => ({ id, label: person(id).name + (person(id).role === 'external' ? ` · ${person(id).org || 'מבחוץ'}` : ''), person: id })), { selected: owner, onPick: setOwner });
+  const pickOwner = (e) => openMenu(e, pool.map((id) => ({ id, label: person(id).name + (person(id).role === 'external' ? ` · ${person(id).org || 'מבחוץ'}` : ''), person: id })), { selected: who, onPick: setOwner });
   return html`<form class="qadd" onSubmit=${submit}>
     <span class="qadd-plus"><${Icon} name="plus" size=${16} /></span>
-    <input ref=${ref} class="qadd-input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder=${placeholder} aria-label="כותרת המשימה" enterkeyhint="done" />
-    ${pid ? null : html`<button type="button" class="qchip" onClick=${pickProject}>${p ? html`<i style=${`background:${p.color}`}></i>${p.name}` : html`<${Icon} name="layers" size=${14} />פרויקט`}</button>`}
-    ${pool.length > 1 ? html`<button type="button" class="qchip" onClick=${pickOwner} aria-label="אחראי"><${Avatar} id=${pool.includes(owner) ? owner : s.me} size=${20} /></button>` : null}
+    <input ref=${ref} class="qadd-input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder=${asAsk ? `תגיע כבקשה ל${person(p.manager).name}` : placeholder} aria-label="כותרת המשימה" enterkeyhint="done" />
+    ${pid ? null : html`<button type="button" class="qchip qproj" onClick=${pickProject}>${p ? html`<i style=${`background:${p.color}`}></i>${p.name}` : html`<${Icon} name="layers" size=${14} />פרויקט`}</button>`}
+    ${pool.length > 1 || asAsk ? html`<button type="button" class="qchip" onClick=${pickOwner} aria-label=${`אחראי: ${person(who).name}`}><${Avatar} id=${who} size=${20} /></button>` : null}
     <label class="qchip date"><${Icon} name="calendar" size=${14} /><input type="date" value=${due} onInput=${(e) => setDue(e.currentTarget.value)} aria-label="תאריך יעד" />${due ? dueWord(due) : null}</label>
     <button type="submit" class="btn btn-primary sm" disabled=${!title.trim()}>הוספה</button>
   </form>`;
