@@ -111,6 +111,9 @@ function modeOf(kind) {
   return kind === 'drawer' ? 'side' : 'dialog';
 }
 const endSign = (el) => (getComputedStyle(el).direction === 'rtl' ? -1 : 1);
+// A toast comes in from the edge it sits by and leaves toward it: up near the top of the screen (on phones while a sheet
+// is open, toasts move to the top), down near the bottom.
+const edgeSign = (el) => (el.getBoundingClientRect().top < window.innerHeight / 2 ? -1 : 1);
 const scrimOf = (root) => (p) => root.style.setProperty('--scrim', Math.min(1, Math.max(0, p)).toFixed(3));
 const POP = { dialog: 0.92, alert: 1.1, menu: 0.86, toast: 0.92 };
 
@@ -134,7 +137,7 @@ function enter(root, panel, mode) {
   } else {
     if (mode === 'dialog') growFrom(panel);
     m.onFrame = () => scrim(m.get('opacity'));
-    const lift = mode === 'toast' ? { y: 16 } : {};
+    const lift = mode === 'toast' ? { y: 16 * edgeSign(panel) } : {};
     m.set({ scale: POP[mode], opacity: 0, ...lift });
     m.to({ scale: 1, opacity: 1, ...(mode === 'toast' ? { y: 0 } : {}) }, { damping: 1, response: mode === 'menu' ? 0.24 : 0.32 });
   }
@@ -218,7 +221,7 @@ function leave(root, panel, mode) {
     done = g.to({ x: extent }, { damping: 1, response: 0.34, velocity: { x: speed('x') } });
   } else {
     g.onFrame = () => scrim(g.get('opacity'));
-    done = g.to({ scale: mode === 'toast' ? 0.94 : 0.97, opacity: 0, ...(mode === 'toast' ? { y: 10 } : {}) }, { damping: 1, response: mode === 'menu' ? 0.18 : 0.24 });
+    done = g.to({ scale: mode === 'toast' ? 0.94 : 0.97, opacity: 0, ...(mode === 'toast' ? { y: 10 * edgeSign(copy.panel) } : {}) }, { damping: 1, response: mode === 'menu' ? 0.18 : 0.24 });
   }
   done.then(() => copy.host.remove());
 }

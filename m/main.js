@@ -4,7 +4,7 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
 import { QuickAdd } from './parts.js';
-import { useStore, openSheet, closeSheet, person, isCommander, commanderQueue, myProjects, personalProjects, myTasks, updatesDue, asksWaiting, movedProjects } from './store.js';
+import { useStore, openSheet, closeSheet, person, isCommander, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount } from './store.js';
 import { Today } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
 import { Overview } from './views/overview.js';
@@ -80,11 +80,12 @@ function App() {
   const cmd = isCommander();
   const active = r.name === 'project' ? 'projects' : r.name;
   const activeTab = r.name === 'outputs' ? 'projects' : active;
-  // What waits for me today: tasks due or late, weekly updates, asks I haven't answered and projects of mine that moved
-  // in the order. An unanswered ask counts once, as an ask.
+  // What waits for me today: my team tasks due or late, and every row of Today's מחכה לך (store.waitingCount: asks to
+  // answer or to close, the order's moves as one row, stages ready to close, weekly updates). An ask that has its own
+  // row there counts once, as that row. The commander's queue is counted on מצב.
+  const rows = new Set([...asksWaiting(), ...asksReady()].map((t) => t.id));
   const counts = {
-    today: myTasks().filter((t) => t.status !== 'done' && t.due && dayDiff(t.due) <= 0 && !t.personal && !(t.ask && !t.ack)).length
-      + updatesDue().length + asksWaiting().length + movedProjects().length,
+    today: myTasks().filter((t) => t.status !== 'done' && t.due && dayDiff(t.due) <= 0 && !t.personal && !rows.has(t.id)).length + waitingCount(),
     overview: cmd ? commanderQueue().length : 0,
   };
   const title = r.name === 'project' ? (s.projects.find((p) => p.id === r.arg)?.name || '') : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');

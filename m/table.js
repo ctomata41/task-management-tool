@@ -4,7 +4,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput, isoDay } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, PRIORITY, PRIORITY_ORDER, setStatus, updateTask, toggleFocus, addTask, openSheet, person, project,
-  canEditTask, canManage, isOpen, team, isCommander, leads, getState } from './store.js';
+  canEditTask, canSeeTask, isOpen, team, isCommander, leads, getState, focusCount } from './store.js';
 import { byRank } from './card.js';
 
 export const COLS = {
@@ -30,14 +30,18 @@ const rank = (p) => (p ? PRIORITY_ORDER.indexOf(p) : 9);
 const byPlace = (a, b) => (a && b ? byRank(a, b) : !a - !b);
 // A day's tasks: the higher priority first, then the project higher in the order.
 const byDue = (a, b) => SORTERS.due(a, b) || rank(a.priority) - rank(b.priority) || byPlace(project(a.project), project(b.project));
+// The focus of the day, whoever starred or pinned each task: the higher priority first, then the project higher in the
+// order, then the nearer date.
+export const byFocus = (a, b) => rank(a.priority) - rank(b.priority) || byPlace(project(a.project), project(b.project)) || SORTERS.due(a, b);
 
 const readSet = (key) => { try { return new Set(JSON.parse(localStorage.getItem(key)) || []); } catch (e) { return new Set(); } };
 const writeSet = (key, set) => { try { localStorage.setItem(key, JSON.stringify([...set])); } catch (e) { /* storage blocked */ } };
 
 // groups: [{ id, name, color, tasks, add?: defaults for a new task, or null when the group takes none, focusOf?: the
 // person a group of owners belongs to }]. With star, each row offers the star to whoever may use it (Row), and a person's
-// group says how full their focus is. ask: the ask this table breaks down, so its rows don't repeat "בקשת יואש".
-export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'], memory = 'm.tt', star = false, empty = 'אין משימות כאן.', ask = null }) {
+// group says how full their focus is (scope: the project the table shows, so the hint can say how much is outside it).
+// ask: the ask this table breaks down, so its rows don't repeat "בקשת יואש", and a sheet opened from a row returns to it.
+export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'], memory = 'm.tt', star = false, empty = 'אין משימות כאן.', ask = null, scope = null }) {
   useStore();
   const [sort, setSort] = useState(null);
   const [closed, setClosed] = useState(() => readSet(`${memory}.closed`));
@@ -50,7 +54,7 @@ export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'
     ${shown.map((g) => {
       const list = sort ? [...g.tasks].sort((a, b) => SORTERS[sort.key](a, b) * sort.dir) : g.tasks;
       const isClosed = closed.has(g.id);
-      const hint = g.hint || (star && g.focusOf ? focusHint(g.focusOf) : null);
+      const hint = g.hint || (star && g.focusOf ? focusHint(g.focusOf, scope, g.tasks) : null);
       return html`<section class=${'tgrp' + (isClosed ? ' closed' : '')} key=${g.id} style=${`--gc:${g.color}`}>
         <header class="tgrp-head">
           <button type="button" class="tgrp-tog" aria-expanded=${!isClosed} onClick=${() => toggle(g.id)}><${Icon} name=${isClosed ? 'chevronLeft' : 'chevronDown'} size=${18} />
@@ -78,11 +82,17 @@ export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'
 }
 const arrow = (sort, key) => (sort && sort.key === key ? html`<${Icon} name=${sort.dir === 1 ? 'chevronDown' : 'chevronUp'} size=${13} />` : null);
 // How full a person's focus is, their stars and the pins together, as the cap in toggleFocus counts it: "בפוקוס 2/3".
-// Someone without an account takes no star, so their group says nothing.
-function focusHint(id) {
+// The cap counts all of it, other projects and personal work too, so the hint says how much of it is outside this
+// project ("בפוקוס 3/3 · 1 מחוץ לפרויקט"), without naming where. Someone without an account takes no star, so their
+// group says nothing.
+function focusHint(id, scope, shown) {
   const x = person(id);
   if (!x.id || x.account === false) return null;
-  return `בפוקוס ${getState().tasks.filter((t) => t.owner === id && t.focus && t.status !== 'done').length}/3`;
+  const n = focusCount(id);
+  const here = scope
+    ? getState().tasks.filter((t) => t.owner === id && t.focus && t.status !== 'done' && t.project === scope).length
+    : shown.filter((t) => t.focus && t.status !== 'done').length;
+  return `בפוקוס ${n}/3${n > here ? ` · ${n - here} ${scope ? 'מחוץ לפרויקט' : 'לא כאן'}` : ''}`;
 }
 
 // How a group divides by status (or priority): one bar, each colour as wide as its share.
@@ -113,13 +123,16 @@ function Row({ t, cols, star, ask }) {
   const edit = canEditTask(t);
   const p = project(t.project);
   const fs = focusStar(t);
-  // The ask this task serves, which outside partners never see.
-  const up = t.parent && t.parent !== ask && person(s.me).role !== 'external' ? s.tasks.find((x) => x.id === t.parent && x.ask) : null;
-  const pool = p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [s.me];
-  const open = () => openSheet('task', { id: t.id });
+  // The ask this task serves, as far as I may see it: never for outside partners, and never past a project's lock.
+  const up = t.parent && t.parent !== ask ? s.tasks.find((x) => x.id === t.parent && x.ask && canSeeTask(x)) : null;
+  // An ask stays with its project's manager, so its owner cell is fixed (store.updateTask holds it too).
+  const own = edit && !t.ask;
+  // From the table that breaks an ask down, a sheet opened from a row returns to the ask (closeSheet).
+  const back = ask ? { backTo: ask } : {};
+  const open = () => openSheet('task', { id: t.id, ...back });
   const menuStatus = (e) => { e.stopPropagation(); if (edit) openMenu(e, STATUS_ORDER.map((id) => ({ id, label: STATUS[id].label, dot: STATUS[id].color })), { selected: t.status, onPick: (id) => setStatus(t.id, id) }); };
   const menuPrio = (e) => { e.stopPropagation(); if (edit) openMenu(e, [...PRIORITY_ORDER.map((id) => ({ id, label: PRIORITY[id].label, dot: PRIORITY[id].color })), { id: '', label: 'בלי עדיפות' }], { selected: t.priority || '', onPick: (id) => updateTask(t.id, { priority: id || null }) }); };
-  const menuOwner = (e) => { e.stopPropagation(); if (edit) openMenu(e, ownerItems(p, pool), { selected: t.owner, onPick: (id) => (id === ADD ? openSheet('partner', { id: p.id, task: t.id }) : updateTask(t.id, { owner: id })) }); };
+  const menuOwner = (e) => { e.stopPropagation(); if (own) openMenu(e, ownerItems(p, ownerPool(t, p)), { selected: t.owner, onPick: (id) => (id === ADD ? openSheet('partner', { id: p.id, task: t.id, ...back }) : updateTask(t.id, { owner: id })) }); };
   const st = STATUS[t.status];
   const pr = t.priority ? PRIORITY[t.priority] : null;
   const n = t.due ? dayDiff(t.due) : null;
@@ -144,7 +157,7 @@ function Row({ t, cols, star, ask }) {
         onClick=${(e) => { e.stopPropagation(); toggleFocus(t.id); }}><${Icon} name="star" size=${15} /></button>` : null}
     </div>
     ${cols.map((c) => {
-      if (c === 'owner') return html`<div class="tc c-owner" role="cell"><button type="button" class="cell-btn" disabled=${!edit} aria-label=${`אחראי: ${person(t.owner).name}`} onClick=${menuOwner}><${Avatar} id=${t.owner} size=${28} /></button></div>`;
+      if (c === 'owner') return html`<div class="tc c-owner" role="cell"><button type="button" class="cell-btn" disabled=${!own} aria-label=${`אחראי: ${person(t.owner).name}`} onClick=${menuOwner}><${Avatar} id=${t.owner} size=${28} /></button></div>`;
       if (c === 'status') return html`<div class="tc c-status" role="cell"><button type="button" class=${'cell-fill' + (t.status === 'todo' ? ' quiet' : '') + (st.ink === 'light' ? ' light' : '')} style=${`--c:${st.color}`} disabled=${!edit} aria-label=${`סטטוס: ${st.label}`} onClick=${menuStatus}>${st.label}</button></div>`;
       if (c === 'priority') return html`<div class="tc c-priority" role="cell"><button type="button" class=${'cell-fill' + (pr ? '' : ' empty') + (pr?.ink === 'light' ? ' light' : '')} style=${pr ? `--c:${pr.color}` : ''} disabled=${!edit} aria-label=${`עדיפות: ${pr ? pr.label : 'בלי'}`} onClick=${menuPrio}>${pr ? pr.label : ''}</button></div>`;
       if (c === 'due') return html`<div class="tc c-due" role="cell"><label class=${'cell-date' + (late ? ' late' : !done && n !== null && n <= 1 ? ' soon' : '') + (done ? ' done' : '')}>
@@ -162,11 +175,19 @@ export function DueLines({ iso, late }) {
   return html`<span class="cd-date">${late ? html`<${Icon} name="alert" size=${12} />` : null}${dueDate(iso)}</span><span class="cd-rel">${dueRel(iso)}</span>`;
 }
 
-// Who can own a task: the project's people, and for whoever runs the project, a way to bring in someone new.
+// Who a task can be given to: the project's people; with no project, the whole team for the commander and only
+// myself for anyone else. The commander never reaches past a manager, so in a team project he doesn't run he can give
+// it only to its manager, and it goes as an ask (store.updateTask).
+export function ownerPool(t, p) {
+  const me = getState().me;
+  if (p && !p.personal && isCommander() && !leads(p)) return [...new Set([t.owner, p.manager].filter(Boolean))];
+  return p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [me];
+}
+// The owner menu: the pool, and for whoever runs the project, a way to bring in someone new who takes the task.
 export const ADD = '+partner';
 export function ownerItems(p, pool) {
   const items = pool.map((id) => ({ id, label: person(id).name + (person(id).role === 'external' ? ` · ${person(id).org || 'מבחוץ'}` : ''), person: id }));
-  return p && !p.personal && isOpen(p) && canManage(p) ? [...items, { id: ADD, label: 'הוספת שותף לפרויקט…', icon: 'plus' }] : items;
+  return p && !p.personal && isOpen(p) && leads(p) ? [...items, { id: ADD, label: 'הוספת שותף לפרויקט…', icon: 'plus' }] : items;
 }
 
 function AddRow({ defaults, placeholder = 'להוסיף משימה' }) {

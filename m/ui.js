@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
 import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
-import { useStore, set, getState, person, project, dismissToast, closeSheet, isCommander, setRank, rankedProjects } from './store.js';
+import { useStore, set, getState, person, project, dismissToast, closeSheet, isCommander, setRank, rankedProjects, canSeeTask } from './store.js';
 import { HEALTH, CLASSIFICATION, ASK_STATE, status, localDay, inOrder, askState } from './card.js';
 
 export const html = htm.bind(h);
@@ -52,7 +52,7 @@ export function Health({ p }) {
 // On a row of the order it is the number alone; `full` spells it out for a project's own page: "מקום 2 מתוך 4".
 export function RankCap({ p, full = false }) {
   if (!inOrder(p) || person(getState().me).role === 'external') return null;
-  const cls = 'rank-cap' + (p.rank ? '' : ' none');
+  const cls = 'rank-cap' + (p.rank ? '' : ' unplaced');
   const words = p.rank ? `מקום ${p.rank}${full ? ` מתוך ${rankedProjects().length}` : ''}` : '';
   const text = !p.rank ? 'עוד בלי מקום' : full ? words : String(p.rank);
   if (!isCommander()) return html`<span class=${cls}>${p.rank && !full ? html`<span class="sr">מקום </span>` : null}${text}</span>`;
@@ -106,24 +106,28 @@ export function useFlip(listRef) {
   });
 }
 
-// An ask's state as a tinted capsule: נשלחה, התקבלה, בעבודה 1/3, צריך לדבר, באיחור or בוצעה (card.askState).
+// An ask's state as a tinted capsule: נשלחה, התקבלה, בעבודה 1/3, צריך לדבר, המשימות בוצעו, באיחור or בוצעה
+// (card.askState). It counts only the tasks under it that I may see, so it never reveals work behind a lock.
+export const askSeen = (t) => askState(t, getState().tasks.filter((x) => x.parent !== t.id || canSeeTask(x)));
+export const askWords = (a) => (a.state === 'doing' ? `${ASK_STATE.doing.label} ${a.n}/${a.m}` : ASK_STATE[a.state].label);
 export function AskPill({ t }) {
-  const a = askState(t, getState().tasks);
-  const k = ASK_STATE[a.state];
-  return html`<${Pill} color=${k.color} cls="ask-pill">${a.state === 'doing' ? `${k.label} ${a.n}/${a.m}` : k.label}</${Pill}>`;
+  const a = askSeen(t);
+  return html`<${Pill} color=${ASK_STATE[a.state].color} cls="ask-pill">${askWords(a)}</${Pill}>`;
 }
 
-// The stage path as a row of segments: closed, current (and whether it waits for the commander), still ahead.
-export function StageStrip({ p, labels, onPick }) {
+// The stage path as a row of segments: closed, current (and whether it waits for the commander), still ahead. `bare`
+// keeps a locked project to its one line: each segment says only where it stands, never the stage's name.
+export function StageStrip({ p, labels, onPick, bare = false }) {
   if (!p.stages.length) return html`<div class="strip empty muted small">עוד אין שלבים</div>`;
   return html`<div class=${'strip' + (labels ? ' with-labels' : '')} role="list" aria-label="שלבי הפרויקט">
     ${p.stages.map((s) => {
       const cls = s.state === 'done' ? 'done' : s.state === 'skipped' ? 'skip' : s.state === 'active' ? 'cur' : s.state === 'pending' ? 'cur pend' : 'todo';
       const word = { done: 'נסגר', skipped: 'דילגנו', active: 'עכשיו', pending: 'מחכה לאישור', todo: 'בהמשך' }[s.state];
-      const inner = html`<span class="seg-bar"></span>${labels ? html`<span class="seg-name">${s.name}</span>` : null}`;
-      return onPick
-        ? html`<button type="button" role="listitem" class=${'sseg ' + cls} title=${`${s.name} · ${word}`} onClick=${() => onPick(s)}>${inner}</button>`
-        : html`<span role="listitem" class=${'sseg ' + cls} title=${`${s.name} · ${word}`}>${inner}</span>`;
+      const title = bare ? word : `${s.name} · ${word}`;
+      const inner = html`<span class="seg-bar"></span>${labels && !bare ? html`<span class="seg-name">${s.name}</span>` : null}`;
+      return onPick && !bare
+        ? html`<button type="button" role="listitem" class=${'sseg ' + cls} title=${title} onClick=${() => onPick(s)}>${inner}</button>`
+        : html`<span role="listitem" class=${'sseg ' + cls} title=${title}>${inner}</span>`;
     })}
   </div>`;
 }
@@ -136,7 +140,36 @@ export function Seg({ value, options, onChange, label, cls = '' }) {
   </div>`;
 }
 
-// A dialog takes focus when it opens (unless a field in it already did) and gives it back to what opened it.
+// The page's title as the place focus lands when what held it is gone, rather than the top of the document.
+function focusTitle() {
+  const h = document.querySelector('#content h1');
+  if (!h) return;
+  h.tabIndex = -1;
+  h.focus({ preventScroll: true });
+}
+// A button that takes its own row away (an answer, הבנתי, דיברנו, לאשר) hands focus on, so a keyboard or screen-reader
+// user doesn't start again from the top: to the next row of the list, else the one before it, else to what follows the
+// list, else to the page's title. Called before the change; it acts after the render, and only if focus was lost.
+const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled])';
+export function keepFocus(e, rowSel) {
+  const row = e.currentTarget.closest(rowSel);
+  const list = row?.parentElement;
+  if (!list) return;
+  const rows = [...list.children].filter((x) => x.matches(rowSel));
+  const i = rows.indexOf(row);
+  const first = (x) => (x.matches(FOCUSABLE) ? x : x.querySelector(FOCUSABLE));
+  const near = [...rows.slice(i + 1), ...rows.slice(0, i).reverse()].map(first).filter(Boolean);
+  const after = [...document.querySelectorAll(FOCUSABLE)].find((x) => !list.contains(x) && (list.compareDocumentPosition(x) & Node.DOCUMENT_POSITION_FOLLOWING));
+  requestAnimationFrame(() => {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.isConnected) return;
+    const to = [...near, after].find((x) => x?.isConnected && !x.disabled && x.getClientRects().length);
+    if (to) to.focus(); else focusTitle();
+  });
+}
+
+// A dialog takes focus when it opens (unless a field in it already did) and gives it back to what opened it, or to the
+// page's title when that is gone (an ask that was answered or done, a row that moved away).
 export function useDialogFocus(panel) {
   useEffect(() => {
     const opener = document.activeElement;
@@ -144,7 +177,9 @@ export function useDialogFocus(panel) {
     if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
     return () => {
       const a = document.activeElement;
-      if (opener?.isConnected && opener !== document.body && (!a || a === document.body || el.contains(a))) opener.focus({ preventScroll: true });
+      if (a && a !== document.body && !el.contains(a)) return;
+      if (opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+      else focusTitle();
     };
   }, []);
 }
@@ -172,8 +207,35 @@ export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, k
 
 export function Toasts() {
   const s = useStore();
+  const ref = useRef();
+  useGlide(ref);
   if (!s.toasts.length) return null;
-  return html`<div class="toasts" role="status" aria-live="polite">${s.toasts.map((t) => html`<${Toast} key=${t.id} t=${t} />`)}</div>`;
+  return html`<div class="toasts" role="status" aria-live="polite" ref=${ref}>${s.toasts.map((t) => html`<${Toast} key=${t.id} t=${t} />`)}</div>`;
+}
+// Toasts sit above the tab bar, and on a phone at the top of the screen while a sheet is open (m.css), so a toast still
+// showing when that changes, or when the stack around it changes, glides to its new place on a spring (damping 1) from
+// where it was. Measured by layout (offsetTop), so a toast's own entrance doesn't count as a move.
+function useGlide(ref) {
+  const last = useRef(new Map());
+  useLayoutEffect(() => {
+    const box = ref.current;
+    const now = new Map();
+    if (box) {
+      const top = box.getBoundingClientRect().top;
+      for (const el of box.children) now.set(el, top + el.offsetTop);
+    }
+    const prev = last.current;
+    last.current = now;
+    if (reducedMotion()) return;
+    for (const [el, at] of now) {
+      const dy = prev.has(el) ? prev.get(el) - at : 0;
+      if (Math.abs(dy) < 0.5) continue;
+      const m = motion(el);
+      const v = m.velocity('y');
+      m.set({ y: m.get('y') + dy });
+      m.to({ y: 0 }, { damping: 1, response: 0.42, velocity: { y: v } });
+    }
+  });
 }
 function Toast({ t }) {
   const ref = useRef();

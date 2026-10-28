@@ -3,10 +3,10 @@
 // outputs, the log of decisions and assumptions, and the people are one tab away. A restricted project shows a team
 // member outside it only its one line (canSeeDetail).
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, RankCap, useFlip, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
+import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, RankCap, useFlip, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND } from '../ui.js';
 import { TaskTable, BoardBar, Battery, DueLines, groupTasks, matches } from '../table.js';
 import { useStore, project, person, me, canManage, canSee, canSeeDetail, leads, isCommander, teamProjects, orderedProjects, personalProjects, projectTasks, projectOutputs, openSheet,
-  updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, resolveSenior, team, getState, isOpen } from '../store.js';
+  updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, team, getState, isOpen } from '../store.js';
 import { status, currentStage, inOrder, HILL, CONFIDENCE, HEALTH, STAGES, CLASSIFICATION, needsCommander, cardFill, TEMPLATES } from '../card.js';
 import { OutputCard } from './outputs.js';
 import { orderLine } from './overview.js';
@@ -50,8 +50,10 @@ function ProjectGroup({ g, ext }) {
 }
 
 // One project as a row of the portfolio table: its place, where it stands, how it feels, how much of its work is done.
-// The row is a stretched link to the project, so the place capsule can be a button of its own. A locked project keeps
-// to its one line: no battery and no next date (canSeeDetail).
+// The row is a stretched link to the project, so the place capsule can be a button of its own. With a pointer, the cells
+// that carry a tooltip (the next date, the manager, the stages, the battery) sit above the link so it shows, and a click
+// on them opens the project from the row (m.css). A locked project keeps to its one line: no battery, no next date, no
+// stage names and no "לא עודכן" (canSeeDetail).
 function ProjectRow({ p, ext }) {
   const s = getState();
   const st = status(p);
@@ -63,15 +65,16 @@ function ProjectRow({ p, ext }) {
   const asks = isCommander() ? needsCommander(p, s.tasks) : [];
   // Held projects keep the room of a place they don't have, so the names stay in line.
   const cap = inOrder(p) ? html`<${RankCap} p=${p} />` : p.phase === 'hold' && !ext ? html`<span class="cap-gap" aria-hidden="true"></span>` : null;
-  return html`<div class=${'tt-row tt-task prow' + (locked ? ' locked' : '')} role="row" style=${`--pc:${p.color}`}>
+  const go = (e) => { if (!e.target.closest('a, button')) location.hash = `#/project/${p.id}`; };
+  return html`<div class=${'tt-row tt-task prow' + (locked ? ' locked' : '')} role="row" style=${`--pc:${p.color}`} onClick=${go}>
     <span class="tc-bar" aria-hidden="true"></span>
     <span class="tc tc-title" role="cell">${cap}<span class="pdot" style=${`background:${p.color}`}></span><a class="tt-open prow-link" href=${`#/project/${p.id}`}><span class="tt-name">${p.name}</span>
-      <span class="tt-chips"><${Classified} p=${p} small />${st.pending ? html`<${Pill} color="var(--s-waiting)">מחכה לאישור</${Pill}>` : null}${asks.length ? html`<${Pill} color="var(--h-off)">צריך אותך · ${asks.length}</${Pill}>` : null}${st.stale ? html`<span class="stale">לא עודכן</span>` : null}</span></a></span>
+      <span class="tt-chips"><${Classified} p=${p} small />${st.pending ? html`<${Pill} color="var(--s-waiting)">מחכה לאישור</${Pill}>` : null}${asks.length ? html`<${Pill} color="var(--h-off)">צריך אותך · ${asks.length}</${Pill}>` : null}${st.stale && !locked ? html`<span class="stale">לא עודכן</span>` : null}</span></a></span>
     <span class="tc c-owner" role="cell"><${Avatar} id=${p.manager} size=${28} /></span>
-    <span class="tc c-pstage" role="cell"><span class="small"><b>${st.where}</b>${st.n ? html` <span class="muted">${Math.min(st.idx, st.n)}/${st.n}</span>` : null}</span><${StageStrip} p=${p} /></span>
+    <span class="tc c-pstage" role="cell"><span class="small"><b>${st.where}</b>${st.n ? html` <span class="muted">${Math.min(st.idx, st.n)}/${st.n}</span>` : null}</span><${StageStrip} p=${p} bare=${locked} /></span>
     <span class="tc c-status" role="cell"><span class=${'cell-fill' + (st.health === 'hold' || st.health === 'stopped' ? ' quiet' : '') + (st.health === 'stuck' ? ' light' : '')} style=${`--c:${h0.color}`}>${h0.label}</span></span>
     <span class="tc c-prog" role="cell">${locked ? null : tasks.length ? html`<${Battery} tasks=${tasks} /><span class="muted small">${done}/${tasks.length}</span>` : html`<span class="muted small">—</span>`}</span>
-    <span class="tc c-due" role="cell">${locked ? null : next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : dayDiff(next.due) <= 1 ? ' soon' : '')} title=${next.title}><${DueLines} iso=${next.due} late=${dayDiff(next.due) < 0} /></span>` : html`<span class="muted small">—</span>`}</span>
+    <span class="tc c-due" role="cell">${locked ? null : next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : dayDiff(next.due) <= 1 ? ' soon' : '')} title=${`הבא בתור: ${next.title}`}><span class="sr">הבא בתור: ${next.title}, </span><${DueLines} iso=${next.due} late=${dayDiff(next.due) < 0} /></span>` : html`<span class="muted small">—</span>`}</span>
   </div>`;
 }
 
@@ -285,7 +288,8 @@ function TasksBoard({ p, mgr }) {
   const tasks = all.filter((t) => matches(t, search, who) && (showDone || t.status !== 'done'));
   const cur = currentStage(p);
   const isMember = mgr || p.partners.includes(s.me);
-  const base = isMember ? { project: p.id } : null;
+  // A stopped or finished project takes no new work (and no asks), so its groups have no add line.
+  const base = isMember && isOpen(p) ? { project: p.id } : null;
   // What the commander adds in a project someone else runs goes to its manager as an ask (store.addTask), so the add
   // rows say so.
   const addLabel = isCommander() && !leads(p) ? `בקשה ל${person(p.manager).name}` : undefined;
@@ -300,7 +304,7 @@ function TasksBoard({ p, mgr }) {
   return html`<div class="board2">
     <${BoardBar} search=${search} setSearch=${setSearch} people=${[p.manager, ...p.partners]} who=${who} setWho=${setWho} groupBy=${by} setGroupBy=${setBy} groupOptions=${BOARD_GROUPS} showDone=${showDone} setShowDone=${setShowDone}
       onAddPerson=${mgr && !p.personal && isOpen(p) ? () => openSheet('partner', { id: p.id }) : null} />
-    <${TaskTable} key=${by} groups=${groups} star=${leads(p)} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
+    <${TaskTable} key=${by} groups=${groups} star=${leads(p)} scope=${p.id} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
   </div>`;
 }
 
@@ -320,7 +324,8 @@ function Log({ p, mgr }) {
   useStore();
   const [kind, setKind] = useState('decision');
   const [text, setText] = useState('');
-  const log = p.log || [];
+  // Outside partners never see asks, so neither the decisions about them (talked() tags them with the ask).
+  const log = (p.log || []).filter((l) => !(l.ask && me().role === 'external'));
   const member = mgr || p.partners.includes(getState().me);
   return html`<div class="sec">
     ${member ? html`<form class="log-add" onSubmit=${(e) => { e.preventDefault(); if (text.trim()) { addLog(p.id, { kind, text: text.trim() }); setText(''); } }}>

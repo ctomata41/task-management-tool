@@ -2,13 +2,13 @@
 // to a manager, a task (an ask with its breakdown), people, and recording a meeting. Each is short on purpose: a few
 // taps, then back to work.
 import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
-import { html, Icon, Avatar, Seg, Pill, Empty, Classified, AskPill, dueWord, dueDate, dateInput, isoDay, ago, openMenu, OUT_KIND } from '../ui.js';
+import { html, Icon, Avatar, Seg, Empty, Classified, AskPill, dueWord, dueDate, dateInput, isoDay, ago, openMenu, OUT_KIND } from '../ui.js';
 import { useStore, project, person, team, isCommander, canManage, canEditTask, closeSheet, openSheet, addProject, closeStage, approveGate, returnGate,
   weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addPerson, updateProject, saveMeeting, projectOutputs,
-  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, canSeeDetail, canSeeTask, projectAsks, askTasks } from '../store.js';
-import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, stageReady } from '../card.js';
+  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, canSeeDetail, canSeeTask, projectAsks, askTasks, isOpen } from '../store.js';
+import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, askState } from '../card.js';
 import { MeetingSummary } from './outputs.js';
-import { ownerItems, ADD, TaskTable, focusStar } from '../table.js';
+import { ownerItems, ownerPool, ADD, TaskTable, focusStar } from '../table.js';
 
 // ---------- a new project ----------
 export function NewProjectBody() {
@@ -88,6 +88,8 @@ export function GateBody({ id }) {
   const [ev, setEv] = useState([]);
   const [backTo, setBackTo] = useState('');
   if (!p) return null;
+  // Only whoever manages the project (its manager, the commander) closes or approves its stage.
+  if (!canManage(p)) return html`<${Empty} icon="lock">רק מי שמנהל את הפרויקט סוגר את השלב שלו.</${Empty}>`;
   if (!cur) return html`<${Empty}>אין שלב פתוח בפרויקט הזה.</${Empty}>`;
   const cmd = isCommander();
   const pending = cur.state === 'pending';
@@ -216,6 +218,7 @@ export function AskBody({ id }) {
   const [when, setWhen] = useState(null);
   if (!p || p.personal || !isCommander()) return html`<${Empty}>אפשר לשלוח בקשה רק למנהל/ת של פרויקט צוות.</${Empty}>`;
   if (leads(p)) return html`<${Empty}>זה פרויקט שלך: משימות מוסיפים ישר בלוח שלו.</${Empty}>`;
+  if (!isOpen(p)) return html`<${Empty}>הפרויקט נעצר או הסתיים, אז אי אפשר לשלוח אליו בקשות.</${Empty}>`;
   const open = projectAsks(p.id).filter((t) => t.by === s.me).length;
   const send = (e) => {
     e.preventDefault();
@@ -239,19 +242,35 @@ export function AskBody({ id }) {
 }
 
 // The top of an ask's drawer: who asked, why, by when and where it stands. The manager answers it here (קיבלתי or
-// צריך לדבר); after a talk the commander marks it talked through, which accepts it again.
+// צריך לדבר) while the project is open, and can still take a צריך לדבר back with קיבלתי until they talk; after a talk
+// the commander marks it talked through, which accepts it again. Once all of its tasks are done, whoever can close it
+// is offered to. Each answer hands focus on, since its buttons go: after קיבלתי to the line that breaks the ask down,
+// otherwise to the band.
 function AskBand({ t, p }) {
-  const me = getState().me;
-  const answer = !t.ack && t.status !== 'done' && leads(p);
+  const s = getState();
+  const band = useRef();
+  const live = t.status !== 'done' && leads(p) && isOpen(p);
+  const answer = live && !t.ack;
+  const retract = live && t.ack?.state === 'talk';
   const talk = isCommander() && t.ack?.state === 'talk' && t.status !== 'done';
-  return html`<div class="note-band why ask-band"><${Icon} name="flag" size=${16} />
+  const ready = t.status !== 'done' && canEditTask(t) && askState(t, s.tasks).state === 'ready';
+  const then = (f, next) => () => {
+    f();
+    requestAnimationFrame(() => {
+      const add = next === 'add' ? band.current?.closest('.tsheet')?.querySelector('.tt-add input') : null;
+      (add || band.current)?.focus({ preventScroll: !add });
+    });
+  };
+  return html`<div class="note-band why ask-band" ref=${band} tabindex="-1"><${Icon} name="flag" size=${16} />
     <div class="grow">
-      <div class="ask-band-top"><strong>${t.by === me ? `הבקשה שלך ל${person(t.owner).name}` : `בקשה מ${person(t.by).name}`}</strong><${AskPill} t=${t} /></div>
-      ${t.why ? html`<span>${t.why}</span>` : null}
-      ${t.due ? html`<span class="muted small">עד ${dueWord(t.due)}</span>` : null}
-      ${answer ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${() => ackAsk(t.id, 'ok')}>קיבלתי</button>
-        <button type="button" class="btn sm" onClick=${() => ackAsk(t.id, 'talk')}>צריך לדבר</button></div>` : null}
-      ${talk ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${() => talked(t.id)}>דיברנו</button></div>` : null}
+      <div class="ask-band-top"><strong>${t.by === s.me ? `הבקשה שלך ל${person(t.owner).name}` : `בקשה מ${person(t.by).name}`}</strong><${AskPill} t=${t} /></div>
+      ${t.why ? html`<p class="ask-line">${t.why}</p>` : null}
+      ${t.due ? html`<p class="ask-line muted small">עד ${dueWord(t.due)}</p>` : null}
+      ${answer ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${then(() => ackAsk(t.id, 'ok'), 'add')}>קיבלתי</button>
+        <button type="button" class="btn sm" onClick=${then(() => ackAsk(t.id, 'talk'))}>צריך לדבר</button></div>` : null}
+      ${retract ? html`<div class="ask-acts"><button type="button" class="btn sm" onClick=${then(() => ackAsk(t.id, 'ok'), 'add')}>קיבלתי בלי לדבר</button></div>` : null}
+      ${talk ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${then(() => talked(t.id))}>דיברנו</button></div>` : null}
+      ${ready ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${then(() => setStatus(t.id, 'done'))}>לסגור את הבקשה</button></div>` : null}
     </div>
   </div>`;
 }
@@ -267,16 +286,18 @@ export function TaskBody({ id }) {
   // The title grows with its words (borders included), measured before the sheet paints, so a long one shows whole.
   useLayoutEffect(() => { const el = titleRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`; } }, [title]);
   if (!t) return html`<${Empty}>המשימה נמחקה.</${Empty}>`;
+  if (!canSeeTask(t)) return html`<${Empty} icon="lock">אין לך גישה למשימה הזאת.</${Empty}>`;
   const edit = canEditTask(t);
   const p = project(t.project);
   const lead = leads(p);
   const fs = focusStar(t);
   // The ask this task serves, as far as I may see it (outside partners never see asks).
   const up = t.parent ? s.tasks.find((x) => x.id === t.parent && x.ask && canSeeTask(x)) : null;
-  const pool = p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [s.me];
   const save = (patch) => updateTask(t.id, patch);
-  const pickOwner = (e) => openMenu(e, ownerItems(p, pool), { selected: t.owner, onPick: (o) => (o === ADD ? openSheet('partner', { id: p.id, task: t.id, back: true }) : save({ owner: o })) });
-  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => x.phase !== 'stopped' && (t.personal ? x.personal : !x.personal) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
+  const pickOwner = (e) => openMenu(e, ownerItems(p, ownerPool(t, p)), { selected: t.owner, onPick: (o) => (o === ADD ? openSheet('partner', { id: p.id, task: t.id, back: true }) : save({ owner: o })) });
+  // A move to another project leaves the ask it served, goes to that project's manager when its owner isn't in it, and
+  // from the commander into a project he doesn't run goes as an ask: store.updateTask holds all three.
+  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => isOpen(x) && (t.personal ? x.personal : !x.personal) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
     { selected: t.project || '', onPick: (pid) => { const np = project(pid); save({ project: pid || null, stage: np ? currentStage(np)?.id || null : null }); } });
   const pickStage = (e) => openMenu(e, p.stages.map((x) => ({ id: x.id, label: x.name })), { selected: t.stage, onPick: (sid) => save({ stage: sid }) });
   const stage = p?.stages.find((x) => x.id === t.stage);
@@ -308,8 +329,9 @@ export function TaskBody({ id }) {
 }
 
 // ---------- people ----------
-// From a task's owner menu, the new partner also takes the task (and from the task sheet, it opens again after).
-export function PartnerBody({ id, task }) {
+// From a task's owner menu, the new partner also takes the task (and from the task sheet, it opens again after). An
+// ask stays with the project's manager, so a partner never takes one over.
+export function PartnerBody({ id, task: taskId }) {
   const s = useStore();
   const p = project(id);
   const [mode, setMode] = useState('pick');
@@ -319,6 +341,7 @@ export function PartnerBody({ id, task }) {
   if (!p) return null;
   const inIt = new Set([p.manager, ...p.partners]);
   const pool = s.people.filter((x) => !inIt.has(x.id));
+  const task = taskId && !s.tasks.find((x) => x.id === taskId)?.ask ? taskId : null;
   const add = (pid) => {
     updateProject(p.id, { partners: [...p.partners, pid] });
     if (task) updateTask(task, { owner: pid });

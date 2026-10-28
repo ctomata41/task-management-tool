@@ -3,9 +3,9 @@
 // commander sent under it. The deputy reads all of it without acting on it; the team reads the order and the asks.
 // Nothing here asks anyone for a report.
 import { useState, useRef } from 'preact/hooks';
-import { html, Icon, Avatar, Classified, Health, StageStrip, Empty, ProjectTag, RankCap, AskPill, useFlip, ago, dueWord } from '../ui.js';
-import { useStore, orderedProjects, commanderQueue, isCommander, isCommand, commander, person, project, me, openSheet, approveGate, talked,
-  projectAsks, orderStamp, leads, canSeeDetail } from '../store.js';
+import { html, Icon, Avatar, Classified, Health, StageStrip, Empty, ProjectTag, RankCap, AskPill, askSeen, askWords, useFlip, keepFocus, ago, dueWord } from '../ui.js';
+import { useStore, orderedProjects, rankedProjects, commanderQueue, isCommander, isCommand, commander, person, project, me, openSheet, approveGate, talked,
+  lineAsks, orderStamp, leads, canSeeDetail } from '../store.js';
 import { status, HILL, cardFill, inOrder } from '../card.js';
 
 const KIND = {
@@ -17,10 +17,11 @@ const KIND = {
   asklate: { icon: 'clock', color: 'var(--h-off)' },
 };
 
-// Who set the order and when, for the line under its title here and on the portfolio.
+// Who set the order and when, for the line under its title here and on the portfolio. The first order (the sample's,
+// or one a saved state got on load) carries no name until the commander moves a project.
 export function orderLine() {
   const st = orderStamp();
-  return st ? `נקבע ע״י ${person(st.by).name} · עודכן ${ago(st.at)}` : 'עוד לא נקבע סדר';
+  return st ? `נקבע ע״י ${person(st.by).name} · עודכן ${ago(st.at)}` : rankedProjects().length ? 'הסדר ההתחלתי · עוד לא שונה' : 'עוד לא נקבע סדר';
 }
 
 export function Overview() {
@@ -60,22 +61,28 @@ function Queue({ queue, act }) {
   </div>`;
 }
 
+// The reasons in the queue speak to the commander ("שלך"); the deputy reads them about him.
+const ABOUT = { gate: (boss) => `שער שמחכה לאישור של ${boss.name}`, asklate: (boss) => `בקשה של ${boss.name} באיחור` };
+
 function QueueRow({ q, act }) {
   const k = KIND[q.kind];
   const p = project(q.project);
   const mgr = person(p.manager);
+  // A button that settles the row takes it away, so focus goes on to the next one (ui.keepFocus).
+  const settle = (f) => (e) => { keepFocus(e, '.qrow'); f(); };
   const acts = act ? {
-    gate: html`<button type="button" class="btn btn-primary sm" onClick=${() => approveGate(q.project)}>לאשר</button>
+    gate: html`<button type="button" class="btn btn-primary sm" onClick=${settle(() => approveGate(q.project))}>לאשר</button>
       <button type="button" class="btn sm" onClick=${() => openSheet('return', { id: q.project })}>להחזיר עם הכוונה</button>`,
     senior: html`<button type="button" class="btn btn-primary sm" onClick=${() => openSheet('resolve', { id: q.project })}>טיפלתי</button>`,
     late: leads(p) ? null : html`<button type="button" class="btn sm" onClick=${() => openSheet('ask', { id: q.project })}>בקשה ל${mgr.name}</button>`,
     commit: q.task ? html`<button type="button" class="btn sm" onClick=${() => openSheet('task', { id: q.task })}>לפתוח</button>` : null,
-    talk: html`<button type="button" class="btn btn-primary sm" onClick=${() => talked(q.task)}>דיברנו</button>`,
+    talk: html`<button type="button" class="btn btn-primary sm" onClick=${settle(() => talked(q.task))}>דיברנו</button>`,
     asklate: html`<button type="button" class="btn sm" onClick=${() => openSheet('task', { id: q.task })}>לפתוח</button>`,
   }[q.kind] : null;
+  const why = !act && ABOUT[q.kind] ? ABOUT[q.kind](commander()) : q.why;
   return html`<div class="qrow">
     <span class="q-ic" style=${`--c:${k.color}`}><${Icon} name=${k.icon} size=${16} /></span>
-    <div class="grow"><div class="q-why">${q.why}${q.by ? html` <span class="muted">· עד ${dueWord(q.by)}</span>` : null}</div><div>${q.text}</div>
+    <div class="grow"><div class="q-why">${why}${q.by ? html` <span class="muted">· עד ${dueWord(q.by)}</span>` : null}</div><div>${q.text}</div>
       <div class="q-proj"><${ProjectTag} id=${p.id} /><${Classified} p=${p} small /><span class="muted small">${mgr.name}</span></div></div>
     ${acts ? html`<div class="q-acts">${acts}</div>` : null}
   </div>`;
@@ -89,11 +96,13 @@ function Order({ projects, ext }) {
 }
 
 // The project's one line as a stretched link to its page; its place, its asks and the commander's + sit above the link.
+// A restricted project shows those outside it only its one line: name, manager, stage, health and place, with no hill,
+// no last update and no stage names (StageStrip bare).
 function ProjectLine({ p, ext }) {
   const st = status(p);
-  const open = canSeeDetail(p); // a restricted project shows those outside it no more than this line
+  const open = canSeeDetail(p);
   const fill = cardFill(p);
-  const asks = projectAsks(p.id);
+  const asks = lineAsks(p.id); // the open asks, then for three days one that was done ("בוצעה")
   const ask = isCommander() && !leads(p);
   const mgr = person(p.manager);
   return html`<div class=${'ov-line' + (ext ? '' : ' capped') + (ask ? ' can-ask' : '')} style=${`--bar:${p.color}`}>
@@ -102,11 +111,16 @@ function ProjectLine({ p, ext }) {
       <div class="ovl-id"><a class="ovl-link" href=${`#/project/${p.id}`}><strong>${p.name}</strong></a>
         <span class="ovl-sub"><${Avatar} id=${p.manager} size=${18} /><span class="muted small">${mgr.name}</span><${Classified} p=${p} small /></span></div>
     </div>
-    <div class="ovl-stage"><${StageStrip} p=${p} /><span class="small">${st.where}${st.pending ? html` · <b class="wait-t">מחכה לאישור</b>` : null}</span></div>
-    <div class="ovl-state"><${Health} p=${p} /><span class="muted small"><${Icon} name="hill" size=${12} /> ${HILL[p.hill || 'up'].short}</span></div>
-    <div class="ovl-meta"><span class=${'small' + (st.stale ? ' bad-t' : ' muted')}>${st.stale ? 'לא עודכן ' : 'עודכן '}${ago(p.lastUpdate)}</span>${open ? html`<span class="muted small">${fill.done}/${fill.of} בתעודה</span>` : null}</div>
+    <div class="ovl-stage"><${StageStrip} p=${p} bare=${!open} /><span class="small">${st.where}${st.pending ? html` · <b class="wait-t">מחכה לאישור</b>` : null}</span></div>
+    <div class="ovl-state"><${Health} p=${p} />${open ? html`<span class="muted small"><${Icon} name="hill" size=${12} /> ${HILL[p.hill || 'up'].short}</span>` : null}</div>
+    <div class="ovl-meta">${open ? html`<span class=${'small' + (st.stale ? ' bad-t' : ' muted')}>${st.stale ? 'לא עודכן ' : 'עודכן '}${ago(p.lastUpdate)}</span><span class="muted small">${fill.done}/${fill.of} בתעודה</span>` : null}</div>
     ${ask ? html`<button type="button" class="ov-add" aria-label=${`בקשה חדשה ל${mgr.name}`} title=${`בקשה ל${mgr.name}`} onClick=${() => openSheet('ask', { id: p.id })}><${Icon} name="plus" size=${16} /></button>` : null}
-    ${asks.length ? html`<div class="ovl-asks">${asks.map((t) => html`<button type="button" class="ov-ask" key=${t.id} onClick=${() => openSheet('task', { id: t.id })}>
+    ${asks.length ? html`<div class="ovl-asks">${asks.map((t) => html`<button type="button" class="ov-ask" key=${t.id} aria-label=${`${t.title}, ${askLabel(t)}`} onClick=${() => openSheet('task', { id: t.id })}>
       <${AskPill} t=${t} /><span class="ov-ask-t">${t.title}</span></button>`)}</div>` : null}
   </div>`;
+}
+// An ask's state in words for a screen reader, after its title: "בעבודה 1 מתוך 3" rather than "1/3".
+function askLabel(t) {
+  const a = askSeen(t);
+  return a.state === 'doing' ? `בעבודה ${a.n} מתוך ${a.m}` : askWords(a);
 }

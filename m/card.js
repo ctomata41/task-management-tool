@@ -80,12 +80,6 @@ export function stagesFromTemplate(id) {
 
 // ---------- working days (Sunday to Thursday) ----------
 const isWorkday = (d) => d.getDay() <= 4;
-export function addWorkdays(from, n) {
-  const d = new Date(from);
-  let left = n;
-  while (left > 0) { d.setDate(d.getDate() + 1); if (isWorkday(d)) left--; }
-  return d;
-}
 export function workdaysBetween(a, b) {
   let n = 0;
   const d = new Date(a); d.setHours(0, 0, 0, 0);
@@ -96,7 +90,6 @@ export function workdaysBetween(a, b) {
 
 // ---------- the stage path ----------
 export const currentStage = (p) => p.stages.find((s) => s.state === 'active' || s.state === 'pending') || null;
-export const doneStages = (p) => p.stages.filter((s) => s.state === 'done' || s.state === 'skipped').length;
 
 // Close the current stage with one of the four gate choices. A stage whose gate belongs to the commander waits as
 // 'pending' until the commander approves, unless the commander is the one closing it.
@@ -186,13 +179,15 @@ export function placeProject(projects, id, n) {
 // ---------- asks: what the commander asks of a project's manager ----------
 // An ask is a task with ask: true, from the commander to the manager, who answers it (ack) and breaks it into tasks
 // (each with parent: the ask). Its state as the commander reads it, most pressing first: done; talk (the manager wants
-// to talk about it); late (open past its date, from the day after, as with external commitments); doing (broken into
-// tasks, n of m done); sent (not answered yet); ok (accepted, nothing under it yet).
+// to talk about it); ready (every task under it is done, so it only waits to be closed, and is never late); late (open
+// past its date, from the day after, as with external commitments); doing (broken into tasks, n of m done); sent (not
+// answered yet); ok (accepted, nothing under it yet).
 export const ASK_STATE = {
   sent: { label: 'נשלחה', color: 'var(--s-todo)' },
   ok: { label: 'התקבלה', color: 'var(--accent)' },
   doing: { label: 'בעבודה', color: 'var(--s-progress)' },
   talk: { label: 'צריך לדבר', color: 'var(--s-waiting)' },
+  ready: { label: 'המשימות בוצעו', color: 'var(--s-done)' },
   late: { label: 'באיחור', color: 'var(--h-off)' },
   done: { label: 'בוצעה', color: 'var(--s-done)' },
 };
@@ -203,6 +198,7 @@ export function askState(ask, tasks = [], now = Date.now()) {
   let state = 'ok';
   if (ask.status === 'done') state = 'done';
   else if (ask.ack?.state === 'talk') state = 'talk';
+  else if (m && n === m) state = 'ready';
   else if (ask.due && daysBetween(now, ask.due) < 0) state = 'late';
   else if (m) state = 'doing';
   else if (!ask.ack) state = 'sent';

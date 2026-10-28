@@ -53,25 +53,16 @@
 .wait-ic.red { background: var(--bad-bg); color: var(--bad); }
 .wait-ic.green { background: var(--ok-bg); color: var(--ok); }
 
-/* task rows: one tap to check, status capsule, date */
-.m-app .trow { border-bottom: 0; padding: 10px 14px; }
+/* task rows: one tap to check, the star */
 .tcheck { position: relative; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: grid; place-items: center; flex: none; color: var(--on-accent); }
 .tcheck::after { content: ''; position: absolute; inset: -11px; }
 .tcheck.on { background: var(--s-done); border-color: var(--s-done); }
 @media (hover: hover) { .tcheck:not(.on):hover { border-color: var(--s-done); } }
-.focus-star { color: var(--s-progress); display: inline-flex; }
 .starbtn { position: relative; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: var(--fg-3); opacity: 0.55; }
 .starbtn::after { content: ''; position: absolute; inset: -7px; }
 .starbtn.on { color: var(--s-progress); opacity: 1; }
 .starbtn.on svg { fill: currentColor; }
 @media (hover: hover) { .starbtn:hover { opacity: 1; } }
-.stbtn { position: relative; height: 26px; min-width: 70px; padding: 0 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.01em;
-  background: color-mix(in srgb, var(--c) 15%, transparent); color: color-mix(in oklab, var(--c) var(--ink), black); }
-.stbtn::after { content: ''; position: absolute; inset: -9px -2px; }
-.stbtn:disabled { opacity: 1; cursor: default; }
-.due2 { font-size: 0.75rem; color: var(--fg-3); padding: 0 6px; white-space: nowrap; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
-.due2.late { color: var(--bad); font-weight: 600; }
-.due2.soon { color: var(--warn); font-weight: 600; }
 .ext-chip, .cmd-chip, .me-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 0.6875rem; font-weight: 600; border-radius: 999px; padding: 1px 8px; letter-spacing: 0.01em; }
 .ext-chip { background: var(--warn-bg); color: var(--warn); }
 .cmd-chip { background: var(--wait-bg); color: color-mix(in oklab, var(--s-waiting) var(--ink), black); }
@@ -90,12 +81,6 @@
 .add-sheet .qadd .qchip { background: var(--surface); }
 
 /* ---------- projects ---------- */
-.pcard2 { padding-inline-start: 22px; }
-.pcard2::before { content: ''; position: absolute; inset-inline-start: 0; top: 16px; bottom: 16px; width: 4px; border-start-end-radius: 4px; border-end-end-radius: 4px; background: var(--bar); }
-.pc-name { font-size: 1.0625rem; flex: 1; min-width: 0; }
-.pc-where { display: flex; align-items: baseline; gap: 8px; }
-.pc-stage { font-weight: 600; }
-.pc-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .stale { font-size: 0.75rem; font-weight: 600; color: var(--warn); letter-spacing: 0.01em; }
 
 /* the stage strip */
@@ -225,7 +210,7 @@
 .ov-line::before { content: ''; position: absolute; inset-inline-start: 0; top: 14px; bottom: 14px; width: 4px; border-start-end-radius: 4px; border-end-end-radius: 4px; background: var(--bar); }
 .ovl-name { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .ovl-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ovl-sub { display: flex; align-items: center; gap: 6px; }
+.ovl-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; row-gap: 4px; }
 .ovl-stage { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .ovl-state, .ovl-meta { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 
@@ -308,11 +293,6 @@
   .core-l { padding-top: 6px; }
   .sfield-acts { grid-column: 1; }
   .stage-body { padding-inline-start: 0; }
-  .m-app .trow { flex-wrap: nowrap; }
-  .m-app .trow-main { flex-basis: auto; }
-  .m-app .trow-side { width: auto; }
-  .m-app .trow-side .avatar { display: none; }
-  .stbtn { min-width: 0; }
   .qadd { flex-wrap: wrap; border-radius: 22px; padding: 6px 6px 6px 10px; padding-inline-start: 12px; }
   .qadd-input { flex-basis: calc(100% - 40px); }
   .qadd .btn { margin-inline-start: auto; }
@@ -332,22 +312,17 @@
   .qrow .grow { min-width: 0; }
   .q-acts { grid-column: 2; }
   .core-l { padding-inline-start: 10px; }
-  .m-app .trow { align-items: flex-start; }
-  .m-app .trow .tcheck { margin-top: 2px; }
-  .m-app .trow-side { flex-direction: column-reverse; align-items: flex-end; gap: 2px; }
-  .m-app .trow-side .starbtn { display: none; }
-  .m-app .trow-side .due2 { padding: 0 2px; }
 }
 
 /* ---------- response (CLAUDE.md): press feedback on touch-down ---------- */
 @media (prefers-reduced-motion: no-preference) {
-  .tcheck, .starbtn, .stbtn, .qchip, .trl-n, .ev-chip, .person-chip, .opt-card, .tpl-opt, .choice, .hill-opt, .conf-opt, .st-opt, .fact-btn, .add-opt, .link-btn,
-  .ocard2, .pcard2, .stage-name, .wait-row {
+  .tcheck, .starbtn, .qchip, .trl-n, .ev-chip, .person-chip, .opt-card, .tpl-opt, .choice, .hill-opt, .conf-opt, .st-opt, .fact-btn, .add-opt, .link-btn,
+  .ocard2, .stage-name, .wait-row {
     transition: transform 0.44s var(--spring), background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
   }
-  .tcheck:active, .starbtn:active, .stbtn:active:not(:disabled), .qchip:active, .trl-n:active:not(:disabled), .ev-chip:active, .person-chip:active,
+  .tcheck:active, .starbtn:active, .qchip:active, .trl-n:active:not(:disabled), .ev-chip:active, .person-chip:active,
   .opt-card:active, .hill-opt:active, .conf-opt:active, .st-opt:active:not(:disabled), .add-opt:active, .link-btn:active { transform: scale(0.95); transition-duration: 0.08s; }
-  .ocard2:active, .pcard2:active { transform: scale(0.985); transition-duration: 0.1s; }
+  .ocard2:active { transform: scale(0.985); transition-duration: 0.1s; }
 }
 .tcheck.on { transition: background-color 0.25s var(--spring), border-color 0.25s; }
 :is(.wait-row, .tpl-opt, .choice, .ov-line, .who-row):active:not(:has(button:active, a:active, input:active)) { background: var(--press); transition-duration: 0s; }
@@ -439,7 +414,7 @@ button.th { cursor: pointer; }
 /* the bar above a board */
 .bbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .bbar-search { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: 999px; background: var(--surface); color: var(--fg-3); width: 220px; }
-.bbar-search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; color: var(--fg); }
+.bbar-search input { flex: 1; width: 0; min-width: 0; border: 0; background: transparent; outline: none; color: var(--fg); } /* width 0: it takes the room it is given, not 20 characters' worth, so larger text never pushes the page sideways */
 .bbar-search:focus-within { box-shadow: 0 0 0 3px var(--accent-soft); }
 .bbar-people { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--surface); }
 .pf { position: relative; border-radius: 50%; padding: 1px; opacity: 0.9; }
@@ -711,7 +686,7 @@ button.th { cursor: pointer; }
 .rank-cap { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 28px; height: 28px; padding: 0 9px;
   border-radius: 999px; font-size: 0.875rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; white-space: nowrap;
   background: color-mix(in srgb, var(--accent) 15%, transparent); color: color-mix(in oklab, var(--accent) var(--ink), black); }
-.rank-cap.none { font-size: 0.75rem; font-weight: 600; background: var(--fill); color: var(--fg-2); }
+.rank-cap.unplaced { font-size: 0.75rem; font-weight: 600; background: var(--fill); color: var(--fg-2); }
 button.rank-cap { position: relative; z-index: 1; }
 button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 /* An ask's state (AskPill) is a .spill; its counts keep their width as they change. */
@@ -720,7 +695,7 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .flip-lift { position: relative; z-index: 2; }
 @media (hover: hover) {
   button.rank-cap:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
-  button.rank-cap.none:hover { background: var(--fill-2); }
+  button.rank-cap.unplaced:hover { background: var(--fill-2); }
 }
 @media (prefers-reduced-motion: no-preference) {
   button.rank-cap { transition: transform 0.44s var(--spring), background-color 0.2s, color 0.2s, box-shadow 0.2s; }
@@ -732,6 +707,12 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 @media (prefers-contrast: more) {
   .rank-cap { box-shadow: inset 0 0 0 1px var(--line-strong); }
 }
+/* In dark, a system colour as it is reads below 4.5:1 on its own 15% tint (blue, purple, red). A capsule's text there
+   is the colour lightened toward white, the way the light theme darkens it through --ink. */
+.rank-cap { --c: var(--accent); }
+.ask-chip { --c: var(--s-waiting); }
+.pin-chip { --c: var(--s-progress); }
+:root[data-theme="dark"] :is(.spill, .rank-cap:not(.unplaced), .ask-chip, .pin-chip, .ask-when .conf-opt.on small) { color: color-mix(in oklab, var(--c) 72%, white); }
 /* end of core */
 
 
@@ -773,6 +754,7 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 /* The top of an ask's drawer, then the tasks it was broken into, grouped on the sheet's own grey. */
 .ask-band .grow { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .ask-band-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ask-band .ask-line { margin: 0; }
 .ask-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .ask-kids .tt { background: var(--surface-2); }
 .ask-kids .ttable { gap: 0; }
@@ -798,6 +780,14 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .q-more { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 0 16px; color: var(--accent-2); font-size: 0.875rem; font-weight: 600;
   transition: background-color 0.3s; }
 .q-more:active { background: var(--press); transition-duration: 0s; }
+/* The row is a stretched link to its project (its tag), so a tap anywhere on its text opens the project, and the
+   row answers the press; its buttons sit above the link. */
+.qrow { position: relative; transition: background-color 0.3s; }
+.q-proj .ptag::after { content: ''; position: absolute; inset: 0; }
+.q-proj .ptag:focus-visible { outline: none; }
+.qrow:has(.q-proj .ptag:focus-visible) { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -3px; }
+.qrow:has(.q-proj .ptag:active) { background: var(--press); transition-duration: 0s; }
+.q-acts { position: relative; z-index: 1; }
 /* A row's buttons are 44px to hit (up and down only, so never into the next one). */
 .q-acts .btn { position: relative; }
 .q-acts .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
@@ -834,6 +824,7 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .ov-ask-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (hover: hover) {
   .q-more:hover { background: var(--hover); }
+  .qrow:has(.q-proj .ptag:hover):not(:has(.q-acts:hover)) { background: var(--hover); }
   .ov-add:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
   .ov-ask:hover { background: var(--hover); }
 }
@@ -851,6 +842,14 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
   .ov-line.capped .ovl-stage { padding-inline-start: 38px; }
   .ovl-name { align-items: flex-start; }
   /* A long name takes a second line rather than losing its end. */
+  .ovl-link { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
+/* A window half a screen wide: the line drops its last-update column, so the commander's + stays on the card, and a
+   long name takes a second line. */
+@media (min-width: 901px) and (max-width: 1100px) {
+  .ovl-meta { display: none; }
+  .ov-line { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr) 120px; grid-template-areas: "name stage state"; }
+  .ov-line.can-ask { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.6fr) 120px 28px; grid-template-areas: "name stage state add"; }
   .ovl-link { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 /* end of overview */
@@ -879,6 +878,12 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 .prow:has(.prow-link:focus-visible) { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -3px; }
 .prow:has(.prow-link:active) { background: var(--press); transition-duration: 0s; }
 .prow .cell-date { position: static; } /* under the link, so a tap on it opens the project too */
+/* With a pointer, the cells that carry a tooltip (the next date and its task, the manager, the stages, the battery) sit
+   above the link so it shows; a click on them opens the project from the row itself (ProjectRow). */
+@media (hover: hover) {
+  .prow { cursor: pointer; }
+  .prow :is(.cell-date, .c-owner .avatar, .sseg, .batt) { position: relative; z-index: 1; }
+}
 .prow.flip-lift { background: var(--surface); box-shadow: var(--shadow); transition-duration: 0s; }
 .prow { transition: background-color 0.3s, box-shadow 0.3s; }
 
@@ -895,6 +900,12 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
   .lock-page { box-shadow: 0 0 0 1px var(--line-strong); }
 }
 @media (max-width: 900px) {
+  /* While a sheet is open, toasts dock at the top of the screen, clear of the sheet's close button at the inline end,
+     instead of covering its controls; they come in from above (app/motion.js) and glide back down when it closes. */
+  .m-app:has(> .overlay) .toasts { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 8px); padding-inline: 16px 60px; }
+  /* Docked over the sheet's grabber and head, a toast lets a drag through to them; only its buttons take a press. */
+  .m-app:has(> .overlay) .toast { pointer-events: none; }
+  .m-app:has(> .overlay) .toast button { pointer-events: auto; }
   .wait-row:has(> .wait-acts) { flex-wrap: wrap; }
   .wait-row:has(> .wait-acts) > .wait-open { flex-basis: 0; }
   .wait-row > .wait-acts { flex-basis: 100%; padding-inline-start: 44px; }

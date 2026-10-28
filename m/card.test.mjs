@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stagesFromTemplate, closeStage, returnStage, weeklyUpdate, needsCommander, status, stageReady, cardFill, schedule, dayStart, addDays, DAY,
-  placeProject, byRank, askState, KIND_ORDER } from './card.js';
+  placeProject, byRank, askState, ASK_STATE, KIND_ORDER } from './card.js';
 
 const base = (template = 'tool') => ({ id: 'p', name: 'בדיקה', stages: stagesFromTemplate(template), what: '', forWhom: '', success: '', log: [], tolDays: 14 });
 
@@ -244,6 +244,26 @@ test('an ask goes sent, accepted, in work, talk, late and done', () => {
   assert.deepEqual(st({ ...ok, due: '2026-10-27', status: 'done' }, under), { state: 'done', n: 1, m: 2 });
 });
 
+test('an ask whose tasks are all done waits to be closed: ready, and never late', () => {
+  const now = new Date(2026, 9, 28, 15, 0).getTime();
+  const ask = { id: 'k', project: 'p', ask: true, status: 'todo', ack: { state: 'ok' }, due: '2026-10-29', title: 'בקשה' };
+  const kids = [{ id: 'c1', parent: 'k', status: 'done' }, { id: 'c2', parent: 'k', status: 'done' }, { id: 'x', status: 'todo' }];
+  const st = (a, tasks = kids, at = now) => askState(a, tasks, at);
+  assert.deepEqual(st(ask), { state: 'ready', n: 2, m: 2 });
+  assert.equal(ASK_STATE.ready.label, 'המשימות בוצעו');
+  // Past its date, and long past it, it is still only waiting to be closed.
+  assert.equal(st({ ...ask, due: '2026-10-27' }).state, 'ready');
+  assert.equal(st(ask, kids, now + 8 * DAY).state, 'ready');
+  // One task still open: in work, and late once the date has passed.
+  const open = [kids[0], { ...kids[1], status: 'doing' }];
+  assert.deepEqual(st(ask, open), { state: 'doing', n: 1, m: 2 });
+  assert.equal(st({ ...ask, due: '2026-10-27' }, open).state, 'late');
+  // Nothing under it is not ready; a talk still comes first; closed, it reads done.
+  assert.equal(st({ ...ask, due: '2026-10-27' }, []).state, 'late');
+  assert.equal(st({ ...ask, ack: { state: 'talk' } }).state, 'talk');
+  assert.deepEqual(st({ ...ask, status: 'done' }), { state: 'done', n: 2, m: 2 });
+});
+
 test('an ask the manager wants to talk about, or a late one, reaches the commander; a stuck task under it never does', () => {
   const now = new Date(2026, 9, 28, 15, 0).getTime();
   const p = base();
@@ -257,6 +277,17 @@ test('an ask the manager wants to talk about, or a late one, reaches the command
   // Done, or in a stopped project, it leaves the queue.
   assert.deepEqual(needsCommander(p, [{ ...ask, due: '2026-10-27', status: 'done' }], now), []);
   assert.deepEqual(needsCommander({ ...p, phase: 'stopped' }, [{ ...ask, due: '2026-10-27' }], now), []);
+});
+
+test('an ask whose tasks are all done never reaches the commander as late', () => {
+  const now = new Date(2026, 9, 28, 15, 0).getTime();
+  const p = base();
+  const ask = { id: 'k', project: 'p', ask: true, status: 'todo', ack: { state: 'ok' }, due: '2026-10-27', title: 'בקשה' };
+  const done = { id: 'c', project: 'p', parent: 'k', status: 'done', title: 'משימה' };
+  assert.deepEqual(needsCommander(p, [ask, done], now), []);
+  assert.deepEqual(needsCommander(p, [ask, done], now + 8 * DAY), []);
+  // Until the last task is done, a late ask still reaches him.
+  assert.deepEqual(needsCommander(p, [ask, { ...done, status: 'doing' }], now).map((x) => x.kind), ['asklate']);
 });
 
 test('the queue reads gates first, then seniors, talks, late stages, late asks and commitments', () => {
