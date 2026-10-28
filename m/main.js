@@ -4,12 +4,12 @@ import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
 import { QuickAdd } from './parts.js';
-import { useStore, openSheet, closeSheet, person, isCommander, commanderQueue, myProjects, personalProjects, myTasks, updatesDue } from './store.js';
+import { useStore, openSheet, closeSheet, person, isCommander, commanderQueue, myProjects, personalProjects, myTasks, updatesDue, asksWaiting, movedProjects } from './store.js';
 import { Today } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
 import { Overview } from './views/overview.js';
 import { Outputs, OutputSheetBody, NewOutputBody } from './views/outputs.js';
-import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, DirectBody, AskBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
+import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, AskBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
 import { Calendar, StageBody } from './views/calendar.js';
 import { JarvisScreen, JarvisTab, JarvisSide } from './views/jarvis.js';
 import { takeReturn } from './gcal.js';
@@ -32,8 +32,9 @@ function useRoute() {
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
   }, []);
-  const [, name, arg] = (hash || '#/today').split('/');
-  return { name: name || 'today', arg };
+  // With no route, the commander starts from the picture of the whole team (as switchTo does); everyone else from their day.
+  const [, name, arg] = (hash || '').split('/');
+  return { name: name || (isCommander() ? 'overview' : 'today'), arg };
 }
 
 // The large title gives way to a compact one in the bar once it scrolls under it.
@@ -62,8 +63,8 @@ const SHEETS = {
   return: { title: 'להחזיר את השלב', body: ReturnBody },
   weekly: { title: 'עדכון שבועי', body: WeeklyBody },
   resolve: { title: 'בקשה לבכיר', body: ResolveBody },
-  direct: { title: 'להוריד משימה', body: DirectBody },
   ask: { title: 'בקשה חדשה', body: AskBody },
+  direct: { title: 'בקשה חדשה', body: AskBody }, // for now: old buttons that open 'direct' with a project's id get the ask
   partner: { title: 'הוספת שותף', body: PartnerBody },
   output: { title: 'תוצר', body: OutputSheetBody },
   stage: { title: 'שלב', body: StageBody },
@@ -80,8 +81,11 @@ function App() {
   const cmd = isCommander();
   const active = r.name === 'project' ? 'projects' : r.name;
   const activeTab = r.name === 'outputs' ? 'projects' : active;
+  // What waits for me today: tasks due or late, weekly updates, asks I haven't answered and projects of mine that moved
+  // in the order. An unanswered ask counts once, as an ask.
   const counts = {
-    today: myTasks().filter((t) => t.status !== 'done' && t.due && dayDiff(t.due) <= 0 && !t.personal).length + updatesDue().length,
+    today: myTasks().filter((t) => t.status !== 'done' && t.due && dayDiff(t.due) <= 0 && !t.personal && !(t.ask && !t.ack)).length
+      + updatesDue().length + asksWaiting().length + movedProjects().length,
     overview: cmd ? commanderQueue().length : 0,
   };
   const title = r.name === 'project' ? (s.projects.find((p) => p.id === r.arg)?.name || '') : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');

@@ -1,13 +1,14 @@
-// Every sheet in the manual version: a new project, closing a stage (the gate), the weekly update, a task, people,
-// the commander's direction, and recording a meeting. Each is short on purpose: a few taps, then back to work.
+// Every sheet in the manual version: a new project, closing a stage (the gate), the weekly update, the commander's ask
+// to a manager, a task (an ask with its breakdown), people, and recording a meeting. Each is short on purpose: a few
+// taps, then back to work.
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { html, Icon, Avatar, Seg, Pill, Empty, dueWord, dateInput, ago, openMenu, OUT_KIND } from '../ui.js';
+import { html, Icon, Avatar, Seg, Pill, Empty, Classified, AskPill, dueWord, dueDate, dateInput, isoDay, ago, openMenu, OUT_KIND } from '../ui.js';
 import { useStore, project, person, team, isCommander, canManage, canEditTask, closeSheet, openSheet, addProject, closeStage, approveGate, returnGate,
-  weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addTask, addPerson, updateProject, saveMeeting, projectOutputs,
-  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk } from '../store.js';
+  weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addPerson, updateProject, saveMeeting, projectOutputs,
+  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, canSeeDetail, canSeeTask, projectAsks, askTasks } from '../store.js';
 import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, stageReady } from '../card.js';
 import { MeetingSummary } from './outputs.js';
-import { ownerItems, ADD } from '../table.js';
+import { ownerItems, ADD, TaskTable, focusStar } from '../table.js';
 
 // ---------- a new project ----------
 export function NewProjectBody() {
@@ -196,43 +197,63 @@ export function ResolveBody({ id }) {
   </form>`;
 }
 
-// ---------- the commander hands down a task ----------
-export function DirectBody({ id }) {
-  const p = project(id);
-  const [title, setTitle] = useState('');
-  const [owner, setOwner] = useState(p?.manager);
-  const [due, setDue] = useState('');
-  if (!p) return null;
-  const people = [p.manager, ...p.partners];
-  return html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (!title.trim()) return; addTask({ title: title.trim(), project: p.id, owner, due: due || null }); closeSheet(); }}>
-    <p class="muted small">המשימה תופיע אצל מי שבחרת עם הסימון "מהמפקד", ובפרויקט בשלב הנוכחי.</p>
-    <label class="lbl" for="d-title">מה צריך לעשות</label>
-    <input id="d-title" class="input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder="למשל: להציג לי את תוכנית הפיילוט" />
-    <span class="lbl">למי</span>
-    <div class="chips-row">${people.map((x) => html`<button type="button" class=${'person-chip' + (owner === x ? ' on' : '')} onClick=${() => setOwner(x)}><${Avatar} id=${x} size=${22} />${person(x).name}</button>`)}</div>
-    <label class="lbl" for="d-due">עד מתי</label><input id="d-due" class="input" type="date" value=${due} onInput=${(e) => setDue(e.currentTarget.value)} />
-    <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim()}>להוריד את המשימה</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
-  </form>`;
-}
-
 // ---------- the commander's ask to a project's manager ----------
-// A first, working version: what is needed, to the project's manager. Why it matters and by when come next.
+// What is needed, why it matters and by when, always to the project's manager, who breaks it into tasks. It never goes
+// past the manager to the project's people. The date is optional: one of three chips, and a second tap clears it.
+const WHEN = [{ id: 'today', label: 'היום' }, { id: 'thu', label: 'עד חמישי' }, { id: 'next', label: 'בשבוע הבא' }];
+// "עד חמישי" is this week's Thursday, or next week's from Friday on (the week here runs Sunday to Thursday);
+// "בשבוע הבא" is the Thursday a week after it.
+export function whenDay(id, now = new Date()) {
+  const d = new Date(now);
+  if (id !== 'today') d.setDate(d.getDate() + (d.getDay() <= 4 ? 4 - d.getDay() : 11 - d.getDay()) + (id === 'next' ? 7 : 0));
+  return isoDay(d);
+}
 export function AskBody({ id }) {
+  const s = useStore();
   const p = project(id);
   const [title, setTitle] = useState('');
+  const [why, setWhy] = useState('');
+  const [when, setWhen] = useState(null);
   if (!p || p.personal || !isCommander()) return html`<${Empty}>אפשר לשלוח בקשה רק למנהל/ת של פרויקט צוות.</${Empty}>`;
+  if (leads(p)) return html`<${Empty}>זה פרויקט שלך: משימות מוסיפים ישר בלוח שלו.</${Empty}>`;
+  const open = projectAsks(p.id).filter((t) => t.by === s.me).length;
   const send = (e) => {
     e.preventDefault();
     if (!title.trim()) return;
-    sendAsk({ project: p.id, title: title.trim() });
+    sendAsk({ project: p.id, title: title.trim(), why: why.trim() || null, due: when ? whenDay(when) : null });
     closeSheet();
   };
-  return html`<form class="form" onSubmit=${send}>
+  return html`<form class="form ask-form" onSubmit=${send}>
+    <div class="ask-proj"><i class="pdot" style=${`background:${p.color}`}></i><span>${p.name}</span><${Classified} p=${p} small /></div>
     <label class="lbl" for="a-title">מה צריך</label>
     <input id="a-title" class="input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder="למשל: לסגור עם משאבי אנוש את הטופס החדש" />
-    <p class="muted small">תגיע ל${person(p.manager).name}, שמנהל/ת את הפרויקט</p>
+    <label class="lbl" for="a-why">למה זה חשוב <span class="muted">(לא חובה)</span></label>
+    <input id="a-why" class="input" value=${why} onInput=${(e) => setWhy(e.currentTarget.value)} placeholder="למשל: לפני הפגישה עם הקב״ט" />
+    <span class="lbl" id="a-when">עד מתי</span>
+    <div class="conf-pick ask-when" role="group" aria-labelledby="a-when">${WHEN.map((w) => html`<button type="button" class=${'conf-opt' + (when === w.id ? ' on' : '')} style="--c:var(--accent)"
+      aria-pressed=${when === w.id} onClick=${() => setWhen(when === w.id ? null : w.id)}>${w.label}<small>${dueDate(whenDay(w.id))}</small></button>`)}</div>
+    <div class="ask-to"><${Avatar} id=${p.manager} size=${28} /><span>תגיע ל${person(p.manager).name}, שמנהל/ת את הפרויקט${open ? ` · ${open === 1 ? 'כבר פתוחה שם בקשה אחת ממך' : `כבר פתוחות שם ${open} בקשות ממך`}` : ''}</span></div>
+    ${p.classification === 'restricted' ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>בלי פרטים מסווגים: הם נשארים ברשת המסווגת</span></div>` : null}
     <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim()}>לשלוח את הבקשה</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
   </form>`;
+}
+
+// The top of an ask's drawer: who asked, why, by when and where it stands. The manager answers it here (קיבלתי or
+// צריך לדבר); after a talk the commander marks it talked through, which accepts it again.
+function AskBand({ t, p }) {
+  const me = getState().me;
+  const answer = !t.ack && t.status !== 'done' && leads(p);
+  const talk = isCommander() && t.ack?.state === 'talk' && t.status !== 'done';
+  return html`<div class="note-band why ask-band"><${Icon} name="flag" size=${16} />
+    <div class="grow">
+      <div class="ask-band-top"><strong>${t.by === me ? `הבקשה שלך ל${person(t.owner).name}` : `בקשה מ${person(t.by).name}`}</strong><${AskPill} t=${t} /></div>
+      ${t.why ? html`<span>${t.why}</span>` : null}
+      ${t.due ? html`<span class="muted small">עד ${dueWord(t.due)}</span>` : null}
+      ${answer ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${() => ackAsk(t.id, 'ok')}>קיבלתי</button>
+        <button type="button" class="btn sm" onClick=${() => ackAsk(t.id, 'talk')}>צריך לדבר</button></div>` : null}
+      ${talk ? html`<div class="ask-acts"><button type="button" class="btn btn-primary sm" onClick=${() => talked(t.id)}>דיברנו</button></div>` : null}
+    </div>
+  </div>`;
 }
 
 // ---------- one task ----------
@@ -245,20 +266,28 @@ export function TaskBody({ id }) {
   if (!t) return html`<${Empty}>המשימה נמחקה.</${Empty}>`;
   const edit = canEditTask(t);
   const p = project(t.project);
+  const lead = leads(p);
+  const fs = focusStar(t);
+  // The ask this task serves, as far as I may see it (outside partners never see asks).
+  const up = t.parent ? s.tasks.find((x) => x.id === t.parent && x.ask && canSeeTask(x)) : null;
   const pool = p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [s.me];
   const save = (patch) => updateTask(t.id, patch);
   const pickOwner = (e) => openMenu(e, ownerItems(p, pool), { selected: t.owner, onPick: (o) => (o === ADD ? openSheet('partner', { id: p.id, task: t.id, back: true }) : save({ owner: o })) });
-  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => x.phase !== 'stopped' && (t.personal ? x.personal : !x.personal)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
+  const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => x.phase !== 'stopped' && (t.personal ? x.personal : !x.personal) && canSeeDetail(x)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
     { selected: t.project || '', onPick: (pid) => { const np = project(pid); save({ project: pid || null, stage: np ? currentStage(np)?.id || null : null }); } });
   const pickStage = (e) => openMenu(e, p.stages.map((x) => ({ id: x.id, label: x.name })), { selected: t.stage, onPick: (sid) => save({ stage: sid }) });
   const stage = p?.stages.find((x) => x.id === t.stage);
   return html`<div class="form tsheet">
     ${edit ? html`<textarea class="input area title-in" rows="1" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} onBlur=${() => title.trim() && title !== t.title && save({ title: title.trim() })} aria-label="כותרת"></textarea>` : html`<h3>${t.title}</h3>`}
-    ${t.fromCommander ? html`<div class="note-band why"><${Icon} name="flag" size=${16} /><span>הורד/ה מ${person(t.by).name}</span></div>` : null}
+    ${t.ask ? html`<${AskBand} t=${t} p=${p} />` : t.fromCommander ? html`<div class="note-band why"><${Icon} name="flag" size=${16} /><span>הורד/ה מ${person(t.by).name}</span></div>` : null}
+    ${t.ask ? html`<div class="ask-kids"><${TaskTable} cols=${['owner', 'status']} star ask=${t.id} memory="m.ask" empty="עוד אין משימות לבקשה."
+      groups=${[{ id: t.id, name: lead ? 'לפרק למשימות' : 'המשימות של הבקשה', color: 'var(--s-waiting)', tasks: askTasks(t.id), addLabel: 'משימה לבקשה',
+        add: lead && t.status !== 'done' ? { project: t.project, stage: t.stage, parent: t.id, priority: t.priority } : null }]} /></div>` : null}
     <div class="st-pick">${STATUS_ORDER.map((k) => html`<button type="button" class=${'st-opt' + (t.status === k ? ' on' : '')} style=${`--c:${STATUS[k].color}`} disabled=${!edit} aria-pressed=${t.status === k} onClick=${() => setStatus(t.id, k)}>${STATUS[k].label}</button>`)}</div>
     <div class="facts">
-      <div class="fact-row"><span class="core-l">אחראי/ת</span><button type="button" class="fact-btn" disabled=${!edit} onClick=${pickOwner}><${Avatar} id=${t.owner} size=${22} />${person(t.owner).name}</button></div>
-      <div class="fact-row"><span class="core-l">פרויקט</span><button type="button" class="fact-btn" disabled=${!edit} onClick=${pickProject}>${p ? html`<i class="pdot" style=${`background:${p.color}`}></i>${p.name}` : 'בלי פרויקט'}</button></div>
+      ${up ? html`<div class="fact-row"><span class="core-l">בקשת ${person(up.by).name}</span><button type="button" class="fact-btn" onClick=${() => openSheet('task', { id: up.id })}><${Icon} name="flag" size=${15} />${up.title}</button></div>` : null}
+      <div class="fact-row"><span class="core-l">אחראי/ת</span><button type="button" class="fact-btn" disabled=${!edit || t.ask} onClick=${pickOwner}><${Avatar} id=${t.owner} size=${22} />${person(t.owner).name}</button></div>
+      <div class="fact-row"><span class="core-l">פרויקט</span><button type="button" class="fact-btn" disabled=${!edit || t.ask} onClick=${pickProject}>${p ? html`<i class="pdot" style=${`background:${p.color}`}></i>${p.name}` : 'בלי פרויקט'}</button></div>
       ${p && p.stages.length ? html`<div class="fact-row"><span class="core-l">שלב</span><button type="button" class="fact-btn" disabled=${!edit} onClick=${pickStage}>${stage ? stage.name : 'בלי שלב'}</button></div>` : null}
       <div class="fact-row"><span class="core-l">תאריך יעד</span><label class="fact-btn"><input type="date" value=${dateInput(t.due)} disabled=${!edit} onInput=${(e) => save({ due: e.currentTarget.value || null })} />${t.due ? dueWord(t.due) : 'בלי תאריך'}</label></div>
       ${!t.personal ? html`<div class="fact-row"><span class="core-l">התחייבות חיצונית</span>
@@ -269,7 +298,7 @@ export function TaskBody({ id }) {
     <textarea id="t-notes" class="input area" rows="3" value=${notes} disabled=${!edit} onInput=${(e) => setNotes(e.currentTarget.value)} onBlur=${() => notes !== (t.notes || '') && save({ notes })} placeholder="פרטים, קישורים, מה כבר נעשה"></textarea>
     <div class="muted small">נוצרה ע"י ${person(t.by).name} · ${ago(t.createdAt)}</div>
     ${edit ? html`<div class="form-actions">
-      ${t.owner === s.me && t.status !== 'done' ? html`<button type="button" class="btn" onClick=${() => toggleFocus(t.id)}><${Icon} name="star" size=${16} />${t.focus ? 'להוציא מהפוקוס' : 'לפוקוס של היום'}</button>` : null}
+      ${fs.show ? html`<button type="button" class="btn" disabled=${fs.locked} onClick=${() => toggleFocus(t.id)}><${Icon} name="star" size=${16} />${fs.label}</button>` : null}
       <span class="grow"></span>
       <button type="button" class="btn danger" onClick=${() => { deleteTask(t.id); closeSheet(); }}><${Icon} name="trash" size=${16} />מחיקה</button></div>` : null}
   </div>`;

@@ -720,10 +720,54 @@ button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
 
 
 /* --- rows: the manager's star and the chips (m/table.js, m/parts.js) --- */
+/* A manager's pin (★ מיהלי) is tinted like the star; a task that serves an ask (בקשת יואש) like the commander's chip. */
+.pin-chip, .ask-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 0.6875rem; font-weight: 600; border-radius: 999px; padding: 1px 8px; letter-spacing: 0.01em; white-space: nowrap; }
+.pin-chip { background: color-mix(in srgb, var(--s-progress) 15%, transparent); color: color-mix(in oklab, var(--s-progress) var(--ink), black); }
+.pin-chip svg { fill: currentColor; }
+.ask-chip { background: var(--wait-bg); color: color-mix(in oklab, var(--s-waiting) var(--ink), black); }
+/* A star its owner set, seen by their manager: it shows, dimmed, and doesn't move under a finger. */
+.starbtn:disabled { cursor: default; }
+.starbtn.on:disabled { opacity: 0.5; }
+@media (prefers-reduced-motion: no-preference) {
+  .starbtn:disabled:active { transform: none; }
+}
+@media (prefers-contrast: more) {
+  .pin-chip, .ask-chip { box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .starbtn.on:disabled { opacity: 0.7; }
+}
+/* On a phone the chips under a title wrap rather than run off the row. */
+@media (max-width: 900px) {
+  .tt-task .tt-chips { flex: 0 1 auto; flex-wrap: wrap; min-width: 0; }
+}
+/* The one-line add keeps room to read its words (the commander's says whom the ask goes to); a long project name gives way. */
+.qadd .qadd-input { min-width: 10em; }
+.qadd .qproj { flex: 0 1 auto; min-width: 0; }
 /* end of rows */
 
 
 /* --- the ask sheet and the ask's band (m/views/sheets.js) --- */
+.ask-proj { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 600; }
+.ask-proj span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The three dates reuse the weekly update's capsules (.conf-pick), each with its day under the word. */
+.ask-when .conf-opt { flex-direction: column; gap: 0; line-height: 1.2; padding: 0 6px; }
+.ask-when .conf-opt small { font-size: 0.6875rem; font-weight: 500; color: var(--fg-3); letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
+.ask-when .conf-opt.on small { color: color-mix(in oklab, var(--accent) var(--ink), black); }
+.ask-to { display: flex; align-items: center; gap: 10px; margin-top: 16px; padding: 10px 12px; border-radius: 14px; background: var(--surface-2); font-size: 0.875rem; color: var(--fg-2); }
+.ask-form .note-band { margin-top: 10px; }
+/* The top of an ask's drawer, then the tasks it was broken into, grouped on the sheet's own grey. */
+.ask-band .grow { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ask-band-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ask-acts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.ask-kids .tt { background: var(--surface-2); }
+.ask-kids .ttable { gap: 0; }
+/* The drawer is narrow: a task's name takes its own line, its chips go under it, and the pill above already counts
+   what is done, so the table leaves out its summary bar. */
+.ask-kids .tt-task .tt-open { flex-wrap: wrap; row-gap: 2px; padding-block: 6px; }
+.ask-kids .tt-task .tt-name { flex-basis: 100%; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.ask-kids .tt-sum { display: none; }
+@media (prefers-contrast: more) {
+  .ask-to { box-shadow: 0 0 0 1px var(--line-strong); }
+}
 /* end of ask sheet */
 
 

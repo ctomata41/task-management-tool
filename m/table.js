@@ -4,7 +4,8 @@
 import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput, isoDay } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, PRIORITY, PRIORITY_ORDER, setStatus, updateTask, toggleFocus, addTask, openSheet, person, project,
-  canEditTask, canManage, isOpen, team, isCommander, getState } from './store.js';
+  canEditTask, canManage, isOpen, team, isCommander, leads, getState } from './store.js';
+import { byRank } from './card.js';
 
 export const COLS = {
   owner: { label: 'אחראי', w: '76px' },
@@ -25,12 +26,18 @@ const SORTERS = {
   stage: (a, b) => String(a.stage || '').localeCompare(String(b.stage || '')),
 };
 const rank = (p) => (p ? PRIORITY_ORDER.indexOf(p) : 9);
+// Two projects by their place in the commander's order (card.byRank); no project at all comes last.
+const byPlace = (a, b) => (a && b ? byRank(a, b) : !a - !b);
+// A day's tasks: the higher priority first, then the project higher in the order.
+const byDue = (a, b) => SORTERS.due(a, b) || rank(a.priority) - rank(b.priority) || byPlace(project(a.project), project(b.project));
 
 const readSet = (key) => { try { return new Set(JSON.parse(localStorage.getItem(key)) || []); } catch (e) { return new Set(); } };
 const writeSet = (key, set) => { try { localStorage.setItem(key, JSON.stringify([...set])); } catch (e) { /* storage blocked */ } };
 
-// groups: [{ id, name, color, tasks, add?: defaults for a new task, or null when the group takes none }]
-export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'], memory = 'm.tt', star = false, empty = 'אין משימות כאן.' }) {
+// groups: [{ id, name, color, tasks, add?: defaults for a new task, or null when the group takes none, focusOf?: the
+// person a group of owners belongs to }]. With star, each row offers the star to whoever may use it (Row), and a person's
+// group says how full their focus is. ask: the ask this table breaks down, so its rows don't repeat "בקשת יואש".
+export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'], memory = 'm.tt', star = false, empty = 'אין משימות כאן.', ask = null }) {
   useStore();
   const [sort, setSort] = useState(null);
   const [closed, setClosed] = useState(() => readSet(`${memory}.closed`));
@@ -43,12 +50,13 @@ export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'
     ${shown.map((g) => {
       const list = sort ? [...g.tasks].sort((a, b) => SORTERS[sort.key](a, b) * sort.dir) : g.tasks;
       const isClosed = closed.has(g.id);
+      const hint = g.hint || (star && g.focusOf ? focusHint(g.focusOf) : null);
       return html`<section class=${'tgrp' + (isClosed ? ' closed' : '')} key=${g.id} style=${`--gc:${g.color}`}>
         <header class="tgrp-head">
           <button type="button" class="tgrp-tog" aria-expanded=${!isClosed} onClick=${() => toggle(g.id)}><${Icon} name=${isClosed ? 'chevronLeft' : 'chevronDown'} size=${18} />
             <h3>${g.name}</h3></button>
           <span class="tgrp-n">${g.tasks.length} ${g.tasks.length === 1 ? 'משימה' : 'משימות'}</span>
-          ${g.hint ? html`<span class="muted small">${g.hint}</span>` : null}
+          ${hint ? html`<span class="muted small">${hint}</span>` : null}
           ${isClosed || g.tasks.length ? html`<${Battery} tasks=${g.tasks} cls="tgrp-batt" />` : null}
         </header>
         ${isClosed ? null : html`<div class="tt" role="table" aria-label=${g.name}>
@@ -57,7 +65,7 @@ export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'
             <button type="button" role="columnheader" class="tc th-title" onClick=${() => sortBy('title')}>משימה${arrow(sort, 'title')}</button>
             ${cols.map((c) => html`<button type="button" role="columnheader" class=${'tc th c-' + c} onClick=${() => sortBy(c)}>${COLS[c].label}${arrow(sort, c)}</button>`)}
           </div>
-          ${list.map((t) => html`<${Row} key=${t.id} t=${t} cols=${cols} star=${star} />`)}
+          ${list.map((t) => html`<${Row} key=${t.id} t=${t} cols=${cols} star=${star} ask=${ask} />`)}
           ${g.add ? html`<${AddRow} defaults=${g.add} placeholder=${g.addLabel} />` : null}
           ${list.length ? html`<div class="tt-row tt-sum" role="row" aria-label="סיכום">
             <span class="tc-bar" aria-hidden="true"></span><span class="tc"></span>
@@ -69,6 +77,13 @@ export function TaskTable({ groups, cols = ['owner', 'status', 'priority', 'due'
   </div>`;
 }
 const arrow = (sort, key) => (sort && sort.key === key ? html`<${Icon} name=${sort.dir === 1 ? 'chevronDown' : 'chevronUp'} size=${13} />` : null);
+// How full a person's focus is, their stars and the pins together, as the cap in toggleFocus counts it: "בפוקוס 2/3".
+// Someone without an account takes no star, so their group says nothing.
+function focusHint(id) {
+  const x = person(id);
+  if (!x.id || x.account === false) return null;
+  return `בפוקוס ${getState().tasks.filter((t) => t.owner === id && t.focus && t.status !== 'done').length}/3`;
+}
 
 // How a group divides by status (or priority): one bar, each colour as wide as its share.
 export function Battery({ tasks, by = 'status', cls = '' }) {
@@ -80,11 +95,26 @@ export function Battery({ tasks, by = 'status', cls = '' }) {
   return html`<span class=${'batt ' + cls} role="img" aria-label=${words} title=${words}>${parts.map((x) => html`<i style=${`flex:${x.n};--c:${x.k ? meta[x.k].color : 'var(--fill-2)'}`}></i>`)}</span>`;
 }
 
-function Row({ t, cols, star }) {
+// The star on a task, as toggleFocus allows it: the owner's own, or a pin from whoever runs the project, never for
+// someone without an account. A star its owner set (or another lead's pin) shows, but only they take it out (locked).
+export function focusStar(t) {
+  const me = getState().me;
+  const mine = t.owner === me;
+  const who = person(t.owner);
+  const show = t.status !== 'done' && (mine || (leads(project(t.project)) && !t.personal && !!who.id && who.account !== false));
+  const locked = show && !!t.focus && !mine && t.focusBy !== me;
+  const label = mine ? (t.focus ? 'להוציא מהפוקוס' : 'לפוקוס של היום') : locked ? `בפוקוס של ${who.name}` : `${t.focus ? 'להוציא מהפוקוס' : 'לפוקוס'} של ${who.name}`;
+  return { show, mine, locked, label };
+}
+
+function Row({ t, cols, star, ask }) {
   const s = getState();
   const done = t.status === 'done';
   const edit = canEditTask(t);
   const p = project(t.project);
+  const fs = focusStar(t);
+  // The ask this task serves, which outside partners never see.
+  const up = t.parent && t.parent !== ask && person(s.me).role !== 'external' ? s.tasks.find((x) => x.id === t.parent && x.ask) : null;
   const pool = p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [s.me];
   const open = () => openSheet('task', { id: t.id });
   const menuStatus = (e) => { e.stopPropagation(); if (edit) openMenu(e, STATUS_ORDER.map((id) => ({ id, label: STATUS[id].label, dot: STATUS[id].color })), { selected: t.status, onPick: (id) => setStatus(t.id, id) }); };
@@ -104,11 +134,14 @@ function Row({ t, cols, star }) {
         <span class="tt-chips">
           ${t.external ? html`<span class="ext-chip" title="התחייבות לגורם מחוץ לצוות"><${Icon} name="send" size=${11} />ל${t.external}</span>` : null}
           ${t.fromCommander ? html`<span class="cmd-chip" title="הורד מהמפקד"><${Icon} name="flag" size=${11} />מ${person(t.by).name}</span>` : null}
+          ${t.focus && t.focusBy && t.focusBy !== t.owner ? html`<span class="pin-chip" title=${`${person(t.focusBy).name} הוסיף/ה לפוקוס`}><${Icon} name="star" size=${11} />מ${person(t.focusBy).name}</span>` : null}
+          ${up ? html`<span class="ask-chip" title=${up.title}><${Icon} name="flag" size=${11} />בקשת ${person(up.by).name}</span>` : null}
           ${t.notes ? html`<span class="note-ic" title="יש הערות"><${Icon} name="message" size=${13} /></span>` : null}
           ${cols.includes('project') && p ? html`<span class="m-only"><${ProjectTag} id=${p.id} /></span>` : null}
         </span>
       </button>
-      ${star && !done ? html`<button type="button" class=${'starbtn' + (t.focus ? ' on' : '')} aria-pressed=${!!t.focus} aria-label=${t.focus ? 'להוציא מהפוקוס' : 'לפוקוס של היום'} onClick=${(e) => { e.stopPropagation(); toggleFocus(t.id); }}><${Icon} name="star" size=${15} /></button>` : null}
+      ${star && fs.show ? html`<button type="button" class=${'starbtn' + (t.focus ? ' on' : '')} aria-pressed=${!!t.focus} disabled=${fs.locked} aria-label=${fs.label} title=${fs.mine ? null : fs.label}
+        onClick=${(e) => { e.stopPropagation(); toggleFocus(t.id); }}><${Icon} name="star" size=${15} /></button>` : null}
     </div>
     ${cols.map((c) => {
       if (c === 'owner') return html`<div class="tc c-owner" role="cell"><button type="button" class="cell-btn" disabled=${!edit} aria-label=${`אחראי: ${person(t.owner).name}`} onClick=${menuOwner}><${Avatar} id=${t.owner} size=${28} /></button></div>`;
@@ -190,19 +223,20 @@ export function groupTasks(tasks, by, base = {}) {
   if (by === 'date') {
     const pick = (t) => { if (t.status === 'done') return 'done'; if (!t.due) return 'none'; const n = dayDiff(t.due); return n < 0 ? 'late' : n === 0 ? 'today' : n <= 6 ? 'week' : 'later'; };
     const addFor = { today: { due: isoIn(0) }, week: { due: isoIn(3) }, later: { due: isoIn(14) }, none: {} };
-    return DATE_GROUPS.map((g) => ({ ...g, tasks: tasks.filter((t) => pick(t) === g.id).sort(SORTERS.due), add: addFor[g.id] && base ? { ...base, ...addFor[g.id] } : null }))
+    return DATE_GROUPS.map((g) => ({ ...g, tasks: tasks.filter((t) => pick(t) === g.id).sort(byDue), add: addFor[g.id] && base ? { ...base, ...addFor[g.id] } : null }))
       .filter((g) => g.tasks.length || g.id === 'today');
   }
   if (by === 'status') return STATUS_ORDER.map((k) => ({ id: k, name: STATUS[k].label, color: STATUS[k].color, tasks: tasks.filter((t) => t.status === k), add: base ? { ...base, status: k } : null })).filter((g) => g.tasks.length);
   if (by === 'priority') return [...PRIORITY_ORDER, null].map((k) => ({ id: k || 'none', name: k ? PRIORITY[k].label : 'בלי עדיפות', color: k ? PRIORITY[k].color : 'var(--fill-2)', tasks: tasks.filter((t) => (t.priority || null) === k), add: base ? { ...base, priority: k } : null })).filter((g) => g.tasks.length);
   if (by === 'owner') {
     const ids = [...new Set(tasks.map((t) => t.owner))];
-    return ids.map((id) => ({ id, name: person(id).name, color: person(id).color, tasks: tasks.filter((t) => t.owner === id), add: base ? { ...base, owner: id } : null }));
+    return ids.map((id) => ({ id, name: person(id).name, color: person(id).color, focusOf: id, tasks: tasks.filter((t) => t.owner === id), add: base ? { ...base, owner: id } : null }));
   }
   if (by === 'project') {
+    // In the commander's order: placed projects by place, then the rest, and tasks without a project last.
     const ids = [...new Set(tasks.map((t) => t.project || ''))];
     return ids.map((id) => { const p = project(id); return { id: id || 'none', name: p ? p.name : 'בלי פרויקט', color: p ? p.color : 'var(--s-todo)', tasks: tasks.filter((t) => (t.project || '') === id), add: base ? { ...base, project: id || null } : null }; })
-      .sort((a, b) => (a.id === 'none') - (b.id === 'none'));
+      .sort((a, b) => byPlace(project(a.id), project(b.id)));
   }
   return [{ id: 'all', name: 'משימות', color: 'var(--accent)', tasks, add: base }];
 }
