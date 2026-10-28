@@ -111,11 +111,14 @@ export function Empty({ icon = 'check', children }) {
 // ---------- time words ----------
 // A deadline always shows its date, and beside it how far that is: "30/10 (מחר)", "16/10 (לפני 12 ימים)".
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-const startOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+// A date-only string ("2026-10-30") is that day here, not midnight in London.
+export const parseDay = (v) => { const s = String(v); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) : new Date(v); };
+export const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const startOf = (d) => { const x = parseDay(d); x.setHours(0, 0, 0, 0); return x; };
 export const dayDiff = (iso) => Math.round((startOf(iso) - startOf(Date.now())) / 864e5);
 export function dueDate(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
+  const d = parseDay(iso);
   const y = d.getFullYear() === new Date().getFullYear() ? '' : `/${String(d.getFullYear()).slice(2)}`;
   return `${d.getDate()}/${d.getMonth() + 1}${y}`;
 }
@@ -128,7 +131,7 @@ export function dueRel(iso) {
   if (n === 1) return 'מחר';
   if (n === -1) return 'אתמול';
   if (n < 0) return `לפני ${far(-n)}`;
-  if (n < 7) return `יום ${DAYS[new Date(iso).getDay()]}`;
+  if (n < 7) return `יום ${DAYS[parseDay(iso).getDay()]}`;
   return `בעוד ${far(n)}`;
 }
 export const dueWord = (iso) => (iso ? `${dueDate(iso)} (${dueRel(iso)})` : '');

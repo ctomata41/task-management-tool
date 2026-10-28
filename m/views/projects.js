@@ -27,7 +27,8 @@ export function Projects() {
   }
   return html`<div class="page">
     <header class="page-head2"><h1>פרויקטים</h1>
-      <button type="button" class="btn btn-primary" onClick=${() => openSheet('newproject')}><${Icon} name="plus" size=${16} />פרויקט חדש</button></header>
+      <div class="head-acts"><a class="btn out-link" href="#/outputs"><${Icon} name="file" size=${16} />תוצרים</a>
+        <button type="button" class="btn btn-primary" onClick=${() => openSheet('newproject')}><${Icon} name="plus" size=${16} />פרויקט חדש</button></div></header>
     <${Seg} label="סינון" value=${filter} onChange=${setFilter} options=${[{ id: 'all', label: 'פעילים', n: live.length }, { id: 'mine', label: 'שלי' }, { id: 'closed', label: 'נסגרו' }]} />
     ${groups.some((g) => g.list.length) ? html`<div class="ttable ptable">${groups.filter((g) => g.list.length).map((g) => html`<section class="tgrp" key=${g.id} style=${`--gc:${g.color}`}>
       <header class="tgrp-head"><span class="tgrp-tog"><h3>${g.name}</h3></span><span class="tgrp-n">${g.list.length}</span>${g.hint ? html`<span class="muted small">${g.hint}</span>` : null}</header>

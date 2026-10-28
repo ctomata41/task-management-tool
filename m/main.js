@@ -1,5 +1,5 @@
-// The shell of the manual version: a floating sidebar on desktop; on phones a large title, a glass tab bar and a +
-// button beside it. Routes: #/today, #/projects, #/project/:id, #/overview, #/outputs.
+// The shell of the manual version: a floating sidebar on desktop; on phones a large title, a glass tab bar with Jarvis
+// in its middle, and a + button beside it. Routes: #/today, #/projects, #/project/:id, #/calendar, #/overview, #/outputs.
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
@@ -10,14 +10,20 @@ import { Projects, ProjectPage } from './views/projects.js';
 import { Overview } from './views/overview.js';
 import { Outputs, OutputSheetBody, NewOutputBody } from './views/outputs.js';
 import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, DirectBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
+import { Calendar, StageBody } from './views/calendar.js';
+import { JarvisScreen, JarvisTab, JarvisSide } from './views/jarvis.js';
+import { takeReturn } from './gcal.js';
 import { dayDiff } from './ui.js';
 
 const NAV = [
   { id: 'today', label: 'היום שלי', short: 'היום', icon: 'home' },
   { id: 'projects', label: 'פרויקטים', icon: 'layers' },
+  { id: 'calendar', label: 'יומן', icon: 'calendar' },
   { id: 'overview', label: 'תמונת מצב', short: 'מצב', icon: 'gauge' },
   { id: 'outputs', label: 'תוצרים', icon: 'file' },
 ];
+// The phone's bar holds four of them around Jarvis; outputs open from the projects page there.
+const TABS = ['today', 'projects', 'jarvis', 'calendar', 'overview'];
 
 function useRoute() {
   const [hash, setHash] = useState(location.hash);
@@ -59,6 +65,7 @@ const SHEETS = {
   direct: { title: 'להוריד משימה', body: DirectBody },
   partner: { title: 'הוספת שותף', body: PartnerBody },
   output: { title: 'תוצר', body: OutputSheetBody },
+  stage: { title: 'שלב', body: StageBody },
   newoutput: { title: 'תוצר חדש', body: NewOutputBody },
   meeting: { title: 'הקלטת פגישה', body: MeetingBody },
   who: { title: 'לראות כ…', body: WhoBody },
@@ -71,6 +78,7 @@ function App() {
   useScrollState();
   const cmd = isCommander();
   const active = r.name === 'project' ? 'projects' : r.name;
+  const activeTab = r.name === 'outputs' ? 'projects' : active;
   const counts = {
     today: myTasks().filter((t) => t.status !== 'done' && t.due && dayDiff(t.due) <= 0 && !t.personal).length + updatesDue().length,
     overview: cmd ? commanderQueue().length : 0,
@@ -81,6 +89,7 @@ function App() {
   else if (r.name === 'project') view = html`<${ProjectPage} key=${r.arg} id=${r.arg} />`;
   else if (r.name === 'overview') view = html`<${Overview} />`;
   else if (r.name === 'outputs') view = html`<${Outputs} />`;
+  else if (r.name === 'calendar') view = html`<${Calendar} />`;
   else view = html`<${Today} key=${s.me} />`;
   const me = person(s.me);
   const sh = s.sheet && SHEETS[s.sheet.kind];
@@ -90,6 +99,7 @@ function App() {
     <aside class="sidebar">
       <div class="brand"><span class="logo-m"><${Icon} name="layers" size=${18} /></span><div><strong>צוות CTO</strong><span>פרויקטים ומשימות</span></div></div>
       <button type="button" class="btn btn-primary block new-task" onClick=${() => openSheet('add')}><${Icon} name="plus" size=${16} />חדש</button>
+      <${JarvisSide} />
       <nav class="side-nav" aria-label="ניווט">
         ${NAV.map((n) => html`<a class=${'side-link' + (active === n.id ? ' on' : '')} href=${`#/${n.id}`} aria-current=${active === n.id ? 'page' : null}>
           <${Icon} name=${n.icon} /><span>${n.label}</span>${counts[n.id] ? html`<span class="side-count">${counts[n.id]}</span>` : null}</a>`)}
@@ -108,12 +118,17 @@ function App() {
       </header>
       <main id="content">${view}</main>
     </div>
-    <nav class="tabbar" aria-label="ניווט">
-      ${NAV.map((n) => html`<a class=${'tab' + (active === n.id ? ' on' : '')} href=${`#/${n.id}`} aria-current=${active === n.id ? 'page' : null}>
-        <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[n.id] ? html`<span class="tab-n">${counts[n.id]}</span>` : null}</span>${n.short || n.label}</a>`)}
+    <nav class="tabbar m-tabbar" aria-label="ניווט">
+      ${TABS.map((id) => {
+        if (id === 'jarvis') return html`<${JarvisTab} key="jarvis" />`;
+        const n = NAV.find((x) => x.id === id);
+        return html`<a key=${id} class=${'tab' + (activeTab === id ? ' on' : '')} href=${`#/${id}`} aria-current=${activeTab === id ? 'page' : null}>
+          <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[id] ? html`<span class="tab-n">${counts[id]}</span>` : null}</span>${n.short || n.label}</a>`;
+      })}
     </nav>
     <button type="button" class="fab" aria-label="להוסיף" onClick=${() => openSheet('add')}><${Icon} name="plus" size=${28} /></button>
     ${Body ? html`<${Sheet} key=${s.sheet.kind + (s.sheet.id || '')} title=${sh.title} wide=${sh.wide} kind=${sh.kind || 'modal'} cls=${'s-' + s.sheet.kind}><${Body} ...${s.sheet} /></${Sheet}>` : null}
+    ${s.jarvis ? html`<${JarvisScreen} />` : null}
     <${MenuLayer} />
     <${Toasts} />
   </div>`;
@@ -135,4 +150,5 @@ function AddBody() {
   </div>`;
 }
 
+takeReturn(); // home from Google's sign-in, before the first route is read
 render(html`<${App} />`, document.getElementById('app'));

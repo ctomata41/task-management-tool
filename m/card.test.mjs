@@ -1,7 +1,7 @@
 // The ID card's rules, run with: node --test m/card.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stagesFromTemplate, closeStage, returnStage, weeklyUpdate, needsCommander, status, stageReady, cardFill, DAY } from './card.js';
+import { stagesFromTemplate, closeStage, returnStage, weeklyUpdate, needsCommander, status, stageReady, cardFill, schedule, dayStart, addDays, DAY } from './card.js';
 
 const base = (template = 'tool') => ({ id: 'p', name: 'בדיקה', stages: stagesFromTemplate(template), what: '', forWhom: '', success: '', log: [], tolDays: 14 });
 
@@ -65,4 +65,49 @@ test('unknown and classified fields count as answered', () => {
   const p = base();
   p.stages[0].fields[0].classified = true;
   assert.deepEqual(cardFill(p), { done: 1, of: 4 });
+});
+
+test('the Gantt places closed stages by their dates, open ones by target, and estimates the rest', () => {
+  const now = new Date(2026, 9, 28, 12).getTime();
+  const day = (n) => addDays(dayStart(now), n);
+  const p = base();
+  p.stages[0] = { ...p.stages[0], state: 'done', closedAt: new Date(day(-14)).toISOString() };
+  p.stages[1] = { ...p.stages[1], state: 'done', closedAt: new Date(day(-7)).toISOString() };
+  p.stages[2] = { ...p.stages[2], state: 'active', target: '2026-11-06' };
+  const sch = schedule(p, now);
+  assert.equal(sch.length, p.stages.length);
+  assert.equal(sch[0].end, day(-14));
+  assert.equal(sch[1].start, day(-14));
+  assert.equal(sch[1].end, day(-7));
+  assert.equal(sch[2].start, day(-7));
+  assert.equal(sch[2].end, dayStart('2026-11-06'));
+  assert.equal(sch[2].est, false);
+  assert.equal(sch[2].late, false);
+  assert.equal(sch[3].start, sch[2].end);
+  assert.equal(sch[3].est, true);
+  assert.ok(sch[3].end > sch[3].start);
+  // An open stage past its target is late; one with no target never ends before tomorrow.
+  p.stages[2].target = '2026-10-20';
+  assert.equal(schedule(p, now)[2].late, true);
+  p.stages[2].target = null;
+  p.stages[1].closedAt = new Date(day(-60)).toISOString();
+  p.stages[0].closedAt = new Date(day(-90)).toISOString();
+  assert.ok(schedule(p, now)[2].end > dayStart(now));
+});
+
+test('a date-only string is a local day', () => {
+  const d = new Date(dayStart('2026-10-30'));
+  assert.equal(d.getDate(), 30);
+  assert.equal(d.getMonth(), 9);
+  assert.equal(d.getHours(), 0);
+});
+
+test('Gantt days stay on midnight across the clock change', () => {
+  // Israel leaves summer time on 25/10/2026; six weeks of stages from 1/10 must still land on whole days.
+  const p = base();
+  p.startedAt = '2026-10-01';
+  for (const r of schedule(p, new Date(2026, 9, 2).getTime())) {
+    assert.equal(new Date(r.start).getHours(), 0);
+    assert.equal(new Date(r.end).getHours(), 0);
+  }
 });

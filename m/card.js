@@ -209,6 +209,49 @@ export const HEALTH = {
   done: { label: 'הושלם', color: 'var(--s-done)' },
 };
 
+// ---------- the stages in time, for the Gantt ----------
+// How long a stage usually takes, to place a stage nobody has given a date yet.
+export const STAGE_DAYS = { scope: 14, research: 21, need: 14, req: 14, spec: 21, resources: 14, mvp: 42, pilot: 42, production: 28, adoption: 56, findings: 14, plan: 14 };
+// A date-only string is a day here, not midnight in London.
+export const dayStart = (v) => {
+  const s = String(v);
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) : new Date(v);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+
+// Where each stage sits in time. A closed stage ends when it closed and an open one at its target; a stage with no
+// date yet is estimated from its usual length (est), and an open stage past its target is late. Each stage starts
+// where the one before it ended. Days move with the calendar (setDate), so a clock change never shifts a date.
+export const addDays = (t, n) => { const d = new Date(t); d.setDate(d.getDate() + n); return d.getTime(); };
+export function schedule(p, now = Date.now()) {
+  const today = dayStart(now);
+  const len = (s) => STAGE_DAYS[s.key] || 14;
+  const open = (s) => s.state === 'active' || s.state === 'pending';
+  const first = p.stages[0];
+  if (!first) return [];
+  let cursor;
+  if (p.startedAt) cursor = dayStart(p.startedAt);
+  else if (first.closedAt) cursor = addDays(dayStart(first.closedAt), -len(first));
+  else if (open(first)) cursor = Math.min(first.target ? addDays(dayStart(first.target), -len(first)) : today, addDays(today, -7));
+  else cursor = today;
+  return p.stages.map((s) => {
+    const start = cursor;
+    let end;
+    let est = false;
+    if (s.state === 'skipped') end = start;
+    else if (s.state === 'done') end = s.closedAt ? Math.max(start, dayStart(s.closedAt)) : addDays(start, len(s));
+    else if (s.target) end = Math.max(addDays(start, 1), dayStart(s.target));
+    else {
+      est = true;
+      end = addDays(start, len(s));
+      if (open(s) && end <= today) end = addDays(today, 1);
+    }
+    cursor = end;
+    return { id: s.id, start, end, est, late: open(s) && !!s.target && dayStart(s.target) < today };
+  });
+}
+
 // When every task of the current stage is done, the card asks the stage's exit question.
 export function stageReady(p, tasks) {
   const cur = currentStage(p);
