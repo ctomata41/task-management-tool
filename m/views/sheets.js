@@ -21,6 +21,7 @@ export function NewProjectBody() {
   const [manager, setManager] = useState(s.me);
   const [partners, setPartners] = useState([]);
   const [ext, setExt] = useState(null);
+  const extBtn = useRef();
   const [exts, setExts] = useState([]); // outsiders typed here: they become people only when the project is saved
   const personal = kind === 'personal';
   const ready = name.trim() && (personal || cls);
@@ -44,6 +45,7 @@ export function NewProjectBody() {
     setExts([...exts, { id, name: ext.name.trim(), org: ext.org.trim(), role: 'external' }]);
     setPartners([...partners, id]);
     setExt(null);
+    extBtn.current?.focus(); // the fields are about to go; focus stays beside the new chip
   };
   const face = (x) => (x.id.startsWith('new:') ? html`<span class="avatar ext pending" style="width:22px;height:22px;font-size:9px">${x.name.slice(0, 2)}</span>` : html`<${Avatar} id=${x.id} size=${22} />`);
   const enterAdds = (e) => { if (e.key === 'Enter') { e.preventDefault(); addExt(); } };
@@ -59,7 +61,7 @@ export function NewProjectBody() {
       ${cmd ? html`<span class="lbl">מי מוביל/ה</span><div class="chips-row">${team().map((x) => html`<button type="button" class=${'person-chip' + (manager === x.id ? ' on' : '')} onClick=${() => setManager(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}</button>`)}</div>` : null}
       <span class="lbl">שותפים <span class="muted">(אפשר להוסיף גם אחר כך)</span></span>
       <div class="chips-row">${pool.map((x) => html`<button type="button" class=${'person-chip' + (partners.includes(x.id) ? ' on' : '')} aria-pressed=${partners.includes(x.id)} onClick=${() => toggle(x.id)}>${face(x)}${x.name}${x.role === 'external' ? html`<span class="muted small">· מבחוץ</span>` : null}</button>`)}
-        <button type="button" class="person-chip add" aria-expanded=${!!ext} onClick=${() => setExt(ext ? null : { name: '', org: '' })}><${Icon} name="plus" size=${16} />גורם מבחוץ</button></div>
+        <button type="button" class="person-chip add" ref=${extBtn} aria-expanded=${!!ext} onClick=${() => setExt(ext ? null : { name: '', org: '' })}><${Icon} name="plus" size=${16} />גורם מבחוץ</button></div>
       ${ext ? html`<div class="inline-form ext-form">
         <input class="input" value=${ext.name} onInput=${(e) => setExt({ ...ext, name: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="שם" aria-label="שם השותף" />
         <input class="input" value=${ext.org} onInput=${(e) => setExt({ ...ext, org: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="מאיפה: ארגון, מחלקה, ספק" aria-label="מאיפה" />

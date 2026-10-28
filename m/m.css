@@ -297,6 +297,8 @@
   .modal.pdrawer .modal-body { flex: 1; }
 }
 .grabber { display: none; }
+/* A sheet takes focus as a whole when it opens, so a screen reader starts in it; the next Tab lands on a control with a ring. */
+.modal[tabindex]:focus { outline: none; }
 
 /* ---------- phones ---------- */
 @media (max-width: 900px) {
@@ -499,9 +501,10 @@ a.prow:active { background: var(--press); }
   .tt-task .tc-title { flex-basis: 100%; padding: 0; gap: 10px; }
   .tt-task .tt-open { flex-wrap: wrap; min-height: 32px; row-gap: 4px; }
   .tt-task .tt-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; flex-basis: 100%; }
-  .tt-task .c-status { order: 1; width: 96px; margin-inline-start: 32px; }
-  .tt-task .c-priority { order: 2; width: 84px; }
+  .tt-task .c-status { order: 1; width: 88px; margin-inline-start: 32px; }
+  .tt-task .c-priority { order: 2; width: 76px; }
   .tt-task .c-due { order: 3; }
+  .tt-task .cell-date { padding-inline: 8px; }
   .tt-task .c-owner { position: absolute; top: 8px; inset-inline-end: 8px; width: auto; }
   .tt-task:has(.c-owner) .tc-title { padding-inline-end: 34px; }
   .tt-task .c-project, .tt-task .c-stage { display: none; }

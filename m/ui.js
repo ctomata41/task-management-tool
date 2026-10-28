@@ -69,6 +69,19 @@ export function Seg({ value, options, onChange, label, cls = '' }) {
   </div>`;
 }
 
+// A dialog takes focus when it opens (unless a field in it already did) and gives it back to what opened it.
+export function useDialogFocus(panel) {
+  useEffect(() => {
+    const opener = document.activeElement;
+    const el = panel.current;
+    if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
+    return () => {
+      const a = document.activeElement;
+      if (opener?.isConnected && opener !== document.body && (!a || a === document.body || el.contains(a))) opener.focus({ preventScroll: true });
+    };
+  }, []);
+}
+
 // A bottom sheet on phones (drag down to close), a dialog that grows from what was pressed on desktop.
 export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, kind = 'modal' }) {
   const root = useRef();
@@ -79,8 +92,9 @@ export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, k
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  useDialogFocus(panel);
   return html`<div class=${'overlay' + (kind === 'drawer' ? ' side-ov' : '')} ref=${root} onClick=${onClose}>
-    <div class=${'modal ' + (kind === 'drawer' ? 'pdrawer ' : '') + (wide ? 'wide ' : '') + cls} ref=${panel} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()}>
+    <div class=${'modal ' + (kind === 'drawer' ? 'pdrawer ' : '') + (wide ? 'wide ' : '') + cls} ref=${panel} role="dialog" aria-modal="true" aria-label=${title} tabindex="-1" onClick=${(e) => e.stopPropagation()}>
       <div class="grabber" aria-hidden="true"></div>
       <header class="modal-head"><h2>${title}</h2>
         <button type="button" class="icon-btn" aria-label="סגירה" onClick=${onClose}><${Icon} name="x" /></button></header>
@@ -166,8 +180,8 @@ export const LEVEL = {
 
 // ---------- menus: a menu grows out of the control that opened it ----------
 export function openMenu(e, items, { selected, onPick }) {
-  const rect = e.currentTarget.getBoundingClientRect();
-  set({ menu: { rect, items, selected, onPick } });
+  const trigger = e.currentTarget;
+  set({ menu: { rect: trigger.getBoundingClientRect(), trigger, items, selected, onPick } });
 }
 const closeMenu = () => set({ menu: null });
 export function MenuLayer() {
@@ -175,10 +189,11 @@ export function MenuLayer() {
   const m = s.menu;
   useEffect(() => {
     if (!m) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') closeMenu(); };
-    window.addEventListener('keydown', onKey);
+    // Escape closes only the menu, not the sheet it was opened from.
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); closeMenu(); } };
+    window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', closeMenu);
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', closeMenu); };
+    return () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('resize', closeMenu); };
   }, [m]);
   if (!m) return null;
   return html`<${Menu} key=${`${Math.round(m.rect.top)}:${Math.round(m.rect.left)}:${m.items.length}`} m=${m} />`;
@@ -187,6 +202,25 @@ function Menu({ m }) {
   const root = useRef();
   const panel = useRef();
   useLayer(root, panel, { kind: 'menu' });
+  // Focus moves into the menu (to the chosen item or the first), the arrows walk it, and closing hands focus back.
+  useEffect(() => {
+    const el = panel.current;
+    (el.querySelector('.menu-item.sel') || el.querySelector('.menu-item'))?.focus({ preventScroll: true });
+    return () => {
+      const a = document.activeElement;
+      if (m.trigger?.isConnected && (!a || a === document.body || el.contains(a))) m.trigger.focus({ preventScroll: true });
+    };
+  }, []);
+  const onKeyDown = (e) => {
+    const items = [...panel.current.querySelectorAll('.menu-item')];
+    const i = items.indexOf(document.activeElement);
+    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length]?.focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(-1);
+    else if (e.key === 'Tab') { e.preventDefault(); closeMenu(); }
+  };
   const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
   const W = 240;
   const H = Math.min(m.items.length * row + 12, 380);
@@ -197,7 +231,7 @@ function Menu({ m }) {
   const ox = Math.round(Math.min(W, Math.max(0, m.rect.left + m.rect.width / 2 - left)));
   const oy = top >= m.rect.bottom ? 0 : H;
   return html`<div class="menu-backdrop" ref=${root} onClick=${closeMenu}>
-    <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()}>
+    <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()} onKeyDown=${onKeyDown}>
       ${m.items.map((it) => html`<button type="button" role="menuitem" class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '')}
         onClick=${() => { closeMenu(); m.onPick(it.id); }}>
         ${it.person ? html`<${Avatar} id=${it.person} size=${22} />` : null}
