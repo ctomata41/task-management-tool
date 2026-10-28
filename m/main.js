@@ -64,7 +64,6 @@ const SHEETS = {
   weekly: { title: 'עדכון שבועי', body: WeeklyBody },
   resolve: { title: 'בקשה לבכיר', body: ResolveBody },
   ask: { title: 'בקשה חדשה', body: AskBody },
-  direct: { title: 'בקשה חדשה', body: AskBody }, // for now: old buttons that open 'direct' with a project's id get the ask
   partner: { title: 'הוספת שותף', body: PartnerBody },
   output: { title: 'תוצר', body: OutputSheetBody },
   stage: { title: 'שלב', body: StageBody },
