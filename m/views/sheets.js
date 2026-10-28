@@ -7,6 +7,7 @@ import { useStore, project, person, team, isCommander, canManage, canEditTask, c
   STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample } from '../store.js';
 import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, stageReady } from '../card.js';
 import { MeetingSummary } from './outputs.js';
+import { ownerItems, ADD } from '../table.js';
 
 // ---------- a new project ----------
 export function NewProjectBody() {
@@ -19,6 +20,7 @@ export function NewProjectBody() {
   const [what, setWhat] = useState('');
   const [manager, setManager] = useState(s.me);
   const [partners, setPartners] = useState([]);
+  const [ext, setExt] = useState(null);
   const personal = kind === 'personal';
   const ready = name.trim() && (personal || cls);
   const toggle = (id) => setPartners(partners.includes(id) ? partners.filter((x) => x !== id) : [...partners, id]);
@@ -31,6 +33,13 @@ export function NewProjectBody() {
     toast(personal ? 'הפרויקט האישי נפתח. רק את/ה רואה אותו' : 'הפרויקט נפתח. תעודת הזהות מחכה למילוי לאורך הדרך');
   };
   const pool = s.people.filter((x) => x.id !== manager);
+  const addExt = () => {
+    if (!ext.name.trim()) return;
+    const x = addPerson({ name: ext.name.trim(), org: ext.org.trim(), account: false });
+    setPartners([...partners, x.id]);
+    setExt(null);
+  };
+  const enterAdds = (e) => { if (e.key === 'Enter') { e.preventDefault(); addExt(); } };
   return html`<form class="form" onSubmit=${save}>
     <${Seg} label="סוג" value=${kind} onChange=${setKind} options=${[{ id: 'team', label: 'פרויקט צוות' }, { id: 'personal', label: 'פרויקט אישי' }]} />
     ${personal ? html`<p class="muted small">פרויקט אישי נשאר רק אצלך: קורס, לימודים, משהו שלך. הוא לא מופיע לצוות ולא למפקד.</p>` : null}
@@ -40,15 +49,20 @@ export function NewProjectBody() {
       <span class="lbl">סיווג הפרויקט</span>
       <div class="pick-2">${Object.entries(CLASSIFICATION).map(([id, c]) => html`<button type="button" class=${'opt-card' + (cls === id ? ' on' : '')} aria-pressed=${cls === id} onClick=${() => setCls(id)}>
         <span class="oc-top">${id === 'restricted' ? html`<${Icon} name="lock" size=${16} />` : html`<${Icon} name="unlock" size=${16} />`}<strong>${c.label}</strong></span><span class="muted small">${c.hint}</span></button>`)}</div>
+      ${cmd ? html`<span class="lbl">מי מוביל/ה</span><div class="chips-row">${team().map((x) => html`<button type="button" class=${'person-chip' + (manager === x.id ? ' on' : '')} onClick=${() => setManager(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}</button>`)}</div>` : null}
+      <span class="lbl">שותפים <span class="muted">(אפשר להוסיף גם אחר כך)</span></span>
+      <div class="chips-row">${pool.map((x) => html`<button type="button" class=${'person-chip' + (partners.includes(x.id) ? ' on' : '')} aria-pressed=${partners.includes(x.id)} onClick=${() => toggle(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}${x.role === 'external' ? html`<span class="muted small">· מבחוץ</span>` : null}</button>`)}
+        <button type="button" class="person-chip add" aria-expanded=${!!ext} onClick=${() => setExt(ext ? null : { name: '', org: '' })}><${Icon} name="plus" size=${16} />גורם מבחוץ</button></div>
+      ${ext ? html`<div class="inline-form ext-form">
+        <input class="input" value=${ext.name} onInput=${(e) => setExt({ ...ext, name: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="שם" aria-label="שם השותף" />
+        <input class="input" value=${ext.org} onInput=${(e) => setExt({ ...ext, org: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="מאיפה: ארגון, מחלקה, ספק" aria-label="מאיפה" />
+        <button type="button" class="btn" disabled=${!ext.name.trim()} onClick=${addExt}>הוספה</button></div>` : null}
       <span class="lbl">תבנית שלבים</span>
       <div class="tpl-list">${TEMPLATES.map((t) => html`<button type="button" class=${'tpl-opt' + (tpl === t.id ? ' on' : '')} aria-pressed=${tpl === t.id} onClick=${() => setTpl(t.id)}>
         <span class="grow"><strong>${t.name}</strong><span class="muted small">${t.stages.length ? t.stages.map((k) => k).length + ' שלבים · ' : ''}${t.hint}</span></span>${tpl === t.id ? html`<${Icon} name="check" size=${16} />` : null}</button>`)}</div>
       <p class="muted small">את השלבים אפשר לשנות בכל רגע: להוסיף, לדלג, לסדר מחדש.</p>
       <label class="lbl" for="np-what">מה ולמה <span class="muted">(אפשר גם אחר כך)</span></label>
       <textarea id="np-what" class="input area" rows="2" value=${what} onInput=${(e) => setWhat(e.currentTarget.value)} placeholder="מה מנסים לעשות, ומה ישתנה אם נצליח"></textarea>
-      ${cmd ? html`<span class="lbl">מי מוביל/ה</span><div class="chips-row">${team().map((x) => html`<button type="button" class=${'person-chip' + (manager === x.id ? ' on' : '')} onClick=${() => setManager(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}</button>`)}</div>` : null}
-      <span class="lbl">שותפים</span>
-      <div class="chips-row">${pool.map((x) => html`<button type="button" class=${'person-chip' + (partners.includes(x.id) ? ' on' : '')} aria-pressed=${partners.includes(x.id)} onClick=${() => toggle(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}${x.role === 'external' ? html`<span class="muted small">· מבחוץ</span>` : null}</button>`)}</div>
     `}
     <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!ready}>פתיחת הפרויקט</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
   </form>`;
@@ -204,7 +218,7 @@ export function TaskBody({ id }) {
   const p = project(t.project);
   const pool = p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [s.me];
   const save = (patch) => updateTask(t.id, patch);
-  const pickOwner = (e) => openMenu(e, pool.map((x) => ({ id: x, label: person(x).name, person: x })), { selected: t.owner, onPick: (o) => save({ owner: o }) });
+  const pickOwner = (e) => openMenu(e, ownerItems(p, pool), { selected: t.owner, onPick: (o) => (o === ADD ? openSheet('partner', { id: p.id, task: t.id, back: true }) : save({ owner: o })) });
   const pickProject = (e) => openMenu(e, [{ id: '', label: 'בלי פרויקט', icon: 'user' }, ...visibleProjects().filter((x) => x.phase !== 'stopped' && (t.personal ? x.personal : !x.personal)).map((x) => ({ id: x.id, label: x.name, dot: x.color }))],
     { selected: t.project || '', onPick: (pid) => { const np = project(pid); save({ project: pid || null, stage: np ? currentStage(np)?.id || null : null }); } });
   const pickStage = (e) => openMenu(e, p.stages.map((x) => ({ id: x.id, label: x.name })), { selected: t.stage, onPick: (sid) => save({ stage: sid }) });
@@ -233,7 +247,8 @@ export function TaskBody({ id }) {
 }
 
 // ---------- people ----------
-export function PartnerBody({ id }) {
+// From a task's owner menu, the new partner also takes the task (and from the task sheet, it opens again after).
+export function PartnerBody({ id, task, back }) {
   const s = useStore();
   const p = project(id);
   const [mode, setMode] = useState('pick');
@@ -243,12 +258,17 @@ export function PartnerBody({ id }) {
   if (!p) return null;
   const inIt = new Set([p.manager, ...p.partners]);
   const pool = s.people.filter((x) => !inIt.has(x.id));
-  const add = (pid) => { updateProject(p.id, { partners: [...p.partners, pid] }); toast(`${person(pid).name} נוסף/ה לפרויקט`); };
+  const add = (pid) => {
+    updateProject(p.id, { partners: [...p.partners, pid] });
+    if (task) updateTask(task, { owner: pid });
+    toast(`${person(pid).name} נוסף/ה לפרויקט${task ? ' ואחראי/ת על המשימה' : ''}`);
+  };
+  const done = () => { closeSheet(); if (back && task) setTimeout(() => openSheet('task', { id: task }), 60); };
   return html`<div class="form">
     <${Seg} label="מי" value=${mode} onChange=${setMode} options=${[{ id: 'pick', label: 'מהרשימה' }, { id: 'new', label: 'גורם חיצוני חדש' }]} />
-    ${mode === 'pick' ? (pool.length ? html`<div class="who-list">${pool.map((x) => html`<button type="button" class="who-row" onClick=${() => { add(x.id); closeSheet(); }}><${Avatar} id=${x.id} size=${34} />
+    ${mode === 'pick' ? (pool.length ? html`<div class="who-list">${pool.map((x) => html`<button type="button" class="who-row" onClick=${() => { add(x.id); done(); }}><${Avatar} id=${x.id} size=${34} />
       <div class="grow"><strong>${x.name}</strong><span class="muted small">${x.role === 'external' ? `${x.org || 'מבחוץ'}${x.account ? '' : ' · בלי משתמש'}` : x.title}</span></div><${Icon} name="plus" size=${18} /></button>`)}</div>` : html`<${Empty}>כולם כבר בפרויקט.</${Empty}>`)
-    : html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (!name.trim()) return; const x = addPerson({ name: name.trim(), org: org.trim(), account: account === 'yes' }); add(x.id); closeSheet(); }}>
+    : html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (!name.trim()) return; const x = addPerson({ name: name.trim(), org: org.trim(), account: account === 'yes' }); add(x.id); done(); }}>
       <label class="lbl" for="pp-name">שם</label><input id="pp-name" class="input" value=${name} onInput=${(e) => setName(e.currentTarget.value)} />
       <label class="lbl" for="pp-org">מאיפה</label><input id="pp-org" class="input" value=${org} onInput=${(e) => setOrg(e.currentTarget.value)} placeholder="ארגון, מחלקה, ספק" />
       <span class="lbl">עובד/ת במערכת?</span>

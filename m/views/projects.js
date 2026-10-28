@@ -3,7 +3,7 @@
 // decisions and assumptions, and the people are one tab away.
 import { useState, useRef, useEffect } from 'preact/hooks';
 import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
-import { TaskTable, BoardBar, Battery, groupTasks, matches } from '../table.js';
+import { TaskTable, BoardBar, Battery, DueLines, groupTasks, matches } from '../table.js';
 import { useStore, project, person, canManage, canSee, isCommander, teamProjects, personalProjects, projectTasks, projectOutputs, openSheet,
   updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, resolveSenior, team, getState } from '../store.js';
 import { status, currentStage, HILL, CONFIDENCE, HEALTH, STAGES, CLASSIFICATION, needsCommander, cardFill, TEMPLATES } from '../card.js';
@@ -55,7 +55,7 @@ function ProjectRow({ p }) {
     <span class="tc c-pstage" role="cell"><span class="small"><b>${st.where}</b>${st.n ? html` <span class="muted">${Math.min(st.idx, st.n)}/${st.n}</span>` : null}</span><${StageStrip} p=${p} /></span>
     <span class="tc c-status" role="cell"><span class=${'cell-fill' + (st.health === 'hold' || st.health === 'stopped' ? ' quiet' : '') + (st.health === 'stuck' ? ' light' : '')} style=${`--c:${h0.color}`}>${h0.label}</span></span>
     <span class="tc c-prog" role="cell">${tasks.length ? html`<${Battery} tasks=${tasks} /><span class="muted small">${done}/${tasks.length}</span>` : html`<span class="muted small">—</span>`}</span>
-    <span class="tc c-due" role="cell">${next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : '')} title=${next.title}>${dueWord(next.due)}</span>` : html`<span class="muted small">—</span>`}</span>
+    <span class="tc c-due" role="cell">${next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : dayDiff(next.due) <= 1 ? ' soon' : '')} title=${next.title}><${DueLines} iso=${next.due} late=${dayDiff(next.due) < 0} /></span>` : html`<span class="muted small">—</span>`}</span>
   </a>`;
 }
 
@@ -78,12 +78,18 @@ export function ProjectPage({ id }) {
   const openTasks = tasks.filter((t) => t.status !== 'done').length;
   const outs = projectOutputs(p.id);
   const tabs = TABS.map((t) => ({ ...t, n: t.id === 'tasks' ? openTasks || null : t.id === 'outputs' ? outs.length || null : null }));
+  const ids = [p.manager, ...p.partners];
   return html`<div class="page proj2" style=${`--bar:${p.color}`}>
     <header class="proj2-head">
       <div class="grow">
         <div class="eyebrow">${p.personal ? 'פרויקט אישי' : html`בניהול ${person(p.manager).name}`}${p.template ? ` · ${TEMPLATES.find((t) => t.id === p.template)?.name || ''}` : ''}</div>
         <h1>${p.name}</h1>
         <div class="proj2-tags"><${Health} p=${p} /><${Classified} p=${p} />${st.n ? html`<span class="muted small">${st.where} · שלב ${Math.min(st.idx, st.n)} מתוך ${st.n}</span>` : null}</div>
+        ${p.personal ? null : html`<div class="proj2-people">
+          <button type="button" class="ppl-faces" aria-label=${`האנשים בפרויקט: ${ids.map((x) => person(x).name).join(', ')}`} onClick=${() => setTab('people')}><${Faces} ids=${ids} size=${26} max=${5} />
+            <span>${p.partners.length ? `${ids.length} אנשים` : 'עוד אין שותפים'}</span></button>
+          ${mgr ? html`<button type="button" class="add-ppl" onClick=${() => openSheet('partner', { id: p.id })}><${Icon} name="plus" size=${15} />הוספת שותף</button>` : null}
+        </div>`}
       </div>
       <div class="head-acts">
         ${mgr && !p.personal && p.phase !== 'stopped' ? html`<button type="button" class="btn" onClick=${() => openSheet('weekly', { id: p.id })}><${Icon} name="hill" size=${16} />עדכון שבועי</button>` : null}
@@ -185,7 +191,7 @@ function StageRow({ p, st, i, mgr, edit, outs }) {
       <span class="stage-ic">${icon ? html`<${Icon} name=${icon} size=${14} />` : i + 1}</span>
       <button type="button" class="stage-name" onClick=${() => setOpen(!open)} aria-expanded=${open}>${st.name}${st.gate === 'commander' ? html`<span class="gate-mark" title="סגירת השלב באישור המפקד"><${Icon} name="shield" size=${13} /></span>` : null}</button>
       <span class="muted small">${word}</span>
-      ${cur && (st.target || mgr) ? html`<label class=${'stage-target' + (st.target && new Date(st.target) < new Date() ? ' late' : '')}><${Icon} name="calendar" size=${13} />
+      ${cur && (st.target || mgr) ? html`<label class=${'stage-target' + (st.target && dayDiff(st.target) < 0 ? ' late' : '')}><${Icon} name="calendar" size=${13} />
         ${mgr ? html`<input type="date" value=${dateInput(st.target)} onInput=${(e) => setStage(p.id, st.id, { target: e.currentTarget.value || null })} aria-label="יעד לשלב" />` : null}${st.target ? `יעד ${dueWord(st.target)}` : 'יעד'}</label>` : null}
       <span class="grow"></span>
       ${edit ? html`<span class="stage-edit">
@@ -252,7 +258,8 @@ function TasksBoard({ p, mgr }) {
   // Groups already in order of stage: the current stage leads, closed stages fold away to the end.
   if (by === 'stage') groups.sort((a, b) => (b.hint === 'עכשיו') - (a.hint === 'עכשיו') || (a.hint === 'נסגר') - (b.hint === 'נסגר'));
   return html`<div class="board2">
-    <${BoardBar} search=${search} setSearch=${setSearch} people=${[p.manager, ...p.partners]} who=${who} setWho=${setWho} groupBy=${by} setGroupBy=${setBy} groupOptions=${BOARD_GROUPS} showDone=${showDone} setShowDone=${setShowDone} />
+    <${BoardBar} search=${search} setSearch=${setSearch} people=${[p.manager, ...p.partners]} who=${who} setWho=${setWho} groupBy=${by} setGroupBy=${setBy} groupOptions=${BOARD_GROUPS} showDone=${showDone} setShowDone=${setShowDone}
+      onAddPerson=${mgr && !p.personal ? () => openSheet('partner', { id: p.id }) : null} />
     <${TaskTable} key=${by} groups=${groups} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
   </div>`;
 }

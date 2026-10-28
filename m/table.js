@@ -2,9 +2,9 @@
 // that change in one tap. Rows sit in coloured groups (by date, stage, status, person or project); each group ends
 // with a line to add a task straight into it, and a bar that shows at a glance how much of it is done.
 import { useState, useRef } from 'preact/hooks';
-import { html, Icon, Avatar, ProjectTag, openMenu, dueWord, dayDiff, dateInput } from './ui.js';
+import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, PRIORITY, PRIORITY_ORDER, setStatus, updateTask, toggleFocus, addTask, openSheet, person, project,
-  canEditTask, team, isCommander, getState } from './store.js';
+  canEditTask, canManage, team, isCommander, getState } from './store.js';
 
 export const COLS = {
   owner: { label: 'אחראי', w: '76px' },
@@ -89,7 +89,7 @@ function Row({ t, cols, star }) {
   const open = () => openSheet('task', { id: t.id });
   const menuStatus = (e) => { e.stopPropagation(); if (edit) openMenu(e, STATUS_ORDER.map((id) => ({ id, label: STATUS[id].label, dot: STATUS[id].color })), { selected: t.status, onPick: (id) => setStatus(t.id, id) }); };
   const menuPrio = (e) => { e.stopPropagation(); if (edit) openMenu(e, [...PRIORITY_ORDER.map((id) => ({ id, label: PRIORITY[id].label, dot: PRIORITY[id].color })), { id: '', label: 'בלי עדיפות' }], { selected: t.priority || '', onPick: (id) => updateTask(t.id, { priority: id || null }) }); };
-  const menuOwner = (e) => { e.stopPropagation(); if (edit) openMenu(e, pool.map((id) => ({ id, label: person(id).name, person: id })), { selected: t.owner, onPick: (id) => updateTask(t.id, { owner: id }) }); };
+  const menuOwner = (e) => { e.stopPropagation(); if (edit) openMenu(e, ownerItems(p, pool), { selected: t.owner, onPick: (id) => (id === ADD ? openSheet('partner', { id: p.id, task: t.id }) : updateTask(t.id, { owner: id })) }); };
   const st = STATUS[t.status];
   const pr = t.priority ? PRIORITY[t.priority] : null;
   const n = t.due ? dayDiff(t.due) : null;
@@ -116,12 +116,24 @@ function Row({ t, cols, star }) {
       if (c === 'priority') return html`<div class="tc c-priority" role="cell"><button type="button" class=${'cell-fill' + (pr ? '' : ' empty') + (pr?.ink === 'light' ? ' light' : '')} style=${pr ? `--c:${pr.color}` : ''} disabled=${!edit} aria-label=${`עדיפות: ${pr ? pr.label : 'בלי'}`} onClick=${menuPrio}>${pr ? pr.label : ''}</button></div>`;
       if (c === 'due') return html`<div class="tc c-due" role="cell"><label class=${'cell-date' + (late ? ' late' : !done && n !== null && n <= 1 ? ' soon' : '') + (done ? ' done' : '')}>
         ${edit ? html`<input type="date" value=${dateInput(t.due)} aria-label="תאריך יעד" onClick=${(e) => e.stopPropagation()} onInput=${(e) => updateTask(t.id, { due: e.currentTarget.value || null })} />` : null}
-        ${late ? html`<${Icon} name="alert" size=${13} />` : null}${t.due ? dueWord(t.due) : html`<span class="muted">—</span>`}</label></div>`;
+        ${t.due ? html`<${DueLines} iso=${t.due} late=${late} />` : html`<span class="muted">—</span>`}</label></div>`;
       if (c === 'project') return html`<div class="tc c-project" role="cell">${p ? html`<${ProjectTag} id=${p.id} />` : html`<span class="muted small">—</span>`}</div>`;
       if (c === 'stage') return html`<div class="tc c-stage" role="cell"><span class="small">${stage ? stage.name : '—'}</span></div>`;
       return null;
     })}
   </div>`;
+}
+
+// A date cell, as on Monday, with the day itself first and under it how far it is ("מחר", "לפני 3 ימים").
+export function DueLines({ iso, late }) {
+  return html`<span class="cd-date">${late ? html`<${Icon} name="alert" size=${12} />` : null}${dueDate(iso)}</span><span class="cd-rel">${dueRel(iso)}</span>`;
+}
+
+// Who can own a task: the project's people, and for whoever runs the project, a way to bring in someone new.
+export const ADD = '+partner';
+export function ownerItems(p, pool) {
+  const items = pool.map((id) => ({ id, label: person(id).name + (person(id).role === 'external' ? ` · ${person(id).org || 'מבחוץ'}` : ''), person: id }));
+  return p && !p.personal && canManage(p) ? [...items, { id: ADD, label: 'הוספת שותף לפרויקט…', icon: 'plus' }] : items;
 }
 
 function AddRow({ defaults, placeholder = 'להוסיף משימה' }) {
@@ -143,11 +155,13 @@ function AddRow({ defaults, placeholder = 'להוסיף משימה' }) {
 }
 
 // The bar above a board: search, one person, how to group, and whether to show what is done.
-export function BoardBar({ search, setSearch, people, who, setWho, groupBy, setGroupBy, groupOptions, showDone, setShowDone, children }) {
+// On a project's board, whoever runs it also gets a + at the end of the faces, to add a partner.
+export function BoardBar({ search, setSearch, people, who, setWho, groupBy, setGroupBy, groupOptions, showDone, setShowDone, onAddPerson, children }) {
   return html`<div class="bbar">
     <label class="bbar-search"><${Icon} name="search" size=${16} /><input type="search" value=${search} onInput=${(e) => setSearch(e.currentTarget.value)} placeholder="חיפוש" aria-label="חיפוש משימה" /></label>
-    ${people && people.length > 1 ? html`<div class="bbar-people" role="group" aria-label="סינון לפי אדם">
+    ${people && (people.length > 1 || onAddPerson) ? html`<div class="bbar-people" role="group" aria-label="סינון לפי אדם">
       ${people.map((id) => html`<button type="button" class=${'pf' + (who === id ? ' on' : '')} aria-pressed=${who === id} title=${person(id).name} onClick=${() => setWho(who === id ? null : id)}><${Avatar} id=${id} size=${28} /></button>`)}
+      ${onAddPerson ? html`<button type="button" class="pf pf-add" title="הוספת שותף" aria-label="הוספת שותף לפרויקט" onClick=${onAddPerson}><${Icon} name="plus" size=${16} /></button>` : null}
     </div>` : null}
     ${groupOptions ? html`<button type="button" class="bbar-btn" onClick=${(e) => openMenu(e, groupOptions, { selected: groupBy, onPick: setGroupBy })}><${Icon} name="layers" size=${15} />קיבוץ: ${groupOptions.find((o) => o.id === groupBy)?.label}</button>` : null}
     ${setShowDone ? html`<button type="button" class=${'bbar-btn' + (showDone ? ' on' : '')} aria-pressed=${showDone} onClick=${() => setShowDone(!showDone)}><${Icon} name="check" size=${15} />${showDone ? 'מציג בוצעו' : 'בוצעו מוסתרות'}</button>` : null}

@@ -109,20 +109,29 @@ export function Empty({ icon = 'check', children }) {
 }
 
 // ---------- time words ----------
+// A deadline always shows its date, and beside it how far that is: "30/10 (מחר)", "16/10 (לפני 12 ימים)".
 const DAYS = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 const startOf = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 export const dayDiff = (iso) => Math.round((startOf(iso) - startOf(Date.now())) / 864e5);
-export function dueWord(iso) {
+export function dueDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const y = d.getFullYear() === new Date().getFullYear() ? '' : `/${String(d.getFullYear()).slice(2)}`;
+  return `${d.getDate()}/${d.getMonth() + 1}${y}`;
+}
+const span = (n, one, two, many) => (n === 1 ? one : n === 2 ? two : `${n} ${many}`);
+const far = (n) => (n < 7 ? span(n, 'יום', 'יומיים', 'ימים') : n === 7 ? 'שבוע' : n < 14 ? `${n} ימים` : n < 60 ? span(Math.round(n / 7), 'שבוע', 'שבועיים', 'שבועות') : span(Math.round(n / 30), 'חודש', 'חודשיים', 'חודשים'));
+export function dueRel(iso) {
   if (!iso) return '';
   const n = dayDiff(iso);
   if (n === 0) return 'היום';
   if (n === 1) return 'מחר';
   if (n === -1) return 'אתמול';
-  if (n < 0) return `לפני ${-n} ימים`;
+  if (n < 0) return `לפני ${far(-n)}`;
   if (n < 7) return `יום ${DAYS[new Date(iso).getDay()]}`;
-  const d = new Date(iso);
-  return `${d.getDate()}/${d.getMonth() + 1}`;
+  return `בעוד ${far(n)}`;
 }
+export const dueWord = (iso) => (iso ? `${dueDate(iso)} (${dueRel(iso)})` : '');
 export function ago(iso) {
   if (!iso) return 'אף פעם';
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60e3);
