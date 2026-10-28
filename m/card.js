@@ -162,8 +162,59 @@ export function weeklyUpdate(p, { hill, confidence, note = '', senior = null, no
 }
 export const updateDue = (p, now = Date.now()) => !p.lastUpdate || now - new Date(p.lastUpdate).getTime() >= 6 * DAY;
 
+// ---------- the order of the team's projects ----------
+// Only projects are ordered, never people. A live team project takes a place 1…N; personal, held, stopped and
+// finished projects take none, and a new project stays unplaced until the commander gives it a place.
+export const inOrder = (p) => !!p && !p.personal && p.phase !== 'hold' && p.phase !== 'stopped' && p.phase !== 'done';
+const place = (p) => (inOrder(p) && p.rank != null ? p.rank : Infinity);
+// Placed projects by place, then the unplaced, then held ones; the given order breaks ties.
+export const byRank = (a, b) => place(a) - place(b) || (a.phase === 'hold') - (b.phase === 'hold');
+
+// Put project `id` at place n (1 is the top; past the end means last) and number the rest after it, 1…N with no gaps.
+// Returns { [project id]: place or null } for every project given. n == null takes the project out of the order; with
+// no id the places only close up, so a project that left the order gives up its place.
+export function placeProject(projects, id, n) {
+  const live = projects.filter(inOrder);
+  const moving = n == null ? null : live.find((p) => p.id === id);
+  const list = live.filter((p) => p !== moving && p.id !== id && p.rank != null).sort((a, b) => a.rank - b.rank);
+  if (moving) list.splice(Math.max(0, Math.min(list.length, Math.round(n) - 1)), 0, moving);
+  const ranks = Object.fromEntries(projects.map((p) => [p.id, null]));
+  list.forEach((p, i) => { ranks[p.id] = i + 1; });
+  return ranks;
+}
+
+// ---------- asks: what the commander asks of a project's manager ----------
+// An ask is a task with ask: true, from the commander to the manager, who answers it (ack) and breaks it into tasks
+// (each with parent: the ask). Its state as the commander reads it, most pressing first: done; talk (the manager wants
+// to talk about it); late (open past its date, from the day after, as with external commitments); doing (broken into
+// tasks, n of m done); sent (not answered yet); ok (accepted, nothing under it yet).
+export const ASK_STATE = {
+  sent: { label: 'נשלחה', color: 'var(--s-todo)' },
+  ok: { label: 'התקבלה', color: 'var(--accent)' },
+  doing: { label: 'בעבודה', color: 'var(--s-progress)' },
+  talk: { label: 'צריך לדבר', color: 'var(--s-waiting)' },
+  late: { label: 'באיחור', color: 'var(--h-off)' },
+  done: { label: 'בוצעה', color: 'var(--s-done)' },
+};
+export function askState(ask, tasks = [], now = Date.now()) {
+  const under = tasks.filter((t) => t.parent === ask.id);
+  const n = under.filter((t) => t.status === 'done').length;
+  const m = under.length;
+  let state = 'ok';
+  if (ask.status === 'done') state = 'done';
+  else if (ask.ack?.state === 'talk') state = 'talk';
+  else if (ask.due && daysBetween(now, ask.due) < 0) state = 'late';
+  else if (m) state = 'doing';
+  else if (!ask.ack) state = 'sent';
+  return { state, n, m };
+}
+
 // ---------- what reaches the commander ----------
-// Only four things, each with the reason in words. Everything else stays with the project manager.
+// Only these things, each with the reason in words: a gate, a manager asking for a senior, a stage late or stuck, an
+// external commitment late or at risk, and of his own asks, one the manager wants to talk about or one that is late.
+// Everything else stays with the project manager, the tasks under an ask included.
+// The queue reads in this order, then by the project's place.
+export const KIND_ORDER = ['gate', 'senior', 'talk', 'late', 'asklate', 'commit'];
 export function needsCommander(p, tasks = [], now = Date.now()) {
   if (p.personal || p.phase === 'stopped' || p.phase === 'done') return [];
   const out = [];
@@ -181,6 +232,12 @@ export function needsCommander(p, tasks = [], now = Date.now()) {
     // Late from the day after the due day, as on the task's own date.
     if (daysBetween(now, t.due) < 0) out.push({ kind: 'commit', why: 'התחייבות חיצונית באיחור', text: `${t.title} (ל${t.external})`, task: t.id, by: t.due });
     else if (t.status !== 'doing' && workdaysBetween(now, dayStart(t.due)) < 3) out.push({ kind: 'commit', why: 'התחייבות חיצונית בסכנה', text: `${t.title} (ל${t.external})`, task: t.id, by: t.due });
+  }
+  for (const t of tasks) {
+    if (t.project !== p.id || !t.ask || t.status === 'done') continue;
+    const a = askState(t, tasks, now).state;
+    if (a === 'talk') out.push({ kind: 'talk', why: 'צריך לדבר על הבקשה', text: t.title, task: t.id, by: t.due });
+    else if (a === 'late') out.push({ kind: 'asklate', why: 'בקשה שלך באיחור', text: t.title, task: t.id, by: t.due });
   }
   return out;
 }

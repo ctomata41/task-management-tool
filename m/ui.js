@@ -1,12 +1,12 @@
 // Building blocks for the manual version: icons, avatars, capsules, the stage strip, sheets and toasts. Sheets and toasts
 // use the app's layer classes and springs (app/motion.js), so they move exactly like the rest of the platform.
 import { h } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
-import { useLayer, useThumb } from '../app/motion.js';
+import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
-import { useStore, set, person, project, dismissToast, closeSheet } from './store.js';
-import { HEALTH, CLASSIFICATION, status, localDay } from './card.js';
+import { useStore, set, getState, person, project, dismissToast, closeSheet, isCommander, setRank, rankedProjects } from './store.js';
+import { HEALTH, CLASSIFICATION, ASK_STATE, status, localDay, inOrder, askState } from './card.js';
 
 export const html = htm.bind(h);
 
@@ -44,6 +44,71 @@ export function Health({ p }) {
   const st = status(p);
   const h0 = HEALTH[st.health];
   return html`<${Pill} color=${h0.color}>${h0.label}</${Pill}>`;
+}
+
+// ---------- the order and the asks ----------
+// A project's place in the order as a capsule. The commander moves it from here, with a menu that grows from the
+// capsule; the team reads it; outside partners never see places. Held, stopped, finished and personal projects have none.
+export function RankCap({ p }) {
+  if (!inOrder(p) || person(getState().me).role === 'external') return null;
+  const cls = 'rank-cap' + (p.rank ? '' : ' none');
+  const text = p.rank ? String(p.rank) : 'עוד בלי מקום';
+  if (!isCommander()) return html`<span class=${cls}>${p.rank ? html`<span class="sr">מקום </span>` : null}${text}</span>`;
+  const pick = (e) => {
+    e.preventDefault(); // it may sit on a row that is a link
+    e.stopPropagation();
+    // Every place there is, and one more at the end for a project that has none yet.
+    const n = rankedProjects().filter((x) => x.id !== p.id).length + 1;
+    const items = Array.from({ length: n }, (_, i) => ({ id: i + 1, label: i ? `למקום ${i + 1}` : 'לראש הסדר' }));
+    openMenu(e, items, { selected: p.rank || null, onPick: (k) => setRank(p.id, k) });
+  };
+  return html`<button type="button" class=${cls} aria-haspopup="menu" onClick=${pick}
+    aria-label=${p.rank ? `מקום ${p.rank} בסדר העדיפויות. לשנות את המקום` : 'עוד בלי מקום בסדר העדיפויות. לקבוע מקום'}>${text}</button>`;
+}
+
+// When the rows of a list change order, each row slides from where it was on screen to its new place, on a spring
+// (damping 1) that starts at the row's current offset and speed. Under reduced motion the rows just swap. The rows
+// must be keyed, so that Preact moves the same nodes instead of rewriting them in place.
+export function useFlip(listRef) {
+  const last = useRef(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const rows = [...list.children];
+    const top = list.getBoundingClientRect().top;
+    // Where each row sits in the list, without the offset a spring may still be giving it.
+    const now = new Map(rows.map((el) => [el, el.getBoundingClientRect().top - top - (el.__motion ? el.__motion.get('y') : 0)]));
+    const prev = last.current;
+    last.current = now;
+    if (!prev || reducedMotion()) return;
+    const kept = rows.filter((el) => prev.has(el));
+    const was = [...prev.keys()].filter((el) => now.has(el));
+    if (kept.every((el, i) => el === was[i])) return; // the same order: nothing moves
+    let far = null;
+    for (const el of kept) {
+      const dy = prev.get(el) - now.get(el);
+      if (Math.abs(dy) < 0.5) continue;
+      const m = motion(el);
+      const v = m.velocity('y');
+      m.set({ y: m.get('y') + dy });
+      const done = m.to({ y: 0 }, { damping: 1, response: 0.42, velocity: { y: v } });
+      if (!far || Math.abs(dy) > far.d) far = { el, d: Math.abs(dy), done };
+    }
+    // The row that travels furthest, the one that was picked, passes over the others.
+    if (far) {
+      const mark = {};
+      far.el.__lift = mark;
+      far.el.classList.add('flip-lift');
+      far.done.then(() => { if (far.el.__lift === mark) far.el.classList.remove('flip-lift'); });
+    }
+  });
+}
+
+// An ask's state as a tinted capsule: נשלחה, התקבלה, בעבודה 1/3, צריך לדבר, באיחור or בוצעה (card.askState).
+export function AskPill({ t }) {
+  const a = askState(t, getState().tasks);
+  const k = ASK_STATE[a.state];
+  return html`<${Pill} color=${k.color} cls="ask-pill">${a.state === 'doing' ? `${k.label} ${a.n}/${a.m}` : k.label}</${Pill}>`;
 }
 
 // The stage path as a row of segments: closed, current (and whether it waits for the commander), still ahead.

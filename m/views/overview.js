@@ -1,7 +1,7 @@
 // The commander's picture: first only what needs the commander (four kinds, each with its reason), then one fixed line
 // per project read off its ID card, then the load on each person. Nothing here asks anyone for a report.
 import { html, Icon, Avatar, Pill, Classified, Health, StageStrip, Empty, ago, dueWord } from '../ui.js';
-import { useStore, teamProjects, commanderQueue, isCommander, person, project, team, openSheet, approveGate, getState } from '../store.js';
+import { useStore, teamProjects, commanderQueue, isCommander, person, project, team, openSheet, approveGate, talked, getState } from '../store.js';
 import { status, HILL, cardFill } from '../card.js';
 import { dayDiff } from '../ui.js';
 
@@ -10,6 +10,8 @@ const KIND = {
   senior: { icon: 'flag', color: 'var(--h-off)' },
   late: { icon: 'clock', color: 'var(--h-risk)' },
   commit: { icon: 'send', color: 'var(--h-off)' },
+  talk: { icon: 'message', color: 'var(--s-waiting)' },
+  asklate: { icon: 'clock', color: 'var(--h-off)' },
 };
 
 export function Overview() {
@@ -52,6 +54,8 @@ function QueueRow({ q }) {
     senior: html`<button type="button" class="btn btn-primary sm" onClick=${() => openSheet('resolve', { id: q.project })}>טיפלתי</button>`,
     late: html`<button type="button" class="btn sm" onClick=${() => openSheet('direct', { id: q.project })}>להוריד משימה</button>`,
     commit: q.task ? html`<button type="button" class="btn sm" onClick=${() => openSheet('task', { id: q.task })}>לפתוח</button>` : null,
+    talk: html`<button type="button" class="btn btn-primary sm" onClick=${() => talked(q.task)}>דיברנו</button>`,
+    asklate: html`<button type="button" class="btn sm" onClick=${() => openSheet('task', { id: q.task })}>לפתוח</button>`,
   }[q.kind];
   return html`<div class="qrow">
     <span class="q-ic" style=${`--c:${k.color}`}><${Icon} name=${k.icon} size=${16} /></span>

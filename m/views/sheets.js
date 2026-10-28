@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, Seg, Pill, Empty, dueWord, dateInput, ago, openMenu, OUT_KIND } from '../ui.js';
 import { useStore, project, person, team, isCommander, canManage, canEditTask, closeSheet, openSheet, addProject, closeStage, approveGate, returnGate,
   weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addTask, addPerson, updateProject, saveMeeting, projectOutputs,
-  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample } from '../store.js';
+  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk } from '../store.js';
 import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, stageReady } from '../card.js';
 import { MeetingSummary } from './outputs.js';
 import { ownerItems, ADD } from '../table.js';
@@ -212,6 +212,26 @@ export function DirectBody({ id }) {
     <div class="chips-row">${people.map((x) => html`<button type="button" class=${'person-chip' + (owner === x ? ' on' : '')} onClick=${() => setOwner(x)}><${Avatar} id=${x} size=${22} />${person(x).name}</button>`)}</div>
     <label class="lbl" for="d-due">עד מתי</label><input id="d-due" class="input" type="date" value=${due} onInput=${(e) => setDue(e.currentTarget.value)} />
     <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim()}>להוריד את המשימה</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
+  </form>`;
+}
+
+// ---------- the commander's ask to a project's manager ----------
+// A first, working version: what is needed, to the project's manager. Why it matters and by when come next.
+export function AskBody({ id }) {
+  const p = project(id);
+  const [title, setTitle] = useState('');
+  if (!p || p.personal || !isCommander()) return html`<${Empty}>אפשר לשלוח בקשה רק למנהל/ת של פרויקט צוות.</${Empty}>`;
+  const send = (e) => {
+    e.preventDefault();
+    if (!title.trim()) return;
+    sendAsk({ project: p.id, title: title.trim() });
+    closeSheet();
+  };
+  return html`<form class="form" onSubmit=${send}>
+    <label class="lbl" for="a-title">מה צריך</label>
+    <input id="a-title" class="input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder="למשל: לסגור עם משאבי אנוש את הטופס החדש" />
+    <p class="muted small">תגיע ל${person(p.manager).name}, שמנהל/ת את הפרויקט</p>
+    <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim()}>לשלוח את הבקשה</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
   </form>`;
 }
 

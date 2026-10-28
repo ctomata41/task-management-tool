@@ -691,6 +691,31 @@ a.prow:active { background: var(--press); }
 /* Each part keeps its rules inside its own block below, phone rules and press feedback included. */
 
 /* --- core: the place capsule, the ask's state, the lock (m/ui.js, m/store.js) --- */
+/* A project's place (RankCap): a tinted capsule with tabular numerals, raised above a row's stretched link. The
+   commander's is a button with a 44px hit area; "עוד בלי מקום" is quieter. */
+.rank-cap { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 28px; height: 28px; padding: 0 9px;
+  border-radius: 999px; font-size: 0.875rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; white-space: nowrap;
+  background: color-mix(in srgb, var(--accent) 15%, transparent); color: color-mix(in oklab, var(--accent) var(--ink), black); }
+.rank-cap.none { font-size: 0.75rem; font-weight: 600; background: var(--fill); color: var(--fg-2); }
+button.rank-cap::after { content: ''; position: absolute; inset: -8px; }
+/* An ask's state (AskPill) is a .spill; its counts keep their width as they change. */
+.ask-pill { font-variant-numeric: tabular-nums; }
+/* useFlip: the row that travels furthest passes over the rows it crosses. */
+.flip-lift { position: relative; z-index: 2; }
+@media (hover: hover) {
+  button.rank-cap:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+  button.rank-cap.none:hover { background: var(--fill-2); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  button.rank-cap { transition: transform 0.44s var(--spring), background-color 0.2s, color 0.2s, box-shadow 0.2s; }
+  button.rank-cap:active { transform: scale(0.95); transition-duration: 0.08s; }
+}
+@media (prefers-reduced-motion: reduce) {
+  button.rank-cap { transition: background-color 0.2s, color 0.2s; }
+}
+@media (prefers-contrast: more) {
+  .rank-cap { box-shadow: inset 0 0 0 1px var(--line-strong); }
+}
 /* end of core */
 
 

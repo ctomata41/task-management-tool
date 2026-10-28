@@ -9,7 +9,7 @@ import { Today } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
 import { Overview } from './views/overview.js';
 import { Outputs, OutputSheetBody, NewOutputBody } from './views/outputs.js';
-import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, DirectBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
+import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, DirectBody, AskBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
 import { Calendar, StageBody } from './views/calendar.js';
 import { JarvisScreen, JarvisTab, JarvisSide } from './views/jarvis.js';
 import { takeReturn } from './gcal.js';
@@ -63,6 +63,7 @@ const SHEETS = {
   weekly: { title: 'עדכון שבועי', body: WeeklyBody },
   resolve: { title: 'בקשה לבכיר', body: ResolveBody },
   direct: { title: 'להוריד משימה', body: DirectBody },
+  ask: { title: 'בקשה חדשה', body: AskBody },
   partner: { title: 'הוספת שותף', body: PartnerBody },
   output: { title: 'תוצר', body: OutputSheetBody },
   stage: { title: 'שלב', body: StageBody },
