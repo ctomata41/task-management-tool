@@ -3,7 +3,7 @@
 // where it lives on the classified network, never the content.
 import { useState } from 'preact/hooks';
 import { html, Icon, Avatar, Pill, Seg, ProjectTag, Classified, Empty, ago, OUT_KIND, LEVEL } from '../ui.js';
-import { useStore, project, person, canSee, canManage, visibleOutputs, openSheet, closeSheet, updateOutput, addFeedback, addOutput, getState, toast } from '../store.js';
+import { useStore, project, person, canSeeDetail, canManage, visibleOutputs, openSheet, closeSheet, updateOutput, addFeedback, addOutput, getState, toast } from '../store.js';
 import { currentStage } from '../card.js';
 
 const KIND_COLOR = { doc: 'var(--accent)', sheet: 'var(--s-done)', deck: 'var(--s-progress)', meeting: 'var(--s-waiting)', image: 'var(--h-risk)', link: 'var(--s-todo)', pointer: 'var(--fg-3)' };
@@ -30,8 +30,9 @@ export function Outputs() {
   const s = useStore();
   const [filter, setFilter] = useState('all');
   const all = visibleOutputs().filter((o) => !project(o.project)?.personal || project(o.project)?.personal === s.me);
-  // Open-for-feedback outputs reach the whole team, even from projects they are not part of.
-  const openAll = s.outputs.filter((o) => o.open && !project(o.project)?.personal);
+  // Open-for-feedback outputs reach the whole team, even from projects they are not part of, but not past the lock on
+  // a restricted project, and an outside partner only from their own projects (canSeeDetail).
+  const openAll = s.outputs.filter((o) => o.open && !project(o.project)?.personal && canSeeDetail(project(o.project)));
   const shown = filter === 'open' ? openAll : filter === 'mine' ? all.filter((o) => o.by === s.me) : all;
   return html`<div class="page">
     <header class="page-head2"><div><h1>תוצרים</h1><p class="sub">מסמכים, טבלאות, סיכומי פגישות ומצביעים לחומר שברשת המסווגת, מכל הפרויקטים שלך.</p></div></header>
@@ -48,7 +49,7 @@ export function OutputSheetBody({ id }) {
   const [text, setText] = useState('');
   if (!o) return html`<${Empty}>התוצר נמחק.</${Empty}>`;
   const p = project(o.project);
-  const member = p && canSee(p);
+  const member = p && canSeeDetail(p); // past a locked project's one line, as everywhere
   const mgr = p && (canManage(p) || o.by === s.me);
   const m = o.kind === 'meeting' ? s.meetings.find((x) => x.id === o.meeting || x.output === o.id) : null;
   const k = OUT_KIND[o.kind] || OUT_KIND.link;

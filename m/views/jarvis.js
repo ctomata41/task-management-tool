@@ -2,7 +2,7 @@
 // and a whole screen around a live orb. The voice isn't connected in this version yet, so the screen says so plainly
 // and shows what it will be for; nothing on it pretends to listen.
 import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
-import { html, Icon } from '../ui.js';
+import { html, Icon, useDialogFocus } from '../ui.js';
 import { set } from '../store.js';
 import { haptic, useLayer, reducedMotion } from '../../app/motion.js';
 
@@ -18,13 +18,14 @@ export function JarvisScreen() {
   const root = useRef();
   const panel = useRef();
   useLayer(root, panel, { kind: 'modal', onClose: closeJarvis });
+  useDialogFocus(panel);
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') closeJarvis(); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
   return html`<div class="overlay jv-ov" ref=${root} onClick=${closeJarvis}>
-    <div class="modal jv-screen m-jv" ref=${panel} role="dialog" aria-modal="true" aria-label="ג׳ארביס" onClick=${(e) => e.stopPropagation()}>
+    <div class="modal jv-screen m-jv" ref=${panel} role="dialog" aria-modal="true" aria-label="ג׳ארביס" tabindex="-1" onClick=${(e) => e.stopPropagation()}>
       <div class="grabber" aria-hidden="true"></div>
       <header class="modal-head jv-head">
         <button type="button" class="icon-btn" aria-label="סגירה" onClick=${closeJarvis}><${Icon} name="x" /></button>

@@ -66,6 +66,7 @@ function dayItems(s, t, events) {
   // My projects: the ones I run or am a partner in (the commander: every team project). Their meetings, and mine.
   const mine = [...teamProjects(), ...personalProjects()].filter((p) => p.manager === s.me || p.partners.includes(s.me) || (isCommander() && !p.personal));
   for (const m of s.meetings) {
+    // Only my projects' meetings, which also keeps a locked project's meetings from those outside it.
     if (isoDay(new Date(m.at)) !== key || !(m.by === s.me || mine.some((p) => p.id === m.project))) continue;
     out.push({ kind: 'meeting', key: `m${m.id}`, time: hhmm(m.at), title: m.title, output: m.output, p: project(m.project), rank: `0${hhmm(m.at)}` });
   }

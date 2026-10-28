@@ -1,27 +1,29 @@
-// Projects: the portfolio as one table (a row per project: stage, health, how much is done, what is next), and a
-// project's page. The page opens on its board (tasks grouped by stage, Monday style); the ID card, outputs, the log of
-// decisions and assumptions, and the people are one tab away.
+// Projects: the portfolio as one table (a row per project, in the commander's order: stage, health, how much is done,
+// what is next), and a project's page. The page opens on its board (tasks grouped by stage, Monday style); the ID card,
+// outputs, the log of decisions and assumptions, and the people are one tab away. A restricted project shows a team
+// member outside it only its one line (canSeeDetail).
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
+import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, RankCap, useFlip, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND, LEVEL } from '../ui.js';
 import { TaskTable, BoardBar, Battery, DueLines, groupTasks, matches } from '../table.js';
-import { useStore, project, person, canManage, canSee, isCommander, teamProjects, personalProjects, projectTasks, projectOutputs, openSheet,
+import { useStore, project, person, me, canManage, canSee, canSeeDetail, leads, isCommander, teamProjects, orderedProjects, personalProjects, projectTasks, projectOutputs, openSheet,
   updateProject, setField, setStage, addStage, moveStage, skipStage, removeStage, addLog, resolveSenior, team, getState, isOpen } from '../store.js';
-import { status, currentStage, HILL, CONFIDENCE, HEALTH, STAGES, CLASSIFICATION, needsCommander, cardFill, TEMPLATES } from '../card.js';
+import { status, currentStage, inOrder, HILL, CONFIDENCE, HEALTH, STAGES, CLASSIFICATION, needsCommander, cardFill, TEMPLATES } from '../card.js';
 import { OutputCard } from './outputs.js';
+import { orderLine } from './overview.js';
 
 export function Projects() {
   const s = useStore();
   const [filter, setFilter] = useState('all');
   const all = teamProjects();
-  const live = all.filter((p) => p.phase !== 'stopped' && p.phase !== 'done');
+  const live = orderedProjects(); // placed, then not placed yet, then held
   const isMine = (p) => p.manager === s.me || p.partners.includes(s.me);
+  const ext = me().role === 'external'; // outside partners see only their own projects, and no places
   const personal = personalProjects();
   let groups;
-  if (filter === 'closed') groups = [{ id: 'closed', name: 'נסגרו', color: 'var(--s-todo)', list: all.filter((p) => p.phase === 'stopped' || p.phase === 'done') }];
+  if (filter === 'closed') groups = [{ id: 'closed', name: 'נסגרו', color: 'var(--s-todo)', list: all.filter((p) => !isOpen(p)) }];
   else {
     groups = [
-      { id: 'mine', name: 'הפרויקטים שלי', color: 'var(--accent)', list: live.filter(isMine) },
-      { id: 'team', name: 'שאר הצוות', color: 'var(--s-waiting)', list: filter === 'mine' ? [] : live.filter((p) => !isMine(p)) },
+      { id: 'order', name: ext ? 'הפרויקטים שלי' : 'סדר העדיפויות', hint: ext ? null : orderLine(), color: 'var(--accent)', list: filter === 'mine' ? live.filter(isMine) : live },
       { id: 'personal', name: 'אישי', hint: 'רק את/ה רואה', color: 'var(--s-progress)', list: personal },
     ];
   }
@@ -30,34 +32,47 @@ export function Projects() {
       <div class="head-acts"><a class="btn out-link" href="#/outputs"><${Icon} name="file" size=${16} />תוצרים</a>
         <button type="button" class="btn btn-primary" onClick=${() => openSheet('newproject')}><${Icon} name="plus" size=${16} />פרויקט חדש</button></div></header>
     <${Seg} label="סינון" value=${filter} onChange=${setFilter} options=${[{ id: 'all', label: 'פעילים', n: live.length }, { id: 'mine', label: 'שלי' }, { id: 'closed', label: 'נסגרו' }]} />
-    ${groups.some((g) => g.list.length) ? html`<div class="ttable ptable">${groups.filter((g) => g.list.length).map((g) => html`<section class="tgrp" key=${g.id} style=${`--gc:${g.color}`}>
-      <header class="tgrp-head"><span class="tgrp-tog"><h3>${g.name}</h3></span><span class="tgrp-n">${g.list.length}</span>${g.hint ? html`<span class="muted small">${g.hint}</span>` : null}</header>
-      <div class="tt" role="table" aria-label=${g.name}>
-        <div class="tt-row tt-th" role="row"><span class="tc-bar"></span><span class="tc th-title">פרויקט</span><span class="tc th c-owner">מוביל/ה</span><span class="tc th c-pstage">שלב</span><span class="tc th c-status">מצב</span><span class="tc th c-prog">משימות</span><span class="tc th c-due">הבא בתור</span></div>
-        ${g.list.map((p) => html`<${ProjectRow} key=${p.id} p=${p} />`)}
-      </div></section>`)}</div>` : html`<${Empty} icon="layers">אין כאן פרויקטים.</${Empty}>`}
+    ${groups.some((g) => g.list.length) ? html`<div class="ttable ptable">${groups.filter((g) => g.list.length).map((g) => html`<${ProjectGroup} key=${g.id} g=${g} ext=${ext} />`)}</div>`
+      : html`<${Empty} icon="layers">אין כאן פרויקטים.</${Empty}>`}
   </div>`;
 }
 
-// One project as a row of the portfolio table: where it stands, how it feels, how much of its work is done.
-function ProjectRow({ p }) {
+// A group of the portfolio. When the commander gives a project a new place, its row moves there on a spring (useFlip).
+function ProjectGroup({ g, ext }) {
+  const ref = useRef();
+  useFlip(ref);
+  return html`<section class="tgrp" style=${`--gc:${g.color}`}>
+    <header class="tgrp-head"><span class="tgrp-tog"><h3>${g.name}</h3></span><span class="tgrp-n">${g.list.length}</span>${g.hint ? html`<span class="muted small">${g.hint}</span>` : null}</header>
+    <div class="tt" role="table" aria-label=${g.name} ref=${ref}>
+      <div class="tt-row tt-th" role="row"><span class="tc-bar"></span><span class="tc th-title">פרויקט</span><span class="tc th c-owner">מוביל/ה</span><span class="tc th c-pstage">שלב</span><span class="tc th c-status">מצב</span><span class="tc th c-prog">משימות</span><span class="tc th c-due">הבא בתור</span></div>
+      ${g.list.map((p) => html`<${ProjectRow} key=${p.id} p=${p} ext=${ext} />`)}
+    </div></section>`;
+}
+
+// One project as a row of the portfolio table: its place, where it stands, how it feels, how much of its work is done.
+// The row is a stretched link to the project, so the place capsule can be a button of its own. A locked project keeps
+// to its one line: no battery and no next date (canSeeDetail).
+function ProjectRow({ p, ext }) {
   const s = getState();
   const st = status(p);
+  const locked = !canSeeDetail(p);
   const h0 = HEALTH[st.health];
-  const tasks = s.tasks.filter((t) => t.project === p.id);
+  const tasks = projectTasks(p.id);
   const done = tasks.filter((t) => t.status === 'done').length;
   const next = tasks.filter((t) => t.status !== 'done' && t.due).sort((a, b) => String(a.due).localeCompare(String(b.due)))[0];
   const asks = isCommander() ? needsCommander(p, s.tasks) : [];
-  return html`<a class="tt-row tt-task prow" role="row" href=${`#/project/${p.id}`} style=${`--pc:${p.color}`}>
+  // Held projects keep the room of a place they don't have, so the names stay in line.
+  const cap = inOrder(p) ? html`<${RankCap} p=${p} />` : p.phase === 'hold' && !ext ? html`<span class="cap-gap" aria-hidden="true"></span>` : null;
+  return html`<div class=${'tt-row tt-task prow' + (locked ? ' locked' : '')} role="row" style=${`--pc:${p.color}`}>
     <span class="tc-bar" aria-hidden="true"></span>
-    <span class="tc tc-title" role="cell"><span class="pdot" style=${`background:${p.color}`}></span><span class="tt-open"><span class="tt-name">${p.name}</span>
-      <span class="tt-chips"><${Classified} p=${p} small />${st.pending ? html`<${Pill} color="var(--s-waiting)">מחכה לאישור</${Pill}>` : null}${asks.length ? html`<${Pill} color="var(--h-off)">צריך אותך · ${asks.length}</${Pill}>` : null}${st.stale ? html`<span class="stale">לא עודכן</span>` : null}</span></span></span>
+    <span class="tc tc-title" role="cell">${cap}<span class="pdot" style=${`background:${p.color}`}></span><a class="tt-open prow-link" href=${`#/project/${p.id}`}><span class="tt-name">${p.name}</span>
+      <span class="tt-chips"><${Classified} p=${p} small />${st.pending ? html`<${Pill} color="var(--s-waiting)">מחכה לאישור</${Pill}>` : null}${asks.length ? html`<${Pill} color="var(--h-off)">צריך אותך · ${asks.length}</${Pill}>` : null}${st.stale ? html`<span class="stale">לא עודכן</span>` : null}</span></a></span>
     <span class="tc c-owner" role="cell"><${Avatar} id=${p.manager} size=${28} /></span>
     <span class="tc c-pstage" role="cell"><span class="small"><b>${st.where}</b>${st.n ? html` <span class="muted">${Math.min(st.idx, st.n)}/${st.n}</span>` : null}</span><${StageStrip} p=${p} /></span>
     <span class="tc c-status" role="cell"><span class=${'cell-fill' + (st.health === 'hold' || st.health === 'stopped' ? ' quiet' : '') + (st.health === 'stuck' ? ' light' : '')} style=${`--c:${h0.color}`}>${h0.label}</span></span>
-    <span class="tc c-prog" role="cell">${tasks.length ? html`<${Battery} tasks=${tasks} /><span class="muted small">${done}/${tasks.length}</span>` : html`<span class="muted small">—</span>`}</span>
-    <span class="tc c-due" role="cell">${next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : dayDiff(next.due) <= 1 ? ' soon' : '')} title=${next.title}><${DueLines} iso=${next.due} late=${dayDiff(next.due) < 0} /></span>` : html`<span class="muted small">—</span>`}</span>
-  </a>`;
+    <span class="tc c-prog" role="cell">${locked ? null : tasks.length ? html`<${Battery} tasks=${tasks} /><span class="muted small">${done}/${tasks.length}</span>` : html`<span class="muted small">—</span>`}</span>
+    <span class="tc c-due" role="cell">${locked ? null : next ? html`<span class=${'cell-date' + (dayDiff(next.due) < 0 ? ' late' : dayDiff(next.due) <= 1 ? ' soon' : '')} title=${next.title}><${DueLines} iso=${next.due} late=${dayDiff(next.due) < 0} /></span>` : html`<span class="muted small">—</span>`}</span>
+  </div>`;
 }
 
 const TABS = [
@@ -73,6 +88,7 @@ export function ProjectPage({ id }) {
   const p = project(id);
   const [tab, setTab] = useState('tasks');
   if (!p || !canSee(p)) return html`<div class="page"><${Empty} icon="lock">הפרויקט לא נמצא, או שאין לך גישה אליו.</${Empty}></div>`;
+  if (!canSeeDetail(p)) return html`<${LockedPage} p=${p} />`;
   const mgr = canManage(p);
   const st = status(p);
   const tasks = projectTasks(p.id);
@@ -86,7 +102,7 @@ export function ProjectPage({ id }) {
       <div class="grow">
         <div class="eyebrow">${p.personal ? 'פרויקט אישי' : html`בניהול ${person(p.manager).name}`}${p.template ? ` · ${TEMPLATES.find((t) => t.id === p.template)?.name || ''}` : ''}</div>
         <h1>${p.name}</h1>
-        <div class="proj2-tags"><${Health} p=${p} /><${Classified} p=${p} />${st.n ? html`<span class="muted small">${st.where} · שלב ${Math.min(st.idx, st.n)} מתוך ${st.n}</span>` : null}</div>
+        <div class="proj2-tags"><${RankCap} p=${p} full /><${Health} p=${p} /><${Classified} p=${p} />${st.n ? html`<span class="muted small">${st.where} · שלב ${Math.min(st.idx, st.n)} מתוך ${st.n}</span>` : null}</div>
         ${p.personal ? null : html`<div class="proj2-people">
           <button type="button" class="ppl-faces" aria-label=${`${shown}: ${ids.map((x) => person(x).name).join(', ')}`} onClick=${() => setTab('people')}><${Faces} ids=${ids} size=${26} max=${5} />
             <span>${shown}</span></button>
@@ -96,7 +112,7 @@ export function ProjectPage({ id }) {
       <div class="head-acts">
         ${mgr && !p.personal && p.phase !== 'stopped' ? html`<button type="button" class="btn" onClick=${() => openSheet('weekly', { id: p.id })}><${Icon} name="hill" size=${16} />עדכון שבועי</button>` : null}
         ${mgr && currentStage(p) && p.phase !== 'stopped' ? html`<button type="button" class="btn btn-primary" onClick=${() => openSheet('gate', { id: p.id })}><${Icon} name="check" size=${16} />${currentStage(p).state === 'pending' && isCommander() ? 'אישור השלב' : 'סגירת שלב'}</button>` : null}
-        ${isCommander() && !p.personal ? html`<button type="button" class="btn" onClick=${() => openSheet('direct', { id: p.id })}><${Icon} name="flag" size=${16} />להוריד משימה</button>` : null}
+        ${isCommander() && !p.personal && !leads(p) && isOpen(p) ? html`<button type="button" class="btn" onClick=${() => openSheet('ask', { id: p.id })}><${Icon} name="flag" size=${16} />בקשה ל${person(p.manager).name}</button>` : null}
       </div>
     </header>
     <${Seg} label="חלקי הפרויקט" value=${tab} onChange=${setTab} options=${tabs} cls="proj-tabs" />
@@ -105,6 +121,21 @@ export function ProjectPage({ id }) {
     ${tab === 'outputs' ? html`<${ProjectOutputs} p=${p} />` : null}
     ${tab === 'log' ? html`<${Log} p=${p} mgr=${mgr} />` : null}
     ${tab === 'people' ? html`<${People} p=${p} mgr=${mgr} />` : null}
+  </div>`;
+}
+
+// A restricted project, opened by someone in the team who isn't in it: its one line (name, manager, stage, health and
+// place), and why there is nothing more. No tabs, no people, no actions.
+function LockedPage({ p }) {
+  const st = status(p);
+  return html`<div class="page proj2" style=${`--bar:${p.color}`}>
+    <header class="proj2-head"><div class="grow">
+      <div class="eyebrow">בניהול ${person(p.manager).name}</div>
+      <h1>${p.name}</h1>
+      <div class="proj2-tags"><${RankCap} p=${p} full /><${Health} p=${p} />${st.n ? html`<span class="muted small">${st.where} · שלב ${Math.min(st.idx, st.n)} מתוך ${st.n}</span>` : null}</div>
+    </div></header>
+    <div class="lock-page"><span class="lock-mark"><${Icon} name="lock" size=${20} /></span>
+      <p><b>${CLASSIFICATION.restricted.label}</b> · הפרטים רק למי שבפרויקט ולפיקוד</p></div>
   </div>`;
 }
 
@@ -255,18 +286,21 @@ function TasksBoard({ p, mgr }) {
   const cur = currentStage(p);
   const isMember = mgr || p.partners.includes(s.me);
   const base = isMember ? { project: p.id } : null;
+  // What the commander adds in a project someone else runs goes to its manager as an ask (store.addTask), so the add
+  // rows say so.
+  const addLabel = isCommander() && !leads(p) ? `בקשה ל${person(p.manager).name}` : undefined;
   const PAL = ['var(--accent)', 'var(--s-waiting)', 'var(--s-done)', 'var(--s-progress)', 'var(--h-risk)', 'var(--s-blocked)'];
-  const groups = by === 'stage'
+  const groups = (by === 'stage'
     ? [...p.stages.filter((st) => tasks.some((t) => t.stage === st.id) || st === cur).map((st) => ({ id: st.id, name: st.name, color: st.state === 'done' ? 'var(--s-done)' : st === cur ? 'var(--accent)' : PAL[(p.stages.indexOf(st) + 1) % PAL.length],
         hint: st === cur ? 'עכשיו' : st.state === 'done' ? 'נסגר' : st.state === 'skipped' ? 'דילגנו' : null, tasks: tasks.filter((t) => t.stage === st.id), add: base ? { ...base, stage: st.id } : null })),
       { id: 'none', name: 'בלי שלב', color: 'var(--s-todo)', tasks: tasks.filter((t) => !t.stage || !p.stages.some((x) => x.id === t.stage)), add: null }]
-    : groupTasks(tasks, by, base);
+    : groupTasks(tasks, by, base)).map((g) => ({ ...g, addLabel }));
   // Groups already in order of stage: the current stage leads, closed stages fold away to the end.
   if (by === 'stage') groups.sort((a, b) => (b.hint === 'עכשיו') - (a.hint === 'עכשיו') || (a.hint === 'נסגר') - (b.hint === 'נסגר'));
   return html`<div class="board2">
     <${BoardBar} search=${search} setSearch=${setSearch} people=${[p.manager, ...p.partners]} who=${who} setWho=${setWho} groupBy=${by} setGroupBy=${setBy} groupOptions=${BOARD_GROUPS} showDone=${showDone} setShowDone=${setShowDone}
       onAddPerson=${mgr && !p.personal && isOpen(p) ? () => openSheet('partner', { id: p.id }) : null} />
-    <${TaskTable} key=${by} groups=${groups} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
+    <${TaskTable} key=${by} groups=${groups} star=${leads(p)} memory=${`m.board.${p.id}.${by}`} cols=${by === 'stage' ? ['owner', 'status', 'priority', 'due'] : ['owner', 'status', 'priority', 'due', 'stage']} empty="אין משימות שמתאימות לחיפוש." />
   </div>`;
 }
 

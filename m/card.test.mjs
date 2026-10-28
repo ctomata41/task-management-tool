@@ -1,7 +1,8 @@
 // The ID card's rules, run with: node --test m/card.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stagesFromTemplate, closeStage, returnStage, weeklyUpdate, needsCommander, status, stageReady, cardFill, schedule, dayStart, addDays, DAY } from './card.js';
+import { stagesFromTemplate, closeStage, returnStage, weeklyUpdate, needsCommander, status, stageReady, cardFill, schedule, dayStart, addDays, DAY,
+  placeProject, byRank, askState, KIND_ORDER } from './card.js';
 
 const base = (template = 'tool') => ({ id: 'p', name: 'בדיקה', stages: stagesFromTemplate(template), what: '', forWhom: '', success: '', log: [], tolDays: 14 });
 
@@ -180,4 +181,86 @@ test('a half-typed year stays that year, and the commander sees lateness in cale
   const t = { id: 't', project: 'p', external: 'ספק', status: 'doing', title: 'מסמך' };
   assert.equal(needsCommander(base(), [{ ...t, due: '2026-10-28' }], now).length, 0);
   assert.equal(needsCommander(base(), [{ ...t, due: '2026-10-27' }], now)[0].why, 'התחייבות חיצונית באיחור');
+});
+
+// ---------- the order of the projects ----------
+const order = () => [
+  { id: 'a', rank: 1 }, { id: 'b', rank: 2 }, { id: 'c', rank: 3 }, { id: 'd', rank: 4 },
+  { id: 'me', personal: 'x', rank: null }, { id: 'new', rank: null },
+];
+
+test('placing a project at the top renumbers the rest', () => {
+  assert.deepEqual(placeProject(order(), 'c', 1), { a: 2, b: 3, c: 1, d: 4, me: null, new: null });
+  assert.deepEqual(placeProject(order(), 'a', 3), { a: 3, b: 1, c: 2, d: 4, me: null, new: null });
+  // Past the end means last; its own place changes nothing.
+  assert.deepEqual(placeProject(order(), 'b', 99), { a: 1, b: 4, c: 2, d: 3, me: null, new: null });
+  assert.deepEqual(placeProject(order(), 'b', 2), { a: 1, b: 2, c: 3, d: 4, me: null, new: null });
+});
+
+test('a new project waits unplaced until it is given a place, and a personal one never takes one', () => {
+  assert.deepEqual(placeProject(order(), 'new', 2), { a: 1, new: 2, b: 3, c: 4, d: 5, me: null });
+  assert.deepEqual(placeProject(order(), 'me', 1), { a: 1, b: 2, c: 3, d: 4, me: null, new: null });
+  assert.deepEqual(placeProject(order(), 'b', null), { a: 1, b: null, c: 2, d: 3, me: null, new: null });
+});
+
+test('held, stopped and finished projects drop out of the order, and the rest close up', () => {
+  const ps = order();
+  ps[1].phase = 'hold';
+  ps[2].phase = 'stopped';
+  assert.deepEqual(placeProject(ps), { a: 1, b: null, c: null, d: 2, me: null, new: null });
+  ps[0].phase = 'done';
+  assert.deepEqual(placeProject(ps, 'd', 1), { a: null, b: null, c: null, d: 1, me: null, new: null });
+  // A held project can't be placed; back from the hold it goes to the end.
+  assert.equal(placeProject(ps, 'b', 1).b, null);
+  ps[1].phase = 'active';
+  ps[1].rank = null;
+  assert.deepEqual(placeProject(ps, 'b', Infinity), { a: null, b: 2, c: null, d: 1, me: null, new: null });
+});
+
+test('the order lists placed projects first, then unplaced, then held', () => {
+  const ps = [{ id: 'h', phase: 'hold', rank: null }, { id: 'u', rank: null }, { id: 'two', rank: 2 }, { id: 'one', rank: 1 }];
+  assert.deepEqual([...ps].sort(byRank).map((p) => p.id), ['one', 'two', 'u', 'h']);
+});
+
+// ---------- asks ----------
+test('an ask goes sent, accepted, in work, talk, late and done', () => {
+  const now = new Date(2026, 9, 28, 15, 0).getTime();
+  const ask = { id: 'k', project: 'p', ask: true, status: 'todo', ack: null, due: '2026-10-29', title: 'בקשה' };
+  const st = (a, tasks = []) => askState(a, tasks, now);
+  assert.deepEqual(st(ask), { state: 'sent', n: 0, m: 0 });
+  const ok = { ...ask, ack: { state: 'ok' } };
+  assert.deepEqual(st(ok), { state: 'ok', n: 0, m: 0 });
+  const under = [{ id: 'c1', parent: 'k', status: 'todo' }, { id: 'c2', parent: 'k', status: 'done' }, { id: 'x', status: 'done' }];
+  assert.deepEqual(st(ok, under), { state: 'doing', n: 1, m: 2 });
+  assert.deepEqual(st(ok, [under[0]]), { state: 'doing', n: 0, m: 1 }); // "בעבודה 0/1" as soon as it is broken down
+  assert.equal(st({ ...ask, ack: { state: 'talk' } }, under).state, 'talk');
+  // After "דיברנו" it is accepted again.
+  assert.equal(st({ ...ask, ack: { state: 'ok' } }, under).state, 'doing');
+  // Due today is not late yet, even in the afternoon; due yesterday is, answered or not.
+  assert.equal(st({ ...ok, due: '2026-10-28' }).state, 'ok');
+  assert.equal(st({ ...ok, due: '2026-10-27' }, under).state, 'late');
+  assert.equal(st({ ...ask, due: '2026-10-27' }).state, 'late');
+  assert.equal(st({ ...ask, due: null }).state, 'sent');
+  assert.deepEqual(st({ ...ok, due: '2026-10-27', status: 'done' }, under), { state: 'done', n: 1, m: 2 });
+});
+
+test('an ask the manager wants to talk about, or a late one, reaches the commander; a stuck task under it never does', () => {
+  const now = new Date(2026, 9, 28, 15, 0).getTime();
+  const p = base();
+  const ask = { id: 'k', project: 'p', ask: true, status: 'todo', ack: { state: 'ok' }, due: '2026-11-05', title: 'בקשה' };
+  const stuck = { id: 'c', project: 'p', parent: 'k', status: 'stuck', due: '2026-10-01', title: 'משימה תקועה' };
+  assert.deepEqual(needsCommander(p, [ask, stuck], now), []);
+  const talk = needsCommander(p, [{ ...ask, ack: { state: 'talk' } }, stuck], now);
+  assert.deepEqual(talk.map((x) => [x.kind, x.why, x.task]), [['talk', 'צריך לדבר על הבקשה', 'k']]);
+  const late = needsCommander(p, [{ ...ask, due: '2026-10-27' }, stuck], now);
+  assert.deepEqual(late.map((x) => [x.kind, x.why, x.task]), [['asklate', 'בקשה שלך באיחור', 'k']]);
+  // Done, or in a stopped project, it leaves the queue.
+  assert.deepEqual(needsCommander(p, [{ ...ask, due: '2026-10-27', status: 'done' }], now), []);
+  assert.deepEqual(needsCommander({ ...p, phase: 'stopped' }, [{ ...ask, due: '2026-10-27' }], now), []);
+});
+
+test('the queue reads gates first, then seniors, talks, late stages, late asks and commitments', () => {
+  assert.deepEqual(KIND_ORDER, ['gate', 'senior', 'talk', 'late', 'asklate', 'commit']);
+  const q = ['commit', 'asklate', 'gate', 'talk', 'late', 'senior'].map((kind) => ({ kind }));
+  assert.deepEqual(q.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind)).map((x) => x.kind), KIND_ORDER);
 });

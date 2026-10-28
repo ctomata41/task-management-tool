@@ -1,12 +1,12 @@
 // Building blocks for the manual version: icons, avatars, capsules, the stage strip, sheets and toasts. Sheets and toasts
 // use the app's layer classes and springs (app/motion.js), so they move exactly like the rest of the platform.
 import { h } from 'preact';
-import { useEffect, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import htm from 'htm';
-import { useLayer, useThumb } from '../app/motion.js';
+import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
-import { useStore, set, person, project, dismissToast, closeSheet } from './store.js';
-import { HEALTH, CLASSIFICATION, status, localDay } from './card.js';
+import { useStore, set, getState, person, project, dismissToast, closeSheet, isCommander, setRank, rankedProjects } from './store.js';
+import { HEALTH, CLASSIFICATION, ASK_STATE, status, localDay, inOrder, askState } from './card.js';
 
 export const html = htm.bind(h);
 
@@ -46,6 +46,73 @@ export function Health({ p }) {
   return html`<${Pill} color=${h0.color}>${h0.label}</${Pill}>`;
 }
 
+// ---------- the order and the asks ----------
+// A project's place in the order as a capsule. The commander moves it from here, with a menu that grows from the
+// capsule; the team reads it; outside partners never see places. Held, stopped, finished and personal projects have none.
+// On a row of the order it is the number alone; `full` spells it out for a project's own page: "מקום 2 מתוך 4".
+export function RankCap({ p, full = false }) {
+  if (!inOrder(p) || person(getState().me).role === 'external') return null;
+  const cls = 'rank-cap' + (p.rank ? '' : ' none');
+  const words = p.rank ? `מקום ${p.rank}${full ? ` מתוך ${rankedProjects().length}` : ''}` : '';
+  const text = !p.rank ? 'עוד בלי מקום' : full ? words : String(p.rank);
+  if (!isCommander()) return html`<span class=${cls}>${p.rank && !full ? html`<span class="sr">מקום </span>` : null}${text}</span>`;
+  const pick = (e) => {
+    e.preventDefault(); // it may sit on a row that is a link
+    e.stopPropagation();
+    // Every place there is, and one more at the end for a project that has none yet.
+    const n = rankedProjects().filter((x) => x.id !== p.id).length + 1;
+    const items = Array.from({ length: n }, (_, i) => ({ id: i + 1, label: i ? `למקום ${i + 1}` : 'לראש הסדר' }));
+    openMenu(e, items, { selected: p.rank || null, onPick: (k) => setRank(p.id, k) });
+  };
+  return html`<button type="button" class=${cls} aria-haspopup="menu" onClick=${pick}
+    aria-label=${p.rank ? `${words} בסדר העדיפויות. לשנות את המקום` : 'עוד בלי מקום בסדר העדיפויות. לקבוע מקום'}>${text}</button>`;
+}
+
+// When the rows of a list change order, each row slides from where it was on screen to its new place, on a spring
+// (damping 1) that starts at the row's current offset and speed. Under reduced motion the rows just swap. The rows
+// must be keyed, so that Preact moves the same nodes instead of rewriting them in place.
+export function useFlip(listRef) {
+  const last = useRef(null);
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const rows = [...list.children];
+    const top = list.getBoundingClientRect().top;
+    // Where each row sits in the list, without the offset a spring may still be giving it.
+    const now = new Map(rows.map((el) => [el, el.getBoundingClientRect().top - top - (el.__motion ? el.__motion.get('y') : 0)]));
+    const prev = last.current;
+    last.current = now;
+    if (!prev || reducedMotion()) return;
+    const kept = rows.filter((el) => prev.has(el));
+    const was = [...prev.keys()].filter((el) => now.has(el));
+    if (kept.every((el, i) => el === was[i])) return; // the same order: nothing moves
+    let far = null;
+    for (const el of kept) {
+      const dy = prev.get(el) - now.get(el);
+      if (Math.abs(dy) < 0.5) continue;
+      const m = motion(el);
+      const v = m.velocity('y');
+      m.set({ y: m.get('y') + dy });
+      const done = m.to({ y: 0 }, { damping: 1, response: 0.42, velocity: { y: v } });
+      if (!far || Math.abs(dy) > far.d) far = { el, d: Math.abs(dy), done };
+    }
+    // The row that travels furthest, the one that was picked, passes over the others.
+    if (far) {
+      const mark = {};
+      far.el.__lift = mark;
+      far.el.classList.add('flip-lift');
+      far.done.then(() => { if (far.el.__lift === mark) far.el.classList.remove('flip-lift'); });
+    }
+  });
+}
+
+// An ask's state as a tinted capsule: נשלחה, התקבלה, בעבודה 1/3, צריך לדבר, באיחור or בוצעה (card.askState).
+export function AskPill({ t }) {
+  const a = askState(t, getState().tasks);
+  const k = ASK_STATE[a.state];
+  return html`<${Pill} color=${k.color} cls="ask-pill">${a.state === 'doing' ? `${k.label} ${a.n}/${a.m}` : k.label}</${Pill}>`;
+}
+
 // The stage path as a row of segments: closed, current (and whether it waits for the commander), still ahead.
 export function StageStrip({ p, labels, onPick }) {
   if (!p.stages.length) return html`<div class="strip empty muted small">עוד אין שלבים</div>`;
@@ -69,6 +136,19 @@ export function Seg({ value, options, onChange, label, cls = '' }) {
   </div>`;
 }
 
+// A dialog takes focus when it opens (unless a field in it already did) and gives it back to what opened it.
+export function useDialogFocus(panel) {
+  useEffect(() => {
+    const opener = document.activeElement;
+    const el = panel.current;
+    if (!el.contains(document.activeElement)) el.focus({ preventScroll: true });
+    return () => {
+      const a = document.activeElement;
+      if (opener?.isConnected && opener !== document.body && (!a || a === document.body || el.contains(a))) opener.focus({ preventScroll: true });
+    };
+  }, []);
+}
+
 // A bottom sheet on phones (drag down to close), a dialog that grows from what was pressed on desktop.
 export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, kind = 'modal' }) {
   const root = useRef();
@@ -79,8 +159,9 @@ export function Sheet({ title, children, wide, cls = '', onClose = closeSheet, k
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+  useDialogFocus(panel);
   return html`<div class=${'overlay' + (kind === 'drawer' ? ' side-ov' : '')} ref=${root} onClick=${onClose}>
-    <div class=${'modal ' + (kind === 'drawer' ? 'pdrawer ' : '') + (wide ? 'wide ' : '') + cls} ref=${panel} role="dialog" aria-modal="true" aria-label=${title} onClick=${(e) => e.stopPropagation()}>
+    <div class=${'modal ' + (kind === 'drawer' ? 'pdrawer ' : '') + (wide ? 'wide ' : '') + cls} ref=${panel} role="dialog" aria-modal="true" aria-label=${title} tabindex="-1" onClick=${(e) => e.stopPropagation()}>
       <div class="grabber" aria-hidden="true"></div>
       <header class="modal-head"><h2>${title}</h2>
         <button type="button" class="icon-btn" aria-label="סגירה" onClick=${onClose}><${Icon} name="x" /></button></header>
@@ -166,8 +247,8 @@ export const LEVEL = {
 
 // ---------- menus: a menu grows out of the control that opened it ----------
 export function openMenu(e, items, { selected, onPick }) {
-  const rect = e.currentTarget.getBoundingClientRect();
-  set({ menu: { rect, items, selected, onPick } });
+  const trigger = e.currentTarget;
+  set({ menu: { rect: trigger.getBoundingClientRect(), trigger, items, selected, onPick } });
 }
 const closeMenu = () => set({ menu: null });
 export function MenuLayer() {
@@ -175,10 +256,11 @@ export function MenuLayer() {
   const m = s.menu;
   useEffect(() => {
     if (!m) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') closeMenu(); };
-    window.addEventListener('keydown', onKey);
+    // Escape closes only the menu, not the sheet it was opened from.
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); closeMenu(); } };
+    window.addEventListener('keydown', onKey, true);
     window.addEventListener('resize', closeMenu);
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('resize', closeMenu); };
+    return () => { window.removeEventListener('keydown', onKey, true); window.removeEventListener('resize', closeMenu); };
   }, [m]);
   if (!m) return null;
   return html`<${Menu} key=${`${Math.round(m.rect.top)}:${Math.round(m.rect.left)}:${m.items.length}`} m=${m} />`;
@@ -186,7 +268,6 @@ export function MenuLayer() {
 function Menu({ m }) {
   const root = useRef();
   const panel = useRef();
-  useLayer(root, panel, { kind: 'menu' });
   const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
   const W = 240;
   const H = Math.min(m.items.length * row + 12, 380);
@@ -194,10 +275,40 @@ function Menu({ m }) {
   left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
   let top = m.rect.bottom + 6;
   if (top + H > window.innerHeight - 8) top = Math.max(8, m.rect.top - 6 - H);
+  const up = top < m.rect.bottom;
   const ox = Math.round(Math.min(W, Math.max(0, m.rect.left + m.rect.width / 2 - left)));
-  const oy = top >= m.rect.bottom ? 0 : H;
+  const oy = up ? H : 0;
+  // H is an estimate from the row height. A menu that opens upward has to end right above its control and grow from
+  // there, so before its first frame its real height places it.
+  useLayoutEffect(() => {
+    const el = panel.current;
+    if (!up || !el) return;
+    const h = el.offsetHeight;
+    el.style.top = `${Math.max(8, m.rect.top - 6 - h)}px`;
+    el.style.transformOrigin = `${ox}px ${h}px`;
+  }, []);
+  useLayer(root, panel, { kind: 'menu' });
+  // Focus moves into the menu (to the chosen item or the first), the arrows walk it, and closing hands focus back.
+  useEffect(() => {
+    const el = panel.current;
+    (el.querySelector('.menu-item.sel') || el.querySelector('.menu-item'))?.focus({ preventScroll: true });
+    return () => {
+      const a = document.activeElement;
+      if (m.trigger?.isConnected && (!a || a === document.body || el.contains(a))) m.trigger.focus({ preventScroll: true });
+    };
+  }, []);
+  const onKeyDown = (e) => {
+    const items = [...panel.current.querySelectorAll('.menu-item')];
+    const i = items.indexOf(document.activeElement);
+    const go = (n) => { e.preventDefault(); items[(n + items.length) % items.length]?.focus(); };
+    if (e.key === 'ArrowDown') go(i + 1);
+    else if (e.key === 'ArrowUp') go(i < 0 ? -1 : i - 1);
+    else if (e.key === 'Home') go(0);
+    else if (e.key === 'End') go(-1);
+    else if (e.key === 'Tab') { e.preventDefault(); closeMenu(); }
+  };
   return html`<div class="menu-backdrop" ref=${root} onClick=${closeMenu}>
-    <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()}>
+    <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()} onKeyDown=${onKeyDown}>
       ${m.items.map((it) => html`<button type="button" role="menuitem" class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '')}
         onClick=${() => { closeMenu(); m.onPick(it.id); }}>
         ${it.person ? html`<${Avatar} id=${it.person} size=${22} />` : null}
