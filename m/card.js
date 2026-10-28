@@ -223,36 +223,45 @@ export function localDay(v) {
 export const dayStart = (v) => { const d = localDay(v); d.setHours(0, 0, 0, 0); return d.getTime(); };
 // Whole calendar days from a to b. A clock change makes one day 23 or 25 hours long, so the count is rounded.
 export const daysBetween = (a, b) => Math.round((dayStart(b) - dayStart(a)) / DAY);
+// A date someone could mean: a whole date with a year from 2000 to 2100. While a year is typed, a date field passes
+// through "0002-11-06" and "0202-11-06", and a fifth digit gives "20266-11-06"; none of them is a target.
+export const plausibleDay = (v) => { const m = /^(\d{4,})-\d{2}-\d{2}/.exec(String(v ?? '')); return !!m && +m[1] >= 2000 && +m[1] <= 2100; };
 
 // Where each stage sits in time. A closed stage ends when it closed and an open one at its target; a stage with no
 // date yet is estimated from its usual length (est), and an open stage past its target is late. Each stage starts
-// where the one before it ended. Days move with the calendar (setDate), so a clock change never shifts a date.
+// where the one before it ended, and nothing after an open stage starts before tomorrow. The path starts at the first
+// stage with a real date (a close, or the open stage); the stages before it have no date and take no time. A target
+// that isn't a plausible day counts as none. Days move with the calendar (setDate), so a clock change never shifts a date.
 export const addDays = (t, n) => { const d = new Date(t); d.setDate(d.getDate() + n); return d.getTime(); };
 export function schedule(p, now = Date.now()) {
   const today = dayStart(now);
+  const tomorrow = addDays(today, 1);
   const len = (s) => STAGE_DAYS[s.key] || 14;
   const open = (s) => s.state === 'active' || s.state === 'pending';
-  const first = p.stages[0];
-  if (!first) return [];
+  const target = (s) => (plausibleDay(s.target) ? dayStart(s.target) : null);
+  if (!p.stages.length) return [];
+  const k = p.stages.findIndex((s) => (s.state === 'done' && s.closedAt) || open(s));
+  const first = p.stages[k];
   let cursor;
   if (p.startedAt) cursor = dayStart(p.startedAt);
-  else if (first.closedAt) cursor = addDays(dayStart(first.closedAt), -len(first));
-  else if (open(first)) cursor = Math.min(first.target ? addDays(dayStart(first.target), -len(first)) : today, addDays(today, -7));
-  else cursor = today;
-  return p.stages.map((s) => {
+  else if (!first) cursor = today;
+  else if (first.state === 'done') cursor = addDays(dayStart(first.closedAt), -len(first));
+  else cursor = Math.min(target(first) !== null ? addDays(target(first), -len(first)) : today, addDays(today, -7));
+  return p.stages.map((s, i) => {
     const start = cursor;
+    const t = target(s);
     let end;
     let est = false;
-    if (s.state === 'skipped') end = start;
+    if (i < k || s.state === 'skipped') end = start;
     else if (s.state === 'done') end = s.closedAt ? Math.max(start, dayStart(s.closedAt)) : addDays(start, len(s));
-    else if (s.target) end = Math.max(addDays(start, 1), dayStart(s.target));
+    else if (t !== null) end = Math.max(addDays(start, 1), t);
     else {
       est = true;
       end = addDays(start, len(s));
-      if (open(s) && end <= today) end = addDays(today, 1);
+      if (open(s) && end <= today) end = tomorrow;
     }
-    cursor = end;
-    return { id: s.id, start, end, est, late: open(s) && !!s.target && dayStart(s.target) < today };
+    cursor = open(s) ? Math.max(end, tomorrow) : end;
+    return { id: s.id, start, end, est, late: open(s) && t !== null && t < today };
   });
 }
 

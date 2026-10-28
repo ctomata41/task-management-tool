@@ -351,6 +351,9 @@ function placeThumb(root, slide) {
   const m = motion(thumb, (el, mm) => { el.style.transform = `translate3d(${mm.get('x')}px, 0, 0)`; el.style.width = `${mm.get('w')}px`; });
   const x = on.offsetLeft;
   const w = on.offsetWidth;
+  // A resize that only confirms where the thumb is already heading (a bolder label changes the control's width as it
+  // slides) leaves the slide alone; a resize that moves the segment puts the thumb straight under it.
+  if (!slide && thumb.__placed && m.spring('x').goal === x && m.spring('w').goal === w) return;
   if (!slide || !thumb.__placed || reducedMotion()) { m.set({ x, w }); thumb.__placed = true; } else if (m.spring('x').goal !== x || m.spring('w').goal !== w) m.to({ x, w }, { damping: 1, response: 0.3 });
 }
 export function useThumb(ref) {

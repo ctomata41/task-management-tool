@@ -35,7 +35,7 @@ export function JarvisScreen() {
         <${Orb} />
         <div class="jv-state"><strong>עוד לא מחובר</strong>
           <span>בקרוב מדברים כאן עם ג׳ארביס בקול, על הפרויקטים והמשימות של הצוות. לפני כל שינוי הוא אומר מה יעשה ומחכה ל״כן״.</span></div>
-        <div class="jv-asks" aria-label="דוגמאות למה שאפשר יהיה לבקש">${ASKS.map((a) => html`<span class="jv-ask" key=${a}>״${a}״</span>`)}</div>
+        <div class="jv-asks" role="group" aria-label="דוגמאות למה שאפשר יהיה לבקש">${ASKS.map((a) => html`<span class="jv-ask" key=${a}>״${a}״</span>`)}</div>
       </div>
       <div class="jv-controls">
         <button type="button" class="btn btn-primary jv-end" onClick=${closeJarvis}>הבנתי</button>

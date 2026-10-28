@@ -22,15 +22,25 @@ const auth = () => { const a = isMock ? null : LS.get(AUTH_KEY); return a?.code 
 const device = (a) => (LS.get(DEVICE_KEY) || {})[a.me] || '';
 const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
+// Every failure comes back in words a person can act on, with the HTTP status kept for the caller.
 async function call(route, body = {}) {
   const a = auth();
-  const res = await fetch('/gcal/' + route, {
-    method: 'POST', body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json', 'x-team-code': a.code, 'x-actor': a.me, 'x-gcal-device': device(a) },
-  });
+  let res;
+  try {
+    res = await fetch('/gcal/' + route, {
+      method: 'POST', body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', 'x-team-code': a.code, 'x-actor': a.me, 'x-gcal-device': device(a) },
+    });
+  } catch (e) {
+    throw new Error('אין חיבור לשרת. כדאי לבדוק את החיבור לאינטרנט.');
+  }
   let out = null;
   try { out = await res.json(); } catch (e) { /* not JSON */ }
-  if (!res.ok) throw new Error(out?.error || 'החיבור ליומן גוגל לא זמין כרגע.');
+  if (!res.ok || !out) {
+    const err = new Error(out?.error || 'החיבור ליומן גוגל לא זמין כרגע.');
+    err.status = res.status;
+    throw err;
+  }
   return out;
 }
 
@@ -45,14 +55,26 @@ export function takeReturn() {
   toast('יומן Google מחובר. האירועים שלך מופיעים עכשיו בשבוע שלך', { ms: 6000 });
 }
 
-// One event becomes one entry per day it covers here: a timed event on the day it starts, an all-day one on each day.
-function spread(e) {
-  const start = new Date(e.start);
-  if (!e.all_day) return [{ id: e.id, day: isoDay(start), time: hhmm(start), title: e.title, link: e.link }];
+// One event becomes one entry for each day it covers between a (the first day's midnight) and b (the midnight after
+// the last), so leave or a trip that began before the week still shows. An all-day event fills each day; a timed one
+// shows its start time on its first day, "עד" and its end time on its last, and fills the days between (allDay).
+function spread(e, a, b) {
+  const all = !!e.all_day;
+  const start = all ? parseDay(String(e.start).slice(0, 10)) : new Date(e.start);
+  let end = all ? parseDay(String(e.end).slice(0, 10)) : new Date(e.end);
+  if (!(end > start)) end = new Date(start.getTime() + 1); // no length: still on the day it starts
   const out = [];
-  const end = parseDay(String(e.end).slice(0, 10));
-  for (let d = parseDay(String(e.start).slice(0, 10)); d < end && out.length < 31; d.setDate(d.getDate() + 1)) {
-    out.push({ id: `${e.id}-${isoDay(d)}`, day: isoDay(d), allDay: true, title: e.title, link: e.link });
+  const d = new Date(Math.max(start.getTime(), a.getTime()));
+  d.setHours(0, 0, 0, 0);
+  for (; d < end && d < b; d.setDate(d.getDate() + 1)) {
+    const day = isoDay(d);
+    const next = new Date(d);
+    next.setDate(next.getDate() + 1);
+    const first = !all && start >= d;
+    let time = '';
+    if (first) time = hhmm(start);
+    else if (!all && end <= next) time = `עד ${hhmm(end)}`;
+    out.push({ id: `${e.id}-${day}`, day, time, allDay: !first, title: e.title, link: e.link });
   }
   return out;
 }
@@ -64,11 +86,12 @@ async function load(from, to) {
   try {
     const r = await call('events', { from: a.toISOString(), to: b.toISOString() });
     if (!r.configured) return { state: 'setup' };
-    if (r.connected) return { state: 'on', email: r.email, events: (r.events || []).flatMap(spread) };
+    if (r.connected) return { state: 'on', email: r.email, events: (r.events || []).flatMap((e) => spread(e, a, b)) };
     if (r.error) return { state: 'error', error: r.error };
     return { state: r.linked_elsewhere ? 'elsewhere' : 'connect' };
   } catch (e) {
-    return { state: 'error', error: e.message };
+    // A team code that changed, or someone no longer on the team: signing in again helps, trying again doesn't.
+    return { state: 'error', error: e.message, signin: e.status === 401 || e.status === 403 };
   }
 }
 
@@ -101,8 +124,9 @@ async function disconnect() {
   reload();
 }
 
-// The calendar for the days from..to (YYYY-MM-DD, both included): {state, events, email, error, later}.
-// state: signin (no team sign-in here), loading, connect, elsewhere, setup, error, on.
+// The calendar for the days from..to (YYYY-MM-DD, both included): {state, events, email, error, signin, later}.
+// state: signin (no team sign-in here), loading, connect, elsewhere, setup, error, on. An error with signin set is
+// one only signing in to the team again can fix.
 export function useGcal(from, to) {
   const key = `${from}|${to}`;
   const [, force] = useState(0);
@@ -134,9 +158,9 @@ export function GcalCard({ gc }) {
     <span class="gc-ic" aria-hidden="true"><${Icon} name="calendar" size=${20} /></span>
     <div class="gc-text"><strong>יומן גוגל אישי</strong><span>${text}</span></div>
     <div class="gc-acts">
-      ${gc.state === 'signin' ? html`<a class="btn btn-primary sm" href="/next/">כניסה לצוות</a>` : null}
+      ${gc.state === 'signin' || gc.signin ? html`<a class="btn btn-primary sm" href="/next/">כניסה לצוות</a>` : null}
       ${gc.state === 'connect' || gc.state === 'elsewhere' ? html`<button type="button" class="btn btn-primary sm" onClick=${connect}>חיבור יומן Google</button>` : null}
-      ${gc.state === 'error' ? html`<button type="button" class="btn sm" onClick=${reload}>לנסות שוב</button>` : null}
+      ${gc.state === 'error' && !gc.signin ? html`<button type="button" class="btn sm" onClick=${reload}>לנסות שוב</button>` : null}
       <button type="button" class="btn sm ghost" onClick=${() => gc.setLater(true)}>אחר כך</button>
     </div>
   </div>`;

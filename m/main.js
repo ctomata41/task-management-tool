@@ -123,7 +123,7 @@ function App() {
         if (id === 'jarvis') return html`<${JarvisTab} key="jarvis" />`;
         const n = NAV.find((x) => x.id === id);
         return html`<a key=${id} class=${'tab' + (activeTab === id ? ' on' : '')} href=${`#/${id}`} aria-current=${activeTab === id ? 'page' : null}>
-          <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[id] ? html`<span class="tab-n">${counts[id]}</span>` : null}</span>${n.short || n.label}</a>`;
+          <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[id] ? html`<span class="tab-n">${counts[id]}</span>` : null}</span><span class="tab-l">${n.short || n.label}</span></a>`;
       })}
     </nav>
     <button type="button" class="fab" aria-label="להוסיף" onClick=${() => openSheet('add')}><${Icon} name="plus" size=${28} /></button>

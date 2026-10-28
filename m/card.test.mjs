@@ -95,6 +95,62 @@ test('the Gantt places closed stages by their dates, open ones by target, and es
   assert.ok(schedule(p, now)[2].end > dayStart(now));
 });
 
+test('a skipped first stage keeps the closed stages on their dates, whatever day it is', () => {
+  const now = new Date(2026, 9, 28, 12).getTime();
+  const p = base();
+  p.stages[0] = { ...p.stages[0], state: 'skipped' }; // skipping never sets closedAt
+  p.stages[1] = { ...p.stages[1], state: 'done', closedAt: new Date(2026, 9, 21, 16).toISOString() };
+  p.stages[2] = { ...p.stages[2], state: 'active', target: '2026-11-06' };
+  const sch = schedule(p, now);
+  assert.equal(sch[1].end, dayStart('2026-10-21'));
+  assert.equal(sch[0].start, sch[0].end); // the skipped stage takes no time
+  assert.equal(sch[0].end, sch[1].start);
+  assert.equal(sch[2].start, dayStart('2026-10-21'));
+  assert.equal(sch[2].end, dayStart('2026-11-06'));
+  // A week later nothing that has a date has moved.
+  assert.deepEqual(schedule(p, addDays(now, 7)).slice(0, 3), sch.slice(0, 3));
+  // A stage not started yet, moved in front of the open one, doesn't push the open one into the future.
+  const q = base();
+  q.stages = [q.stages[1], q.stages[0], ...q.stages.slice(2)]; // todo, active, …
+  const r = schedule(q, now);
+  assert.equal(r[0].end, r[0].start);
+  assert.ok(r[1].start < dayStart(now));
+});
+
+test('a target that is not a plausible day is no target', () => {
+  const now = new Date(2026, 9, 28, 12).getTime();
+  const today = dayStart(now);
+  const p = base();
+  // A date field passes through these while a year is typed; a fifth digit gives a five-digit year.
+  for (const target of ['0002-11-06', '0202-11-06', '1999-12-31', '2101-01-01', '20266-11-06', 'not a date']) {
+    p.stages[0].target = target;
+    const sch = schedule(p, now);
+    assert.equal(sch[0].est, true, target);
+    assert.equal(sch[0].late, false, target);
+    assert.equal(sch[0].start, addDays(today, -7), target);
+    for (const r of sch) assert.ok(r.start >= addDays(today, -7) && r.end < addDays(today, 400), target);
+  }
+  p.stages[0].target = '2026-11-06';
+  assert.equal(schedule(p, now)[0].end, dayStart('2026-11-06'));
+  assert.equal(schedule(p, now)[0].est, false);
+});
+
+test('stages after a late open stage start no earlier than tomorrow', () => {
+  const now = new Date(2026, 9, 28, 12).getTime();
+  const tomorrow = addDays(dayStart(now), 1);
+  const p = base();
+  p.stages[0] = { ...p.stages[0], state: 'done', closedAt: new Date(2026, 7, 2, 11).toISOString() };
+  p.stages[1] = { ...p.stages[1], state: 'pending', target: '2026-09-18' }; // forty days late
+  const sch = schedule(p, now);
+  assert.equal(sch[1].late, true);
+  assert.equal(sch[1].end, dayStart('2026-09-18')); // the late stage keeps its target; the overrun is drawn to today
+  assert.equal(sch[2].start, tomorrow);
+  for (const r of sch.slice(2)) assert.ok(r.start >= tomorrow && r.end > r.start);
+  // On time, the next stage starts where the open one ends.
+  p.stages[1].target = '2026-11-20';
+  assert.equal(schedule(p, now)[2].start, dayStart('2026-11-20'));
+});
+
 test('a date-only string is a local day', () => {
   const d = new Date(dayStart('2026-10-30'));
   assert.equal(d.getDate(), 30);

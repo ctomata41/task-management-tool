@@ -1161,5 +1161,6 @@ details.stopped[open] summary { margin-bottom: 8px; }
   .proj-facts, .col, .kcol, .btn, .input, .seg { box-shadow: 0 0 0 1px var(--line-strong); }
 }
 @media (prefers-contrast: more) {
-  :root[data-theme="dark"] { --line: rgba(120, 120, 128, 0.8); --line-strong: rgba(170, 170, 176, 0.85); --sep: rgba(140, 140, 148, 0.9); --fg-2: #e5e5ea; --fg-3: #c7c7cc; }
+  :root[data-theme="dark"] { --line: rgba(120, 120, 128, 0.8); --line-strong: rgba(170, 170, 176, 0.85); --sep: rgba(140, 140, 148, 0.9); --fg-2: #e5e5ea; --fg-3: #c7c7cc;
+    --ink: 100%; /* status text keeps its full colour on a dark tint: darkened as in the block above, it disappears */ }
 }
