@@ -57,7 +57,8 @@ export function takeReturn() {
 
 // One event becomes one entry for each day it covers between a (the first day's midnight) and b (the midnight after
 // the last), so leave or a trip that began before the week still shows. An all-day event fills each day; a timed one
-// shows its start time on its first day, "עד" and its end time on its last, and fills the days between (allDay).
+// shows its start time on its first day, "עד" and its end time on a last day it leaves before midnight, and fills the
+// days between (allDay), a day it fills up to midnight included.
 function spread(e, a, b) {
   const all = !!e.all_day;
   const start = all ? parseDay(String(e.start).slice(0, 10)) : new Date(e.start);
@@ -73,7 +74,7 @@ function spread(e, a, b) {
     const first = !all && start >= d;
     let time = '';
     if (first) time = hhmm(start);
-    else if (!all && end <= next) time = `עד ${hhmm(end)}`;
+    else if (!all && end < next) time = `עד ${hhmm(end)}`;
     out.push({ id: `${e.id}-${day}`, day, time, allDay: !first, title: e.title, link: e.link });
   }
   return out;
@@ -154,11 +155,14 @@ const TEXT = {
 export function GcalCard({ gc }) {
   if (gc.state === 'on' || gc.state === 'loading' || gc.later) return null;
   const text = gc.state === 'error' ? gc.error : TEXT[gc.state];
+  // /next/ asks for the team code only when this browser has none. A code the server turned down goes to the main app,
+  // which checks it again, drops it and asks for the new one (someone no longer on the team picks again there).
+  const signin = gc.state === 'signin' ? '/next/' : gc.signin ? '/#/home' : '';
   return html`<div class="gc-card" role="group" aria-label="יומן גוגל">
     <span class="gc-ic" aria-hidden="true"><${Icon} name="calendar" size=${20} /></span>
     <div class="gc-text"><strong>יומן גוגל אישי</strong><span>${text}</span></div>
     <div class="gc-acts">
-      ${gc.state === 'signin' || gc.signin ? html`<a class="btn btn-primary sm" href="/next/">כניסה לצוות</a>` : null}
+      ${signin ? html`<a class="btn btn-primary sm" href=${signin}>כניסה לצוות</a>` : null}
       ${gc.state === 'connect' || gc.state === 'elsewhere' ? html`<button type="button" class="btn btn-primary sm" onClick=${connect}>חיבור יומן Google</button>` : null}
       ${gc.state === 'error' && !gc.signin ? html`<button type="button" class="btn sm" onClick=${reload}>לנסות שוב</button>` : null}
       <button type="button" class="btn sm ghost" onClick=${() => gc.setLater(true)}>אחר כך</button>

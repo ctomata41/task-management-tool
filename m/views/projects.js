@@ -186,17 +186,19 @@ function StageRow({ p, st, i, mgr, edit, outs }) {
   const cur = st.state === 'active' || st.state === 'pending';
   const reached = st.state !== 'todo';
   const [open, setOpen] = useState(cur);
+  // What the target field shows while it's being typed in, so a store update can't wipe a year typed halfway.
+  const [draft, setDraft] = useState(null);
   const icon = { done: 'check', skipped: 'chevronLeft', active: 'target', pending: 'clock', todo: '' }[st.state];
   const word = { done: st.closedAt ? `נסגר ${ago(st.closedAt)}` : 'נסגר', skipped: 'דילגנו', active: 'עכשיו', pending: 'מחכה לאישור המפקד', todo: '' }[st.state];
   // Saved when cleared or inside the field's range, not while a year is half typed: "0002-11-06" is no target.
-  const setTarget = (e) => { const f = e.currentTarget; if (!f.validity.rangeUnderflow && !f.validity.rangeOverflow) setStage(p.id, st.id, { target: f.value || null }); };
+  const setTarget = (e) => { const f = e.currentTarget; setDraft(f.value); if (!f.validity.rangeUnderflow && !f.validity.rangeOverflow) setStage(p.id, st.id, { target: f.value || null }); };
   return html`<li class=${'stage s-' + st.state + (open ? ' open' : '')}>
     <div class="stage-line">
       <span class="stage-ic">${icon ? html`<${Icon} name=${icon} size=${14} />` : i + 1}</span>
       <button type="button" class="stage-name" onClick=${() => setOpen(!open)} aria-expanded=${open}>${st.name}${st.gate === 'commander' ? html`<span class="gate-mark" title="סגירת השלב באישור המפקד"><${Icon} name="shield" size=${13} /></span>` : null}</button>
       <span class="muted small">${word}</span>
       ${cur && (st.target || mgr) ? html`<label class=${'stage-target' + (st.target && dayDiff(st.target) < 0 ? ' late' : '')}><${Icon} name="calendar" size=${13} />
-        ${mgr ? html`<input type="date" value=${dateInput(st.target)} min="2000-01-01" max="2100-12-31" onInput=${setTarget} aria-label="יעד לשלב" />` : null}${st.target ? `יעד ${dueWord(st.target)}` : 'יעד'}</label>` : null}
+        ${mgr ? html`<input type="date" value=${draft ?? dateInput(st.target)} min="2000-01-01" max="2100-12-31" onInput=${setTarget} onBlur=${() => setDraft(null)} aria-label="יעד לשלב" />` : null}${st.target ? `יעד ${dueWord(st.target)}` : 'יעד'}</label>` : null}
       <span class="grow"></span>
       ${edit ? html`<span class="stage-edit">
         <button type="button" class="icon-btn sm" aria-label="למעלה" onClick=${() => moveStage(p.id, st.id, -1)}><${Icon} name="chevronUp" size=${16} /></button>

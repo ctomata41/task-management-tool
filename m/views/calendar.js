@@ -119,6 +119,11 @@ function Item({ it }) {
 
 // ---------- the Gantt ----------
 const STATE_WORD = { done: 'נסגר', skipped: 'דילגנו', active: 'עכשיו', pending: 'מחכה לאישור', todo: 'בהמשך' };
+// The day a stage's words end on: the day it closed, else the target people set, else the bar's own end. Words that
+// start from the bar (r.start) start no later than this, so a target set before the stage ahead of it, or stages
+// closed out of order, never read as a range that ends before it starts.
+const stageEnd = (st, r) => (st.state === 'done' ? (st.closedAt ? dayStart(st.closedAt) : r.end)
+  : st.state !== 'skipped' && plausibleDay(st.target) ? dayStart(st.target) : r.end);
 
 function Gantt() {
   const s = useStore();
@@ -186,13 +191,12 @@ function GanttProject({ p, sch, x, today }) {
     ${p.stages.map((st, i) => {
       const r = sch[i];
       // The words carry the dates people set; r.start and r.end only place the bar.
-      const closed = dm(st.closedAt ? dayStart(st.closedAt) : r.end);
+      const end = stageEnd(st, r);
       const target = plausibleDay(st.target) ? dm(dayStart(st.target)) : '';
-      const sub = st.state === 'done' ? `נסגר ${closed}` : st.state === 'skipped' ? 'דילגנו' : st.state === 'pending' ? 'מחכה לאישור' : target ? `יעד ${target}` : 'בלי יעד';
-      const end = st.state === 'done' ? closed : st.state !== 'skipped' && target ? target : dm(r.end);
+      const sub = st.state === 'done' ? `נסגר ${dm(end)}` : st.state === 'skipped' ? 'דילגנו' : st.state === 'pending' ? 'מחכה לאישור' : target ? `יעד ${target}` : 'בלי יעד';
       const cls = `mg-bar s-${st.state}${r.est ? ' est' : ''}${r.late ? ' late' : ''}`;
       const w = Math.max(x(r.end) - x(r.start), st.state === 'skipped' ? 2 : 8);
-      const label = `${st.name}: ${STATE_WORD[st.state]}, ${dm(r.start)} עד ${end}${r.est ? ' (הערכה)' : ''}${r.late ? ', באיחור' : ''}`;
+      const label = `${st.name}: ${STATE_WORD[st.state]}, ${dm(Math.min(r.start, end))} עד ${dm(end)}${r.est ? ' (הערכה)' : ''}${r.late ? ', באיחור' : ''}`;
       return html`<div class=${'mg-row mg-srow' + (r.late ? ' is-late' : '')} key=${st.id}>
         <div class="mg-name"><span class="mg-sname">${st.name}</span><span class=${'mg-sub' + (r.late ? ' bad-t' : '')}>${r.late ? 'באיחור · ' : ''}${sub}</span></div>
         <div class="mg-time">
@@ -208,25 +212,29 @@ function GanttProject({ p, sch, x, today }) {
 // ---------- one stage, from the Gantt ----------
 export function StageBody({ pid, sid }) {
   useStore();
+  // What the date field shows while it's being typed in. A store update (a toast going away) re-renders the sheet, and
+  // the stored target would wipe a year typed halfway; on leaving the field, a year never finished gives way to it.
+  const [draft, setDraft] = useState(null);
   const p = project(pid);
   const st = p?.stages.find((x) => x.id === sid);
   if (!p || !st) return html`<${Empty}>השלב לא נמצא.</${Empty}>`;
   const r = schedule(p).find((x) => x.id === sid);
+  const end = stageEnd(st, r);
   const mgr = canManage(p);
   const closed = st.state === 'done' || st.state === 'skipped';
   // Saved when cleared or inside the field's range. While a year is typed the field passes through "0002-11-06", and
   // the Gantt behind the sheet would stretch back to reach it.
-  const setTarget = (e) => { const f = e.currentTarget; if (!f.validity.rangeUnderflow && !f.validity.rangeOverflow) setStage(p.id, st.id, { target: f.value || null }); };
+  const setTarget = (e) => { const f = e.currentTarget; setDraft(f.value); if (!f.validity.rangeUnderflow && !f.validity.rangeOverflow) setStage(p.id, st.id, { target: f.value || null }); };
   return html`<div class="form stage-sheet">
     <div class="ss-proj"><${ProjectTag} id=${p.id} /></div>
     <h3>${st.name}</h3>
     <div class="facts">
       <div class="fact-row"><span class="core-l">מצב</span><span>${STATE_WORD[st.state]}</span></div>
-      <div class="fact-row"><span class="core-l">מתחיל</span><span>${dm(r.start)}</span></div>
+      <div class="fact-row"><span class="core-l">מתחיל</span><span>${dm(Math.min(r.start, end))}</span></div>
       <div class="fact-row"><span class="core-l">${closed ? 'נסגר' : 'יעד לסיום'}</span>
-        ${closed ? html`<span>${st.state === 'skipped' ? 'דילגנו על השלב' : dm(st.closedAt ? dayStart(st.closedAt) : r.end)}</span>`
-          : html`<label class="fact-btn"><${Icon} name="calendar" size=${16} /><input type="date" value=${dateInput(st.target)} disabled=${!mgr} aria-label="יעד לסיום השלב"
-            min="2000-01-01" max="2100-12-31" onInput=${setTarget} />${st.target ? dueWord(st.target) : mgr ? 'לקבוע יעד' : 'עוד לא נקבע'}</label>`}</div>
+        ${closed ? html`<span>${st.state === 'skipped' ? 'דילגנו על השלב' : dm(end)}</span>`
+          : html`<label class="fact-btn"><${Icon} name="calendar" size=${16} /><input type="date" value=${draft ?? dateInput(st.target)} disabled=${!mgr} aria-label="יעד לסיום השלב"
+            min="2000-01-01" max="2100-12-31" onInput=${setTarget} onBlur=${() => setDraft(null)} />${st.target ? dueWord(st.target) : mgr ? 'לקבוע יעד' : 'עוד לא נקבע'}</label>`}</div>
     </div>
     ${!closed && !st.target ? html`<p class="muted small">עד שנקבע יעד, הגאנט מעריך את השלב לפי האורך הרגיל שלו: ${STAGE_DAYS[st.key] || 14} ימים.</p>` : null}
     ${r.late ? html`<p class="small bad-t">היעד עבר והשלב עוד פתוח.</p>` : null}
