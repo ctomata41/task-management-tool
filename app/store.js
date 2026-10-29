@@ -2,7 +2,8 @@
 // Every write passes the בלמ״ס guard first (guard.js): text that matches the team's sensitive-word list is not saved
 // unless the person says it is a false alarm, and then it is saved marked for command to check.
 import { useEffect, useState } from 'preact/hooks';
-import { api, setCreds } from './api.js';
+import { api, setCreds, isMock } from './api.js';
+import { toSignIn } from './session.js';
 import { POLL_MS } from './config.js';
 import { sensitiveHits, textsIn } from './guard.js';
 import { gateOptions, optionsOf } from './model.js';
@@ -14,6 +15,7 @@ const LS = {
   del(k) { try { localStorage.removeItem(k); } catch (e) { /* storage blocked */ } },
 };
 const AUTH_KEY = 'cto.auth';
+const CLASSIC = '/?classic'; // where the site's sign-in comes back to for this app
 
 let state = {
   phase: 'boot', // boot | setup | login | pick | declare | ready | error
@@ -78,6 +80,14 @@ function fail(e) { toast(e.message || 'משהו השתבש', { kind: 'error', ms
 export async function init() {
   try {
     const a = state.auth;
+    // Signed in with Google (on /account/): the session says who this is; signing in again goes back there.
+    if (a?.session) {
+      setCreds({ session: a.session, code: null, actor: a.me || null });
+      if (!a.me) return toSignIn(CLASSIC);
+      await loadAll();
+      if (!me()) return toSignIn(CLASSIC);
+      return enter();
+    }
     if (a?.code) {
       setCreds({ code: a.code, actor: a.me || null });
       const ok = await api.rpc('check_team_code', { code: a.code });
@@ -93,6 +103,8 @@ export async function init() {
   }
 }
 async function goAuth() {
+  // Once the commander closes the team code, signing in is only with Google.
+  if (!isMock && !(await api.rpc('auth_code_open').catch(() => true))) return toSignIn(CLASSIC);
   const isSet = await api.rpc('team_code_is_set');
   set({ phase: isSet ? 'login' : 'setup' });
 }
@@ -143,8 +155,11 @@ export async function pickMe(id) {
 export function switchUser() { set({ phase: 'pick', modal: null, openTaskId: null, since: null }); }
 export async function logout() {
   await pushOff();
+  const google = !!state.auth?.session;
+  if (google) await api.rpc('auth_signout').catch(() => {});
   LS.del(AUTH_KEY);
-  setCreds({ code: null, actor: null });
+  setCreds({ code: null, actor: null, session: null });
+  if (google) return toSignIn(CLASSIC);
   stopPolling();
   set({ auth: null, phase: 'boot', modal: null, openTaskId: null, tasks: [], projects: [], notifications: [], decisions: [], commitments: [], ideas: [], since: null });
   goAuth().catch((e) => set({ phase: 'error', error: e.message }));

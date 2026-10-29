@@ -6,10 +6,14 @@
 //   POST /gcal/events          {from, to}: this person's events (only on a device that signed in) and the team's busy times
 //   POST /gcal/create          {title, start, mins, project_id, invite, notes}: an event in this person's calendar
 //   POST /gcal/disconnect      forgets the link and revokes the token at Google
-// The browser sends the team code (x-team-code), the person (x-actor) and its device token (x-gcal-device).
+//   GET  /gcal/signin?return=/m/  signing in to the platform with Google: the same Google screen also connects the
+//                               calendar. Back home through /account/ with a session token (#session=…)
+// The browser sends its session (x-session), or the team code (x-team-code) with the person (x-actor) and its device
+// token (x-gcal-device). A session is a person on their own device, so it sees its own calendar's titles anywhere.
 import { sensitiveHits, textsIn } from './guard.js';
 
 const SCOPES = 'openid email https://www.googleapis.com/auth/calendar.events';
+const SIGNIN_SCOPES = 'openid email profile https://www.googleapis.com/auth/calendar.events';
 const DAY = 864e5;
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
@@ -56,7 +60,7 @@ export function makeGoogle(env) {
     return body;
   }
   return {
-    authUrl: (state) => `${g.auth}?${form({ client_id: env.clientId, redirect_uri: env.redirectUri, response_type: 'code', scope: SCOPES, access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state })}`,
+    authUrl: (state, signin = false) => `${g.auth}?${form({ client_id: env.clientId, redirect_uri: env.redirectUri, response_type: 'code', scope: signin ? SIGNIN_SCOPES : SCOPES, access_type: 'offline', prompt: signin ? 'select_account consent' : 'consent', include_granted_scopes: 'true', state })}`,
     exchange: (code) => call(g.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form({ code, client_id: env.clientId, client_secret: env.clientSecret, redirect_uri: env.redirectUri, grant_type: 'authorization_code' }) }),
     access: async (refresh) => (await call(g.token, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form({ refresh_token: refresh, client_id: env.clientId, client_secret: env.clientSecret, grant_type: 'refresh_token' }) })).access_token,
     userinfo: (token) => call(`${g.api}/oauth2/v3/userinfo`, { headers: { Authorization: `Bearer ${token}` } }),
@@ -89,8 +93,16 @@ export async function handle(req, env) {
   const google = makeGoogle(env);
   const home = (ret, frag) => redirect(`${env.site}${ret || '/next/'}#${frag}`);
   const configured = !!(env.clientId && env.clientSecret);
+  let signingIn = route === 'signin';
+  const account = (ret, frag) => redirect(`${env.site}/account/?return=${encodeURIComponent(ret || '/')}#${frag}`);
 
   try {
+    if (req.method === 'GET' && route === 'signin') {
+      const ret = url.searchParams.get('return') || '/';
+      if (!configured) return account(ret, 'error=setup');
+      return redirect(google.authUrl(await rpc('auth_state_create', { p_return: ret }), true));
+    }
+
     if (req.method === 'GET' && route === 'start') {
       if (!configured) return home('/next/', 'gcal_error=setup');
       const state = url.searchParams.get('state') || '';
@@ -102,6 +114,7 @@ export async function handle(req, env) {
       const state = url.searchParams.get('state') || '';
       const taken = /^[0-9a-f]{48}$/.test(state) ? (await rpc('gcal_state_take', { p_state: state }))?.[0] : null;
       if (!taken) return home('/next/', 'gcal_error=expired');
+      if (taken.kind === 'signin') { signingIn = true; return await signIn(taken.return_to); }
       if (url.searchParams.get('error') || !url.searchParams.get('code')) return home(taken.return_to, 'gcal_error=denied');
       const tok = await google.exchange(url.searchParams.get('code'));
       if (!String(tok.scope || '').includes('calendar.events')) return home(taken.return_to, 'gcal_error=scope');
@@ -113,14 +126,15 @@ export async function handle(req, env) {
 
     if (req.method !== 'POST') return json({ error: 'not found' }, 404);
 
-    // Every POST comes from a signed-in browser: a valid team code and a person on the team.
-    const code = req.headers.get('x-team-code') || '';
-    const actor = req.headers.get('x-actor') || '';
-    if (!code || !UUID.test(actor) || !(await rpc('check_team_code', { code }))) fail('צריך להיכנס עם קוד הצוות.', 401);
+    // Every POST comes from a signed-in browser: a Google session, or the team code with a person on the team.
+    const session = req.headers.get('x-session') || '';
+    const actor = await rpc('auth_who', { p_session: session, p_code: req.headers.get('x-team-code') || '', p_actor: req.headers.get('x-actor') || '' });
+    if (!actor || !UUID.test(actor)) fail('צריך להיכנס לפלטפורמה.', 401);
     const me = (await db(`people?select=id,name,team_id,is_team,archived&id=eq.${actor}`))[0];
     if (!me || !me.is_team || me.archived) fail('רק אדם מהצוות.', 403);
     const device = req.headers.get('x-gcal-device') || '';
     const link = (await rpc('gcal_link_get', { p_person: me.id, p_device: device }))?.[0] || null;
+    if (link && session) link.device_ok = true;
     let body = {};
     try { body = await req.json(); } catch (e) { /* empty body */ }
 
@@ -192,10 +206,32 @@ export async function handle(req, env) {
       return json({ ok: true });
     }
     return json({ error: 'not found' }, 404);
+
+    // Back from Google's sign-in: who this is, their calendar if they allowed it, and a session for this browser.
+    async function signIn(ret) {
+      if (url.searchParams.get('error') || !url.searchParams.get('code')) return account(ret, 'error=denied');
+      const tok = await google.exchange(url.searchParams.get('code'));
+      const who = await google.userinfo(tok.access_token);
+      if (!who.sub || !who.email || who.email_verified === false) return account(ret, 'error=email');
+      let acc;
+      try {
+        acc = (await rpc('auth_google_signin', { p_sub: who.sub, p_email: who.email, p_name: who.name || '', p_picture: who.picture || null }))?.[0];
+      } catch (e) {
+        console.error(e);
+        return account(ret, 'error=taken');
+      }
+      const token = 'cts_' + randomHex(32);
+      await rpc('auth_session_create', { p_account: acc.account_id, p_token: token });
+      if (tok.refresh_token && String(tok.scope || '').includes('calendar.events')) {
+        if (acc.status === 'active' && acc.person_id) await rpc('gcal_link_save', { p_person: acc.person_id, p_email: who.email, p_refresh: tok.refresh_token, p_device: 'gcd_' + randomHex(24) });
+        else if (acc.status === 'pending') await rpc('auth_pending_refresh', { p_account: acc.account_id, p_refresh: tok.refresh_token });
+      }
+      return account(ret, `session=${token}`);
+    }
   } catch (e) {
     if (e instanceof Fail) return json({ error: e.message }, e.status);
     console.error(e);
-    if (req.method === 'GET') return home('/next/', 'gcal_error=failed');
+    if (req.method === 'GET') return signingIn ? account('/', 'error=failed') : home('/next/', 'gcal_error=failed');
     return json({ error: 'תקלה בחיבור ליומן גוגל.' }, 500);
   }
 }

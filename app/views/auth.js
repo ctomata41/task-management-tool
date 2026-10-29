@@ -2,6 +2,7 @@
 import { useState } from 'preact/hooks';
 import { submitCode, pickMe, getState, set } from '../store.js';
 import { html, Avatar } from '../ui.js';
+import { googleSignIn } from '../session.js';
 
 function Brand() {
   return html`<div class="brand-lg"><span class="logo" aria-hidden="true"><svg viewBox="0 0 32 32" width="40" height="40"><rect x="2" y="2" width="28" height="28" rx="8" fill="var(--accent)"/><path d="M9 16.5l4.5 4.5L23 11.5" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
@@ -33,6 +34,7 @@ export function AuthScreen({ setup }) {
         <input id="team-code-2" class="input" type="password" autocomplete="new-password" value=${code2} onInput=${(e) => setCode2(e.currentTarget.value)} required />` : null}
       ${err ? html`<p class="err" role="alert">${err}</p>` : null}
       <button type="submit" class="btn btn-primary block" disabled=${busy || !code}>${busy ? 'רגע…' : setup ? 'שמירה והמשך' : 'כניסה'}</button>
+      ${setup ? null : html`<button type="button" class="btn block" onClick=${() => googleSignIn('/?classic')}>כניסה עם Google</button>`}
     </form>
   </main>`;
 }

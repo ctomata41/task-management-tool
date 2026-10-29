@@ -6,6 +6,7 @@
 import { api, setCreds, isMock } from '../app/api.js';
 import { sensitiveHits, textsIn } from '../app/guard.js';
 import { set, getState, setRemote, toast, person, project } from './store.js';
+import { authHeaders, readAuth, writeAuth } from '../app/session.js';
 
 const AUTH_KEY = 'cto.auth';
 const SEEN_KEY = 'next.seen'; // when this person last looked, so new outputs show as new
@@ -30,11 +31,11 @@ let timer = null;
 let seenAt = 0;
 let seenIds = new Set();
 
-// The app's own sign-in, on the same origin. ?demo always shows the sample data.
+// The site's sign-in (Google, or the team code until it closes), on the same origin. ?demo always shows the sample data.
 export function liveAuth() {
   if (typeof location === 'undefined' || new URLSearchParams(location.search).has('demo') || isMock) return null;
-  const a = LS.get(AUTH_KEY);
-  return a?.code && a?.me ? a : null;
+  const a = readAuth();
+  return a?.me && (a.session || a.code) ? a : null;
 }
 
 // Sign-in here, the same as the app's: check the team code, then pick who is using this device. Both are kept in
@@ -45,29 +46,34 @@ export function savedCode() {
 }
 export async function checkCode(code) {
   code = code.trim();
-  setCreds({ code: null, actor: null });
+  setCreds({ code: null, actor: null, session: null });
   const ok = await api.rpc('check_team_code', { code });
   if (!ok) throw new Error('הקוד לא נכון. אפשר לנסות שוב.');
   LS.set(AUTH_KEY, { code });
   return code;
 }
 export async function teamPeople(code) {
-  setCreds({ code, actor: null });
+  setCreds({ code, actor: null, session: null });
   const people = await api.list('people', { archived: 'is.false', order: 'sort.asc' });
   return people.filter((p) => p.is_team);
 }
 export function pickPerson(code, id) {
   LS.set(AUTH_KEY, { code, me: id });
 }
-export function forgetPerson() {
-  const a = LS.get(AUTH_KEY);
-  if (a?.code) LS.set(AUTH_KEY, { code: a.code });
+// Signing out of Google ends the session; with the team code, the next person picks themselves again.
+export async function forgetPerson() {
+  const a = readAuth();
+  if (a?.session) {
+    setCreds({ session: a.session });
+    await api.rpc('auth_signout').catch(() => {});
+    writeAuth(null);
+  } else if (a?.code) writeAuth({ code: a.code });
 }
 
 export async function startLive() {
   auth = liveAuth();
   if (!auth) return false;
-  setCreds({ code: auth.code, actor: auth.me });
+  setCreds({ code: auth.code || null, actor: auth.me, session: auth.session || null });
   const seen = LS.get(SEEN_KEY) || {};
   seenAt = seen.at || Date.now() - 3 * DAY;
   seenIds = new Set(seen.ids || []);
@@ -445,7 +451,7 @@ export async function voiceCall(route, body = {}) {
   try {
     res = await fetch('/voice/' + route, {
       method: 'POST', body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(auth) },
     });
   } catch (e) { throw new Error(`לא הצלחתי להגיע לשרת הקולי (${e?.message || e}).`); }
   let out = null;
@@ -458,7 +464,7 @@ export async function voiceCall(route, body = {}) {
 export async function brainCall(route, body = {}) {
   const res = await fetch('/mcp/brain/' + route, {
     method: 'POST', body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(auth) },
   });
   let out = null;
   try { out = await res.json(); } catch (e) { /* not JSON */ }
@@ -492,7 +498,7 @@ function gcalDevice() { return (LS.get(GCAL_KEY) || {})[auth?.me] || ''; }
 async function gcalCall(route, body = {}) {
   const res = await fetch('/gcal/' + route, {
     method: 'POST', body: JSON.stringify(body),
-    headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me, 'x-gcal-device': gcalDevice() },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(auth), 'x-gcal-device': gcalDevice() },
   });
   let out = null;
   try { out = await res.json(); } catch (e) { /* not JSON */ }
