@@ -728,3 +728,101 @@ test('store: a hidden בדה"ת type is not opened from a building block, and is
   S.set({ lib: EMPTY_LIB });
   quiet();
 });
+
+test('store: in a project that is all on the classified network, no task goes to an outside partner on its list (design §4.2, §4.3)', async () => {
+  await store();
+  fresh('yahali');
+  const task = (id) => S.getState().tasks.find((t) => t.id === id);
+  const said = () => S.getState().toasts.at(-1)?.text;
+  const noAccess = 'המשימה עברה אליך, כי לאבי כהן אין גישה כאן';
+  // in 'here' Avi takes work in p1, and a task for him stays his
+  assert.equal(S.takesWork(S.project('p1'), 'avi'), true);
+  assert.equal(S.addTask({ project: 'p1', title: 'לאבי כשהכול כאן', owner: 'avi' }).owner, 'avi');
+  // a done task of his, from before the move
+  const done = S.addTask({ project: 'p1', title: 'של אבי, בוצעה', owner: 'avi' });
+  S.updateTask(done.id, { status: 'done' });
+  // a task of his in another project, at 'here'
+  const other = S.addProject({ name: 'פרויקט פתוח עם אבי', template: 'tool', place: 'here', what: 'בדיקה', partners: ['avi'] });
+  const outside = S.addTask({ project: other.id, title: 'של אבי, בפרויקט אחר', owner: 'avi' });
+  assert.equal(outside.owner, 'avi');
+  assert.equal(S.setPlace('p1', 'there'), true);
+  const p1 = S.project('p1');
+  // he stays on the list, without access, and takes no work there
+  assert.ok(p1.partners.includes('avi'));
+  assert.equal(S.inProject(p1, 'avi'), true);
+  assert.equal(S.canSeeDetail(p1, 'avi'), false);
+  assert.equal(S.takesWork(p1, 'avi'), false);
+  assert.equal(S.takesWork(p1, 'yarden'), true);
+  assert.equal(task('t4').owner, 'yahali');
+  quiet();
+  // a new task for him goes to the manager, and the toast says why
+  assert.equal(S.addTask({ project: 'p1', title: 'לאבי ברשת', owner: 'avi' }).owner, 'yahali');
+  assert.equal(said(), noAccess);
+  // given to him from an owner menu
+  S.updateTask('t4', { owner: 'avi' });
+  assert.equal(task('t4').owner, 'yahali');
+  assert.equal(said(), noAccess);
+  // moved into p1 from the project at 'here'
+  S.updateTask(outside.id, { project: 'p1' });
+  assert.deepEqual([task(outside.id).project, task(outside.id).owner], ['p1', 'yahali']);
+  assert.equal(said(), noAccess);
+  // his done task brought back to work
+  S.setStatus(done.id, 'todo');
+  assert.deepEqual([task(done.id).status, task(done.id).owner], ['todo', 'yahali']);
+  assert.equal(said(), noAccess);
+  // someone not in the project at all keeps the old reason
+  S.updateTask('t4', { owner: 'ronit' });
+  assert.equal(task('t4').owner, 'yahali');
+  assert.equal(said(), 'המשימה עברה אליך, כי ד"ר רונית לוי לא בפרויקט');
+  // every open task he owns is one he sees
+  for (const t of S.getState().tasks.filter((x) => x.owner === 'avi' && x.status !== 'done')) assert.equal(S.canSeeTask(t, 'avi'), true, t.title);
+  quiet();
+  // and he adds nothing there himself
+  S.set({ me: 'avi' });
+  assert.equal(S.addTask({ project: 'p1', title: 'מאבי', owner: 'avi' }), null);
+  assert.equal(said(), 'רק מי שבפרויקט מוסיף לו משימות');
+  quiet();
+});
+
+test('store: a saved path that is not a list, or a place the type does not allow, is dropped on the next edit: no empty path, no refusal (design §2.7)', async () => {
+  await store();
+  const keys = (id) => typeStages(S.lib().types.find((t) => t.id === id)).map((s) => s.key);
+  const broken = (id) => { const L = { v: 1, types: { [id]: { hint: 'רמז', stages: { broken: true } } }, log: [] }; mem.set('m.lib', JSON.stringify(L)); S.set({ lib: L }); };
+  for (const [me, id] of [['yahali', 'study'], ['yahali', 'rnd'], ['yoash', 'rnd']]) {
+    fresh(me);
+    broken(id);
+    const path = typeStages(T(id)).map((s) => s.key);
+    assert.deepEqual(keys(id), path);
+    // a text edit changes its text only: the path stays, and is not refused for the commander's gates
+    assert.equal(S.setTypeDef(id, { hint: 'רמז חדש' }), true, `${me} ${id}`);
+    assert.deepEqual(keys(id), path);
+    assert.deepEqual(JSON.parse(mem.get('m.lib')).types[id], { hint: 'רמז חדש' });
+  }
+  // a saved place the type does not allow, which reading drops, is dropped too: the next edit is not refused for it
+  for (const [id, place] of [['claude', 'there'], ['study', 'mars']]) {
+    fresh('yahali');
+    const L = { v: 1, types: { [id]: { hint: 'רמז', place } }, log: [] };
+    mem.set('m.lib', JSON.stringify(L));
+    S.set({ lib: L });
+    assert.equal(S.lib().types.find((t) => t.id === id).place ?? null, T(id).place ?? null);
+    assert.equal(S.setTypeDef(id, { hint: 'רמז חדש' }), true, `${id} ${place}`);
+    assert.deepEqual(JSON.parse(mem.get('m.lib')).types[id], { hint: 'רמז חדש' });
+  }
+  // a place the type allows is still saved, and one it does not is still refused as an edit
+  fresh('yahali');
+  mem.delete('m.lib');
+  S.set({ lib: EMPTY_LIB });
+  assert.equal(S.setTypeDef('study', { place: 'both' }), true);
+  assert.equal(JSON.parse(mem.get('m.lib')).types.study.place, 'both');
+  assert.equal(S.setTypeDef('claude', { place: 'there' }), false);
+  // a path that is a list is still saved whole
+  fresh('yahali');
+  broken('study');
+  const [first, ...rest] = typeStages(T('study'));
+  assert.equal(S.setTypeDef('study', { stages: [...rest, first] }, 'הסדר עודכן'), true);
+  assert.deepEqual(keys('study'), [...rest, first].map((s) => s.key));
+  assert.deepEqual(JSON.parse(mem.get('m.lib')).types.study.stages.map((s) => s.key), [...rest, first].map((s) => s.key));
+  mem.delete('m.lib');
+  S.set({ lib: EMPTY_LIB });
+  quiet();
+});

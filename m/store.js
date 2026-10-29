@@ -128,6 +128,10 @@ export const leads = (p, who = state.me) => !!p && (p.personal ? p.personal === 
 export function inProject(p, who = state.me) {
   return !!p && (p.manager === who || p.partners.includes(who));
 }
+// Who takes work in a project: someone in it who also sees it past the one line. An outside partner in a project that
+// is all on the classified network stays on its people list without access (card.sees), so no task there goes to them:
+// not from an add line, an owner menu, a move or a task brought back to work (addTask, updateTask).
+export const takesWork = (p, who = state.me) => inProject(p, who) && canSeeDetail(p, who);
 // A stopped or finished project takes no new people or work.
 export const isOpen = (p) => !!p && p.phase !== 'stopped' && p.phase !== 'done';
 // Gates, the ID card and the project's people: its manager, and the commander everywhere.
@@ -267,11 +271,12 @@ function insertTask(t) {
   commit((s) => ({ tasks: [task, ...s.tasks.map((x) => (up && x.id === up.id ? { ...x, ack: { state: 'ok', at: task.createdAt } } : x))] }));
   return task;
 }
-// Whoever takes a task because its owner isn't in its project: the project's manager.
-const handedTo = (p, owner) => `המשימה עברה ${p.manager === state.me ? 'אליך' : `ל${person(p.manager).name}`}, כי ${person(owner).name} לא בפרויקט`;
+// Whoever takes a task because its owner isn't in its project, or is on its list without access there (takesWork): the
+// project's manager.
+const handedTo = (p, owner) => `המשימה עברה ${p.manager === state.me ? 'אליך' : `ל${person(p.manager).name}`}, כי ${inProject(p, owner) ? `ל${person(owner).name} אין גישה כאן` : `${person(owner).name} לא בפרויקט`}`;
 // Every new task passes here, whichever add line made it: a stopped or finished project takes no new work, only someone
-// in a project adds to it, and its tasks go to people in it (anyone else's goes to its manager); an outside partner adds
-// only their own.
+// who takes work in a project adds to it, and its tasks go to people who take work in it (takesWork; anyone else's goes
+// to its manager); an outside partner adds only their own.
 export function addTask(t) {
   const p = project(t.project);
   let say = null;
@@ -279,9 +284,9 @@ export function addTask(t) {
     // The commander never reaches past a manager: a task he adds in a project someone else runs is an ask to its manager.
     if (isCommander() && !leads(p) && !t.ask) return sendAsk({ project: p.id, title: t.title, why: t.why, due: t.due, stage: t.stage });
     if (!isOpen(p)) { toast('הפרויקט נעצר או הסתיים, אז אי אפשר להוסיף לו משימות'); return null; }
-    if (!inProject(p)) { toast('רק מי שבפרויקט מוסיף לו משימות'); return null; }
+    if (!takesWork(p)) { toast('רק מי שבפרויקט מוסיף לו משימות'); return null; }
     if (person(state.me).role === 'external') t = { ...t, owner: state.me }; // an outside partner adds only their own
-    else if (t.owner && !inProject(p, t.owner)) { say = handedTo(p, t.owner); t = { ...t, owner: p.manager }; }
+    else if (t.owner && !takesWork(p, t.owner)) { say = handedTo(p, t.owner); t = { ...t, owner: p.manager }; }
   }
   const task = insertTask(t);
   if (say || task.owner !== state.me) toast(say || `המשימה עברה ל${person(task.owner).name}`);
@@ -293,9 +298,10 @@ export function addTask(t) {
 // - the commander never reaches past a manager: a task he moves into a team project he doesn't run, or gives someone
 //   else there, goes to that project's manager as an ask (as addTask does), and the toast's ביטול takes it back as it
 //   was;
-// - a task in a team project belongs to someone in it: one that moves to a project its owner isn't in, or comes back
-//   to work (a done task reopened) after its owner left the project, goes to that project's manager, so it never drops
-//   out of sight or stays with someone who can't work on it.
+// - a task in a team project belongs to someone who takes work in it (takesWork): one given to someone who doesn't,
+//   moved to a project its owner isn't in or has no access to, or that comes back to work (a done task reopened) after
+//   its owner left the project or lost access to it, goes to that project's manager, so it never drops out of sight or
+//   stays with someone who can't work on it.
 export function updateTask(id, patch) {
   const t = state.tasks.find((x) => x.id === id);
   if (!t) return;
@@ -314,7 +320,7 @@ export function updateTask(id, patch) {
       Object.assign(change, { owner: p.manager, by: state.me, ask: true, ack: null, priority: 'high', fromCommander: true, parent: null });
       say = `הבקשה נשלחה ל${person(p.manager).name}`;
       undo = { label: 'ביטול', run: () => commit((s) => ({ tasks: s.tasks.map((x) => (x.id === id ? t : x)) })) };
-    } else if (owner && !inProject(p, owner)) {
+    } else if (owner && !takesWork(p, owner)) {
       change.owner = p.manager;
       say = handedTo(p, owner);
     }
@@ -891,13 +897,21 @@ export function typeCheck(id, patch) {
 // Whether a code type carries the team's edits ("לחזור לברירת המחדל").
 export const hasOverride = (id) => !!codeType(id) && isObj(state.lib.types?.[id]);
 // A code type's override keeps only what differs from the code; an edited path is stored whole, as resolved stage
-// definitions (card.typeStages). An empty override goes away.
+// definitions (card.typeStages). A saved path that is not a list, or a place the type does not allow (a broken value,
+// or one a later build no longer allows), is dropped here as reading drops it (card.library), so an edit of another
+// key never turns the path empty or is refused for that place (libRule). An empty override goes away.
 const blankOf = (k) => (k === 'trl' || k === 'hidden' ? false : null);
 function trimOverride(code, entry) {
   const out = {};
   for (const k of card.EDITABLE_KEYS) {
     if (!(k in entry)) continue;
-    if (k === 'stages') { const mine = card.typeStages({ stages: entry.stages }); if (!sameJSON(mine, card.typeStages(code))) out.stages = mine; continue; }
+    if (k === 'stages') {
+      if (!Array.isArray(entry.stages)) continue;
+      const mine = card.typeStages({ stages: entry.stages });
+      if (!sameJSON(mine, card.typeStages(code))) out.stages = mine;
+      continue;
+    }
+    if (k === 'place' && entry.place != null && !card.placesFor(code).includes(entry.place)) continue;
     if (!sameJSON(entry[k] ?? blankOf(k), code[k] ?? blankOf(k))) out[k] = entry[k];
   }
   return out;
