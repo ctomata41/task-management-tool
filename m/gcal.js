@@ -4,6 +4,7 @@
 // in this browser the card says what connecting needs; nothing here makes up events.
 import { useState, useEffect } from 'preact/hooks';
 import { api, setCreds, isMock } from '../app/api.js';
+import { authHeaders } from '../app/session.js';
 import { html, Icon, openMenu, parseDay, isoDay } from './ui.js';
 import { toast } from './store.js';
 
@@ -18,7 +19,7 @@ const LS = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } },
 };
-const auth = () => { const a = isMock ? null : LS.get(AUTH_KEY); return a?.code && a?.me ? a : null; };
+const auth = () => { const a = isMock ? null : LS.get(AUTH_KEY); return a?.me && (a.session || a.code) ? a : null; };
 const device = (a) => (LS.get(DEVICE_KEY) || {})[a.me] || '';
 const hhmm = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 
@@ -29,7 +30,7 @@ async function call(route, body = {}) {
   try {
     res = await fetch('/gcal/' + route, {
       method: 'POST', body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', 'x-team-code': a.code, 'x-actor': a.me, 'x-gcal-device': device(a) },
+      headers: { 'Content-Type': 'application/json', ...authHeaders(a), 'x-gcal-device': device(a) },
     });
   } catch (e) {
     throw new Error('אין חיבור לשרת. כדאי לבדוק את החיבור לאינטרנט.');
@@ -104,7 +105,7 @@ const reload = () => { cache.clear(); notify(); };
 
 async function connect() {
   const a = auth();
-  setCreds({ code: a.code, actor: a.me });
+  setCreds({ code: a.code || null, actor: a.me, session: a.session || null });
   try {
     const state = await api.rpc('gcal_state_create', { p_return: location.pathname });
     location.href = '/gcal/start?state=' + encodeURIComponent(state);
@@ -145,7 +146,7 @@ export function useGcal(from, to) {
 }
 
 const TEXT = {
-  signin: 'האירועים מיומן הגוגל שלך יכולים להופיע כאן ליד המשימות. כדי לחבר, נכנסים פעם אחת לצוות בדפדפן הזה, ואז חוזרים לכאן.',
+  signin: 'האירועים מיומן הגוגל שלך יכולים להופיע כאן ליד המשימות. כדי לחבר, נכנסים פעם אחת עם Google, והיומן מתחבר באותה כניסה.',
   connect: 'מחברים את יומן הגוגל שלך פעם אחת, והאירועים שלך מופיעים כאן ליד המשימות. רק את/ה רואה אותם.',
   elsewhere: 'היומן שלך מחובר ממכשיר אחר. כדי לראות אותו גם כאן, מחברים שוב במכשיר הזה.',
   setup: 'חיבור יומן גוגל עוד לא הוגדר לצוות.',
@@ -157,9 +158,8 @@ const fold = (gc, later, to) => { gc.setLater(later); requestAnimationFrame(() =
 export function GcalCard({ gc }) {
   if (gc.state === 'on' || gc.state === 'loading' || gc.later) return null;
   const text = gc.state === 'error' ? gc.error : TEXT[gc.state];
-  // /next/ asks for the team code only when this browser has none. A code the server turned down goes to the main app,
-  // which checks it again, drops it and asks for the new one (someone no longer on the team picks again there).
-  const signin = gc.state === 'signin' ? '/next/' : gc.signin ? '/#/home' : '';
+  // The site's sign-in page: signing in with Google there connects the calendar too, and comes back here.
+  const signin = gc.state === 'signin' || gc.signin ? '/account/?return=' + encodeURIComponent(location.pathname) : '';
   return html`<div class="gc-card" role="group" aria-label="יומן גוגל">
     <span class="gc-ic" aria-hidden="true"><${Icon} name="calendar" size=${20} /></span>
     <div class="gc-text"><strong>יומן גוגל אישי</strong><span>${text}</span></div>

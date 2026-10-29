@@ -4,7 +4,7 @@
 // too (the unclassified check, personal projects, no closing or deciding for people). Served at /mcp/brain/*:
 //   POST /mcp/brain/status   {on}: is there a key
 //   POST /mcp/brain/run      {run_id}: write or update the plan for that run, in the background; answers 202 at once
-// The browser sends the team code (x-team-code) and the person (x-actor), as for voice and the calendar.
+// The browser sends its Google session (x-session), or the team code (x-team-code) and the person (x-actor), as for voice and the calendar.
 import { TOOLS, INSTRUCTIONS, UserError, makeDb, makeTools } from './server.js';
 
 const MODEL = 'claude-opus-5-5';
@@ -82,9 +82,8 @@ export async function handleBrain(req, env) {
   const sys = makeDb(env.base, env.serviceKey, null);
   try {
     if (req.method !== 'POST') return json({ error: 'not found' }, 404);
-    const code = req.headers.get('x-team-code') || '';
-    const actor = req.headers.get('x-actor') || '';
-    if (!code || !UUID.test(actor) || !(await sys('rpc/check_team_code', { method: 'POST', body: { code } }))) fail('צריך להיכנס עם קוד הצוות.', 401);
+    const actor = await sys('rpc/auth_who', { method: 'POST', body: { p_session: req.headers.get('x-session') || '', p_code: req.headers.get('x-team-code') || '', p_actor: req.headers.get('x-actor') || '' } });
+    if (!actor || !UUID.test(actor)) fail('צריך להיכנס לפלטפורמה.', 401);
     const me = (await sys(`people?select=id,name,team_id,is_team,archived&id=eq.${actor}`))[0];
     if (!me || !me.is_team || me.archived) fail('רק אדם מהצוות.', 403);
     if (route === 'status') return json({ on: !!env.claude });

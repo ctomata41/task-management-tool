@@ -1,7 +1,7 @@
 // Thin client for Supabase's REST API (PostgREST), plus an in-memory mock used for local testing (?mock).
 import { API_BASE, SUPABASE_ANON_KEY } from './config.js';
 
-let creds = { code: null, actor: null };
+let creds = { code: null, actor: null, session: null };
 export function setCreds(c) { creds = { ...creds, ...c }; }
 
 function qs(params = {}) {
@@ -17,8 +17,9 @@ async function req(method, path, { body, prefer } = {}) {
     Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
     'Content-Type': 'application/json',
   };
-  if (creds.code) headers['x-team-code'] = creds.code;
-  if (creds.actor) headers['x-actor'] = creds.actor;
+  if (creds.session) headers['x-session'] = creds.session; // a Google sign-in (app/session.js); the database ignores x-actor then
+  else if (creds.code) headers['x-team-code'] = creds.code;
+  if (creds.actor && !creds.session) headers['x-actor'] = creds.actor;
   if (prefer) headers.Prefer = prefer;
   let res;
   try {

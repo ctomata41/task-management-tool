@@ -6,7 +6,7 @@
 //   POST /voice/agent       {signed_url} for a Jarvis conversation (valid 15 minutes to start)
 //   POST /voice/scribe      {token} for one realtime transcription (single use, 15 minutes)
 //   POST /voice/summarize   {title, project, transcript}: the summary as {tldr, decisions, actions, open, next}
-// The browser sends the team code (x-team-code) and the person (x-actor), as for the calendar.
+// The browser sends its Google session (x-session), or the team code (x-team-code) and the person (x-actor), as for the calendar.
 import { sensitiveHits, textsIn } from './guard.js';
 
 const XI = 'https://api.elevenlabs.io';
@@ -114,9 +114,8 @@ export async function handle(req, env) {
 
   try {
     if (req.method !== 'POST') return json({ error: 'not found' }, 404);
-    const code = req.headers.get('x-team-code') || '';
-    const actor = req.headers.get('x-actor') || '';
-    if (!code || !UUID.test(actor) || !(await rpc('check_team_code', { code }))) fail('צריך להיכנס עם קוד הצוות.', 401);
+    const actor = await rpc('auth_who', { p_session: req.headers.get('x-session') || '', p_code: req.headers.get('x-team-code') || '', p_actor: req.headers.get('x-actor') || '' });
+    if (!actor || !UUID.test(actor)) fail('צריך להיכנס לפלטפורמה.', 401);
     const me = (await db(`people?select=id,name,team_id,is_team,archived&id=eq.${actor}`))[0];
     if (!me || !me.is_team || me.archived) fail('רק אדם מהצוות.', 403);
     let body = {};
