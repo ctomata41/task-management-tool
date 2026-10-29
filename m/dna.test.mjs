@@ -826,3 +826,44 @@ test('store: a saved path that is not a list, or a place the type does not allow
   S.set({ lib: EMPTY_LIB });
   quiet();
 });
+
+test('store: the block\'s log line about a linked בדה"ת is read only by whoever sees that בדה"ת in full (design §4.2, §6.6)', async () => {
+  await store();
+  fresh('yahali');
+  // Avi (outside) and Yarden join the block p6 ('both'). Its בדה"ת p7 is all on the classified network: Avi does not
+  // see it at all, and Yarden, outside it, sees its one line.
+  S.setPeople('p6', { partners: [...S.project('p6').partners, 'avi', 'yarden'] });
+  S.addLog('p6', { kind: 'decision', text: 'החלטה של אבן הבניין' });
+  S.addLog('p6', { kind: 'decision', text: 'דיברנו על בקשה', ask: 't1' }); // as talked() tags it
+  assert.equal(S.canSee(S.project('p7'), 'avi'), false);
+  assert.equal(S.canSee(S.project('p7'), 'yarden'), true);
+  assert.equal(S.canSeeDetail(S.project('p7'), 'yarden'), false);
+  // p7 ends at TRL 7, and the block's manager takes it
+  S.set({ me: 'yonatan' });
+  assert.equal(S.setTrl('p7', 7), true);
+  S.closeStage('p7', { choice: 'stop', note: 'הסתיים' });
+  S.set({ me: 'yahali' });
+  assert.equal(S.takeChildTrl('p6', 'p7'), true);
+  const take = `המוכנות עודכנה ל-TRL 7 לפי הבדה"ת ${S.project('p7').name}`;
+  assert.deepEqual([S.project('p6').log[0].text, S.project('p6').log[0].child], [take, 'p7']);
+  const read = (who) => S.projectLog('p6', who).map((l) => l.text);
+  // whoever sees p7 in full reads the line as the design writes it
+  for (const who of ['yahali', 'yonatan', 'yoash']) assert.deepEqual(read(who), [take, 'דיברנו על בקשה', 'החלטה של אבן הבניין'], who);
+  // the others read the block's other lines, and outside partners still no line about an ask
+  assert.deepEqual(read('yarden'), ['דיברנו על בקשה', 'החלטה של אבן הבניין']);
+  assert.deepEqual(read('avi'), ['החלטה של אבן הבניין']);
+  assert.deepEqual(read('ronit'), ['החלטה של אבן הבניין']);
+  // no log at all past a project's one line
+  assert.deepEqual(S.projectLog('p7', 'yarden'), []);
+  assert.deepEqual(S.projectLog('p7', 'avi'), []);
+  // it follows who sees p7 now: Yarden joins it, and reads the line
+  S.set({ me: 'yonatan' });
+  S.setPeople('p7', { partners: [...S.project('p7').partners, 'yarden'] });
+  assert.deepEqual(read('yarden'), [take, 'דיברנו על בקשה', 'החלטה של אבן הבניין']);
+  // the take's ביטול still takes back the readiness and its line
+  S.set({ me: 'yahali' });
+  undo();
+  assert.equal(S.project('p6').trl, 5);
+  assert.deepEqual(read('yahali'), ['דיברנו על בקשה', 'החלטה של אבן הבניין']);
+  quiet();
+});

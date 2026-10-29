@@ -5,7 +5,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, Faces, Pill, Seg, Classified, Health, StageStrip, Empty, RankCap, useFlip, openMenu, dueWord, dayDiff, ago } from '../ui.js';
 import { TaskTable, BoardBar, Battery, DueLines, groupTasks, matches } from '../table.js';
-import { useStore, project, person, me, canManage, canSee, canSeeDetail, canAddOutput, inProject, leads, isCommander, actsAsCommander, teamProjects, orderedProjects, personalProjects, projectTasks, projectOutputs, openSheet,
+import { useStore, project, person, me, canManage, canSee, canSeeDetail, canAddOutput, inProject, leads, isCommander, actsAsCommander, teamProjects, orderedProjects, personalProjects, projectTasks, projectOutputs, projectLog, openSheet,
   updateProject, addLog, team, getState, isOpen, typeOf } from '../store.js';
 import { status, currentStage, inOrder, HILL, CONFIDENCE, HEALTH, CLASSIFICATION, needsCommander, placeOf, isRestricted, lockedWhere, domainName } from '../card.js';
 import { OutputCard } from './outputs.js';
@@ -255,8 +255,9 @@ function Log({ p, mgr }) {
   useStore();
   const [kind, setKind] = useState('decision');
   const [text, setText] = useState('');
-  // Outside partners never see asks, so neither the decisions about them (talked() tags them with the ask).
-  const log = (p.log || []).filter((l) => !(l.ask && me().role === 'external'));
+  // Only the lines this viewer may read: none about an ask for outside partners, and the line of a readiness taken from
+  // a linked בדה"ת only for whoever sees it in full (store.projectLog).
+  const log = projectLog(p.id);
   const member = mgr || p.partners.includes(getState().me);
   return html`<div class="sec">
     ${member ? html`<form class="log-add" onSubmit=${(e) => { e.preventDefault(); if (text.trim()) { addLog(p.id, { kind, text: text.trim() }); setText(''); } }}>

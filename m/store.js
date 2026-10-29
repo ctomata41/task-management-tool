@@ -197,6 +197,16 @@ export const myTasks = () => state.tasks.filter((t) => t.owner === state.me && c
 export const projectTasks = (id) => state.tasks.filter((t) => t.project === id && canSeeTask(t));
 export const projectOutputs = (id) => (canSeeDetail(project(id)) ? state.outputs.filter((o) => o.project === id) : []);
 export const visibleOutputs = () => state.outputs.filter((o) => canSeeDetail(project(o.project)));
+// A project's log of decisions and assumptions, past the one line like the rest of its detail. Outside partners never
+// see asks, so neither the decisions about them (talked() tags them with the ask). The line of a readiness taken from a
+// linked בדה"ת names it and its TRL (takeChildTrl tags it with the child), so only whoever sees that בדה"ת in full reads
+// it (design §4.2, §6.6). Anyone else reads the block's readiness on its card, as after a change by hand, which writes
+// no line: a line of its own, even without the name, would still tell them it came from the בדה"ת.
+export const projectLog = (id, who = state.me) => {
+  const p = project(id);
+  return canSeeDetail(p, who) ? (p.log || []).filter((l) => !(l.ask && person(who).role === 'external')
+    && !(l.child && !canSeeDetail(project(l.child), who))) : [];
+};
 // What reaches the commander, across every team project: by kind (card.KIND_ORDER), then by the project's place.
 export const commanderQueue = () => teamProjects()
   .flatMap((p) => card.needsCommander(p, state.tasks).map((x) => ({ ...x, project: p.id })))
@@ -538,7 +548,7 @@ function showUndo(text, run) {
 }
 const pick = (o, keys) => Object.fromEntries(keys.map((k) => [k, o[k]]));
 const logEntry = (text) => ({ id: uid('l'), kind: 'decision', text, who: state.me, at: new Date().toISOString(), reversible: true });
-const withLog = (p, text) => [logEntry(text), ...(p.log || [])];
+const withLog = (p, text, tag = {}) => [{ ...logEntry(text), ...tag }, ...(p.log || [])];
 const canEditCard = (p) => canManage(p) && isOpen(p);
 // `fn` gets the project and returns the patch, or nothing to refuse. `tasks`: the ids of tasks that go to "בלי שלב"
 // with it; the undo brings back each one still there, in this project. `still(now)`: whether the undo may still go
@@ -793,14 +803,15 @@ export function setParent(pid, id) {
   updateProject(pid, { parent: b ? b.id : null });
   return true;
 }
-// "לעדכן כאן ל-TRL {n}": the block takes the readiness a linked בדה"ת that ended brought back (card.handBack).
+// "לעדכן כאן ל-TRL {n}": the block takes the readiness a linked בדה"ת that ended brought back (card.handBack). Its log
+// line names the בדה"ת and its TRL, so it is tagged with it: only whoever sees it in full reads the line (projectLog).
 export function takeChildTrl(pid, childId) {
   const b = project(pid);
   const c = project(childId);
   const hb = b && c && c.parent === pid && canSeeDetail(c) ? card.handBack(b, [c])[0] : null;
   if (!hb?.take) return false;
   const n = hb.trl;
-  return editCard(pid, (x) => ({ trl: n, log: withLog(x, `המוכנות עודכנה ל-TRL ${n} לפי הבדה"ת ${c.name}`) }), `המוכנות עודכנה ל-TRL ${n}`);
+  return editCard(pid, (x) => ({ trl: n, log: withLog(x, `המוכנות עודכנה ל-TRL ${n} לפי הבדה"ת ${c.name}`, { child: c.id }) }), `המוכנות עודכנה ל-TRL ${n}`);
 }
 // "לפתוח בדה"ת מקושר": the opening sheet, with the בדה"ת type, the block's place as its floor, and its readiness. Not
 // while the team has hidden the בדה"ת type from opening a project (design §2.3): the card offers no button then.

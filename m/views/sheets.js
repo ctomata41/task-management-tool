@@ -15,10 +15,10 @@ export function GateBody({ id }) {
   const s = useStore();
   const p = project(id);
   const cur = p && currentStage(p);
-  const [choice, setChoice] = useState('next');
+  const [chosen, setChoice] = useState('next');
   const [note, setNote] = useState('');
-  const [ev, setEv] = useState([]);
-  const [backTo, setBackTo] = useState('');
+  const [picks, setPicks] = useState([]);
+  const [backPick, setBackPick] = useState('');
   if (!p) return null;
   // Only whoever manages the project (its manager, the commander) closes or approves its stage.
   if (!canManage(p)) return html`<${Empty} icon="lock">רק מי שמנהל את הפרויקט סוגר את השלב שלו.</${Empty}>`;
@@ -44,6 +44,12 @@ export function GateBody({ id }) {
   const open = tasks.filter((t) => t.status !== 'done').length;
   const empty = cur.fields.filter((f) => !(f.value && f.value.trim()) && !f.unknown && !f.classified).map((f) => f.label);
   const before = p.stages.slice(0, p.stages.indexOf(cur)).filter((x) => x.state === 'done' || x.state === 'skipped');
+  // The sheet saves what it shows, from the live path: a toast's ביטול can change the current stage while it is open.
+  // A pick that no longer fits then gives way: evidence from another stage, a stage to go back to that is no longer
+  // behind this one, and going back at all when none is.
+  const choice = chosen === 'back' && !before.length ? 'next' : chosen;
+  const backTo = before.some((x) => x.id === backPick) ? backPick : '';
+  const ev = picks.filter((x) => outs.some((o) => o.id === x));
   const waits = choice === 'next' && cur.gate === 'commander' && !cmd;
   const save = () => {
     if (choice === 'stop' && !note.trim()) return;
@@ -59,8 +65,8 @@ export function GateBody({ id }) {
     <span class="lbl">מה עושים</span>
     <div class="choice-list">${Object.entries(GATE_CHOICES).map(([k, c]) => (k === 'back' && !before.length ? null : html`<button type="button" class=${'choice' + (choice === k ? ' on' : '') + (k === 'stop' ? ' danger' : '')} aria-pressed=${choice === k} onClick=${() => setChoice(k)}>
       <${Icon} name=${c.icon} size=${17} /><span class="grow">${c.label}</span>${choice === k ? html`<${Icon} name="check" size=${16} />` : null}</button>`))}</div>
-    ${choice === 'next' && outs.length ? html`<span class="lbl">הראיות לסגירה</span><div class="chips-row">${outs.map((o) => html`<button type="button" class=${'person-chip' + (ev.includes(o.id) ? ' on' : '')} aria-pressed=${ev.includes(o.id)} onClick=${() => setEv(ev.includes(o.id) ? ev.filter((x) => x !== o.id) : [...ev, o.id])}><${Icon} name=${(OUT_KIND[o.kind] || OUT_KIND.link).icon} size=${14} />${o.title}</button>`)}</div>` : null}
-    ${choice === 'back' ? html`<label class="lbl" for="g-back">לאיזה שלב</label><select id="g-back" class="input" value=${backTo} onChange=${(e) => setBackTo(e.currentTarget.value)}>
+    ${choice === 'next' && outs.length ? html`<span class="lbl">הראיות לסגירה</span><div class="chips-row">${outs.map((o) => html`<button type="button" class=${'person-chip' + (ev.includes(o.id) ? ' on' : '')} aria-pressed=${ev.includes(o.id)} onClick=${() => setPicks(ev.includes(o.id) ? ev.filter((x) => x !== o.id) : [...ev, o.id])}><${Icon} name=${(OUT_KIND[o.kind] || OUT_KIND.link).icon} size=${14} />${o.title}</button>`)}</div>` : null}
+    ${choice === 'back' ? html`<label class="lbl" for="g-back">לאיזה שלב</label><select id="g-back" class="input" value=${backTo} onChange=${(e) => setBackPick(e.currentTarget.value)}>
       <option value="">לשלב הקודם</option>${before.map((x) => html`<option value=${x.id}>${x.name}</option>`)}</select>` : null}
     <label class="lbl" for="g-note">${choice === 'stop' ? 'למה עוצרים (חובה)' : 'מה למדנו, במשפט'}</label>
     <textarea id="g-note" class="input area" rows="2" value=${note} onInput=${(e) => setNote(e.currentTarget.value)} placeholder=${choice === 'stop' ? 'עצירה היא החלטה טובה כשיודעים למה. זה נשמר בהחלטות' : 'לא חובה. נשמר בהחלטות הפרויקט'}></textarea>
