@@ -350,17 +350,21 @@
    separator is 9px tall (ui.Menu counts it). */
 .seg button.off { color: var(--fg-3); }
 /* A segment is 30px tall: its hit area reaches 44px along the block axis only, so segments side by side never share
-   one (CLAUDE.md). Not in the project's tabs, which scroll sideways on a phone and would then scroll a little down too. */
-.m-app .seg:not(.proj-tabs) button::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
+   one (CLAUDE.md). Not in a control that scrolls sideways (the project's tabs on a phone, a page's filter, next.css):
+   it would then scroll a little down too, and take the wheel or the swipe meant for the page. */
+.m-app .seg:not(.proj-tabs, .page > .seg) button::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
 .menu-item.off { color: var(--fg-3); cursor: default; }
 .m-app .menu .menu-label { white-space: normal; } /* a long label or reason wraps, read whole (ui.Menu counts the lines) */
 .m-app .menu .menu-item.off:active:not(:has(button:active, a:active, input:active)) { background: transparent; } /* no press light (app/styles.css) */
 .choice.off { cursor: default; }
 .choice.off:active:not(:has(button:active, a:active, input:active)) { background: transparent; } /* a place the type refuses (views/newproject.js) */
 .menu-sep { block-size: 1px; margin-block: 4px; margin-inline: 10px; background: var(--line); }
-/* The confirm sheet (views/confirm.js): what a change of place does, one line each, then who sees what. */
+/* The confirm sheet (views/confirm.js): what a change of place does, one line each, then who sees what. Its two
+   buttons are 44px targets. */
 .confirm .gate-facts { gap: 6px; }
 .confirm .note-band { margin-block-start: 12px; }
+.confirm .form-actions .btn { position: relative; }
+.confirm .form-actions .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
 @media (prefers-contrast: more) {
   .card2, .ocard2, .qadd, .m-empty, .focus-empty, .opt-card, .person-chip, .hill-opt, .conf-opt, .st-opt { box-shadow: 0 0 0 1px var(--line-strong); }
   .seg-bar { box-shadow: inset 0 0 0 1px var(--line-strong); }

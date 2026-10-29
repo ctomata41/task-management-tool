@@ -21,12 +21,13 @@
 .np-group { padding: 0 14px 6px; font-size: 0.75rem; font-weight: 600; color: var(--fg-3); letter-spacing: 0.01em; }
 .np-types .tpl-list + .np-group { margin-block-start: 14px; }
 .np-sum .grow { gap: 2px; }
-.np-sum-l { font-size: 0.8125rem; color: var(--fg-2); }
-.np-sum-l.np-gates { color: var(--fg-3); }
+.np-sum-l { font-size: 0.8125rem; color: var(--fg-2); } /* the stages and the gates: --fg-3 is under 4.5:1 on the fill */
 .np-change { flex: none; align-self: center; font-size: 0.875rem; font-weight: 500; color: var(--accent-2); }
 
-/* The three places. One the type does not allow stays focusable and in view, dimmed, with its reason under it. */
+/* The three places. One the type does not allow stays focusable and in view, dimmed, with its reason under it. A row's
+   hint (as a type's in the list) is --fg-2: --fg-3 is under 4.5:1 on the fill, and more so on a chosen row's tint. */
 .np-places .choice .grow { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.np :is(.tpl-opt, .choice:not(.off)) .muted { color: var(--fg-2); }
 .np-places .choice.off strong { color: var(--fg-3); }
 .np-no { margin-block-start: 2px; font-size: 0.75rem; color: var(--fg-2); letter-spacing: 0.01em; }
 @media (hover: hover) {
@@ -54,15 +55,18 @@
 .np-chip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .np-chips .qchip.on { background: var(--accent-soft); color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); font-weight: 600; box-shadow: inset 0 0 0 1.5px var(--accent); }
 
-/* People chips and the two buttons: 44px targets. */
+/* People chips and the two buttons: 44px targets. The outsider's fields open under the chips, clear of their hit
+   areas, so a tap on a field's top edge lands in the field. */
 .np-people { gap: 10px 6px; }
 .np-people .person-chip { position: relative; }
 .np-people .person-chip::after { content: ''; position: absolute; inset-block: -5px; inset-inline: -3px; }
+.np .ext-form { margin-block-start: 8px; }
 .np .form-actions .btn { position: relative; }
 .np .form-actions .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
 
-/* More contrast: the grouped lists get a defined edge. */
+/* More contrast: the grouped lists get a defined edge, and "להחליף" darker text on their darker fill. */
 @media (prefers-contrast: more) {
   .np .tpl-list, .np .choice-list { box-shadow: 0 0 0 1px var(--line-strong); }
+  .np-change { color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); }
   .np-chips .qchip:not(.on) { box-shadow: inset 0 0 0 1px var(--line-strong); }
 }

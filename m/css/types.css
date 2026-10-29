@@ -24,7 +24,7 @@
 .ty-more { margin-inline-start: 16px; }
 
 /* ---------- one type ---------- */
-.ty-back { margin-block-start: 8px; } /* clear of the bar, hit area included */
+.ty-back { margin-block-start: 8px; color: var(--accent-2); } /* clear of the bar, hit area included; 4.5:1 on --bg */
 .ty-back + .ty-head { margin-block-start: -12px; }
 .ty-title { min-width: 0; }
 .ty-title h1 { overflow-wrap: anywhere; }

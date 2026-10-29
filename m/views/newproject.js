@@ -54,9 +54,10 @@ export function NewProjectBody({ preset = null }) {
   const cmd = isCommander();
   const L = lib();
   const [scope, setScope] = useState('team');
-  const [typeId, setTypeId] = useState(() => (preset && typeById(L, preset.type) ? preset.type : null));
+  // A preset's type is chosen unless the team hid it from opening a project (§2.3): then nothing is, as in the list.
+  const [typeId, setTypeId] = useState(() => { const pt = preset ? typeById(L, preset.type) : null; return pt && !pt.hidden ? pt.id : null; });
   const [listOpen, setListOpen] = useState(false);
-  const [placePick, setPlacePick] = useState(null); // a place pressed here; kept while the type allows it
+  const [placePick, setPlacePick] = useState(null); // a place pressed here; dropped once a type refuses it
   const [domainPick, setDomainPick] = useState(undefined); // undefined until a chip is touched: then the type's no longer moves it
   const [name, setName] = useState('');
   const [link, setLink] = useState('');
@@ -90,7 +91,12 @@ export function NewProjectBody({ preset = null }) {
   const claude = !personal && isClaudeType(t);
   const ready = !!name.trim() && (personal || (!!t && !!place));
 
-  const pickType = (id) => { setTypeId(id); setListOpen(false); toSummary.current = true; };
+  // A new type keeps the place pressed here if it allows it. Otherwise its own default takes over, and the pick is gone
+  // for good: a type picked after that starts from its default too, never from a place pressed for an earlier type.
+  const pickType = (id) => {
+    if (placePick && placeRefusal(typeById(L, id), placePick, { minPlace })) setPlacePick(null);
+    setTypeId(id); setListOpen(false); toSummary.current = true;
+  };
   const toggle = (id) => setPartners(partners.includes(id) ? partners.filter((x) => x !== id) : [...partners, id]);
   // Outside partners don't see a project that is all on the classified network, so there they are not offered.
   const pool = [...s.people.filter((x) => x.id !== manager), ...exts].filter((x) => !(there && x.role === 'external'));

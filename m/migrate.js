@@ -46,11 +46,13 @@ export function toV3(saved) {
 // v3 → v4: every stage field gets an id that is the same on every load (nothing is written back until the next change,
 // and a field edited after a reload must still be found), and people get the permissions the sample gives them where
 // they have none yet (the stand-in for Yoash's grant until sign-in). Running it again changes nothing. Places, domains,
-// facts and the rest are only read: a project without them reads as before (card.placeOf and the rest).
+// facts and the rest are only read: a project without them reads as before (card.placeOf and the rest). A field that
+// is not a field passes through as it was, so this step never stops a load the build before it could make.
+const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
 export function upgradeV4(s, seedPeople = []) {
   if ((s.v || 2) >= 4) return s;
   const projects = (s.projects || []).map((p) => ({ ...p, stages: (p.stages || []).map((st) => ({ ...st,
-    fields: (st.fields || []).map((f, i) => (f.id ? f : { ...f, id: `${st.id}f${i}` })) })) }));
+    fields: (st.fields || []).map((f, i) => (isObj(f) && !f.id ? { ...f, id: `${st.id}f${i}` } : f)) })) }));
   const people = (s.people || []).map((x) => { const y = seedPeople.find((z) => z.id === x.id);
     return 'perms' in x || !y?.perms ? x : { ...x, perms: [...y.perms] }; });
   return { ...s, v: 4, people, projects };

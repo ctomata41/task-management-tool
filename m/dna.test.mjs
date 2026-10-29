@@ -1,7 +1,8 @@
 // The project types (their DNA), places, who sees what and the path rules, run with: node --test m/*.test.mjs
-// The numbers are the items of design §11.1.
-import test from 'node:test';
+// The numbers are the items of design §11.1. At the end, the store's rules for them (m/store.js).
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
+import * as nodeModule from 'node:module';
 import {
   STAGES, TEMPLATES, CTO_TYPES, EMPTY_LIB, PLACES, LOCKED_LINE_SHOWS_STAGE, library, typeById, openTypes, typeStages,
   stageLibrary, gateCount, classifiedLabels, checkTypePatch, newProjectParts, retypeParts, linkedBdtPreset, suggest, stagesFromType,
@@ -582,4 +583,148 @@ test('checkTypePatch: editable keys, allowed places, and the commander\'s gates'
   const edited = stageLibrary(L1, T('block', L1));
   assert.deepEqual(edited.slice(0, 8).map((s) => s.key), [...typeStages(T('block', L1)).map((s) => s.key), 'signal']);
   assert.equal(new Set(edited.map((s) => s.key)).size, edited.length);
+});
+
+// ---------- the store's rules (m/store.js) ----------
+// The store runs here with its two browser imports stubbed (preact/hooks, app/motion.js) and storage in a Map. It loads
+// once, with an m.lib whose log holds lines that are not lines, as a tab may find it.
+const mem = new Map();
+const LINE = { id: 'l1', at: '2026-10-29T10:00:00.000Z', who: 'yahali', text: 'שורה ביומן' };
+let S = null;
+let libAtLoad = null;
+async function store() {
+  if (S) return S;
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: {
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); }, removeItem: (k) => { mem.delete(k); } } });
+  mem.set('m.lib', JSON.stringify({ v: 1, types: {}, log: [null, LINE, 7, 'שורה', []] }));
+  const src = (code) => `data:text/javascript,${encodeURIComponent(code)}`;
+  const stubs = { hooks: src('export const useState = (v) => [v, () => {}]; export const useEffect = () => {};'), motion: src('export const haptic = () => {};') };
+  const hooks = `const stubs = ${JSON.stringify(stubs)};
+    export function resolve(spec, ctx, next) {
+      const url = spec === 'preact/hooks' ? stubs.hooks : spec.endsWith('/app/motion.js') ? stubs.motion : null;
+      return url ? { url, shortCircuit: true } : next(spec, ctx);
+    }`;
+  if (typeof nodeModule.registerHooks === 'function') nodeModule.registerHooks(await import(src(hooks)));
+  else nodeModule.register(src(hooks));
+  S = await import('./store.js');
+  libAtLoad = S.getState().lib;
+  return S;
+}
+// Each toast holds a timer, so none is left behind.
+const quiet = () => { for (const t of S.getState().toasts) S.dismissToast(t.id); };
+after(() => { if (S) quiet(); });
+// The sample again, seen as `me`.
+function fresh(me) { S.resetSample(); S.set({ me }); quiet(); }
+// The structural toasts that can still be taken back, and the latest one's ביטול pressed, as ui.Toast does.
+const undoable = () => S.getState().toasts.filter((t) => t.action?.label === 'ביטול').map((t) => t.text);
+function undo() {
+  const t = S.getState().toasts.filter((x) => x.action?.label === 'ביטול').at(-1);
+  assert.ok(t, 'no toast with ביטול');
+  S.dismissToast(t.id);
+  t.action.run();
+}
+
+test('store: a project made שמור / סודי keeps no link out, however it got one (design §9)', async () => {
+  await store();
+  // the Claude project changes type, then its manager raises it: the link goes with the raise
+  fresh('yarden');
+  const link = S.project('p8').link;
+  assert.ok(link);
+  assert.equal(S.setType('p8', 'tool'), true);
+  assert.equal(S.project('p8').link, link); // still בלמ"ס, so it stays
+  assert.equal(S.setPlace('p8', 'both'), true);
+  assert.equal(isRestricted(S.project('p8')), true);
+  assert.equal(S.project('p8').link, null);
+  assert.equal(S.setLink('p8', link), false);
+  // a link set on another type's project, then a raise
+  fresh('yahali');
+  assert.equal(S.setLink('p1', '/next/'), true);
+  assert.equal(S.setPlace('p1', 'there'), true);
+  assert.equal(S.project('p1').link, null);
+  // a project that never had a link gets none
+  fresh('yarden');
+  assert.equal(S.setPlace('p3', 'both'), true);
+  assert.equal('link' in S.project('p3'), false);
+  quiet();
+});
+
+test('store: removing a stage, its ביטול brings back only the tasks still in the project\'s "בלי שלב" (design §7)', async () => {
+  await store();
+  fresh('yahali');
+  assert.equal(S.addStage('p1', null, 'שלב בדיקה'), true);
+  const sid = S.project('p1').stages.at(-1).id;
+  const stays = S.addTask({ title: 'נשארת בפרויקט', project: 'p1', stage: sid, owner: 'yahali' });
+  const leaves = S.addTask({ title: 'יוצאת מהפרויקט', project: 'p1', stage: sid, owner: 'yahali' });
+  const task = (id) => S.getState().tasks.find((t) => t.id === id);
+  assert.equal(S.removeStage('p1', sid), true);
+  assert.deepEqual([task(stays.id).stage, task(leaves.id).stage], [null, null]);
+  // out of the project, as the task sheet's "בלי פרויקט" does
+  S.updateTask(leaves.id, { project: null, stage: null });
+  undo();
+  assert.ok(S.project('p1').stages.some((s) => s.id === sid));
+  assert.equal(task(stays.id).stage, sid);
+  assert.deepEqual([task(leaves.id).project, task(leaves.id).stage], [null, null]);
+  quiet();
+});
+
+test('store: adding a field, a fact or readiness has its own ביטול, and it replaces the toast before it (design §7)', async () => {
+  await store();
+  fresh('yahali');
+  const p6 = () => S.project('p6');
+  const st = p6().stages.find((s) => s.fields.length);
+  const labels = () => p6().stages.find((s) => s.id === st.id).fields.map((f) => f.label);
+  assert.equal(S.removeField('p6', st.id, st.fields[0].id), true);
+  const removed = labels();
+  assert.deepEqual(undoable(), [`השדה '${st.fields[0].label}' הוסר`]);
+  // the add's toast is the only one live, and its ביטול takes back the add alone
+  assert.equal(S.addField('p6', st.id, 'שדה בדיקה'), true);
+  assert.deepEqual(undoable(), ["השדה 'שדה בדיקה' נוסף"]);
+  assert.deepEqual(labels(), [...removed, 'שדה בדיקה']);
+  undo();
+  assert.deepEqual(labels(), removed);
+  const facts = p6().facts.length;
+  assert.equal(S.addFact('p6', 'עובדה בדיקה'), true);
+  assert.deepEqual(undoable(), ["השדה 'עובדה בדיקה' נוסף"]);
+  assert.equal(p6().facts.length, facts + 1);
+  undo();
+  assert.equal(p6().facts.length, facts);
+  assert.equal(S.removeTrl('p6'), true);
+  assert.equal(S.addTrl('p6'), true);
+  assert.deepEqual(undoable(), ['המוכנות נוספה']);
+  assert.equal(p6().trl, null);
+  undo();
+  assert.equal(p6().trl, undefined);
+  quiet();
+});
+
+test('store: a log line in m.lib that is not a line is left out, on load and on the next edit (design §2.7)', async () => {
+  await store();
+  assert.deepEqual(libAtLoad.log, [LINE]);
+  fresh('yahali');
+  assert.deepEqual(S.typeLog().map((l) => l.text), [LINE.text]);
+  // another tab left a broken line: the next edit reads m.lib again and leaves it out
+  mem.set('m.lib', JSON.stringify({ v: 1, types: {}, log: [LINE, null] }));
+  assert.equal(S.setTypeDef('block', { hint: 'רמז בדיקה' }), true);
+  const saved = JSON.parse(mem.get('m.lib'));
+  assert.deepEqual(saved.log.map((l) => l.text), [LINE.text, `הסוג '${T('block').name}' עודכן`]);
+  assert.deepEqual(S.getState().lib.log, saved.log);
+  // the code's types again, for whatever runs next
+  mem.delete('m.lib');
+  S.set({ lib: EMPTY_LIB });
+  quiet();
+});
+
+test('store: a hidden בדה"ת type is not opened from a building block, and is again once it is offered (design §2.3, §6.6)', async () => {
+  await store();
+  fresh('yahali');
+  assert.equal(S.hideType('bdt', true), true);
+  assert.equal(S.openLinkedBdt('p6'), false);
+  assert.equal(S.getState().sheet, null);
+  assert.equal(S.hideType('bdt', false), true);
+  assert.equal(S.openLinkedBdt('p6'), true);
+  assert.equal(S.getState().sheet?.preset?.type, 'bdt');
+  S.closeSheet();
+  mem.delete('m.lib');
+  S.set({ lib: EMPTY_LIB });
+  quiet();
 });

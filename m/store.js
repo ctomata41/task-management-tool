@@ -21,11 +21,12 @@ const uid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).s
 // The sample, through the same last migration step as a saved state (m/migrate.js).
 const fresh = () => freshState();
 // m.lib as saved, or the empty library when it is missing or not the right shape. A broken type inside it is the
-// library's to clean (card.library), so it never breaks the app.
+// library's to clean (card.library), so it never breaks the app; a log line without its text or a real time is left out.
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+const isLogLine = (x) => isObj(x) && typeof x.text === 'string' && !Number.isNaN(Date.parse(x.at));
 function readLib() {
   const x = LS.get(LIB_KEY);
-  return isObj(x) && isObj(x.types) ? { v: 1, types: x.types, log: Array.isArray(x.log) ? x.log.slice(-20) : [] } : card.EMPTY_LIB;
+  return isObj(x) && isObj(x.types) ? { v: 1, types: x.types, log: Array.isArray(x.log) ? x.log.filter(isLogLine).slice(-20) : [] } : card.EMPTY_LIB;
 }
 
 const saved = LS.get(KEY);
@@ -534,8 +535,9 @@ const logEntry = (text) => ({ id: uid('l'), kind: 'decision', text, who: state.m
 const withLog = (p, text) => [logEntry(text), ...(p.log || [])];
 const canEditCard = (p) => canManage(p) && isOpen(p);
 // `fn` gets the project and returns the patch, or nothing to refuse. `tasks`: the ids of tasks that go to "בלי שלב"
-// with it; the undo brings back each one still there. `still(now)`: whether the undo may still go in, for a change
-// whose undo depends on more than the keys it touched. With no `say`, or `undo: false`, there is no toast.
+// with it; the undo brings back each one still there, in this project. `still(now)`: whether the undo may still go
+// in, for a change whose undo depends on more than the keys it touched. With no `say`, or `undo: false`, there is no
+// toast.
 function editCard(pid, fn, say, { undo = true, tasks = null, still = null } = {}) {
   const before = project(pid);
   if (!canEditCard(before)) return false;
@@ -551,7 +553,7 @@ function editCard(pid, fn, say, { undo = true, tasks = null, still = null } = {}
       const now = project(pid);
       if (!canEditCard(now) || keys.some((k) => now[k] !== after[k]) || (still && !still(now))) { toast('אי אפשר לבטל: הכרטיס השתנה מאז'); return; }
       updateProject(pid, pick(before, keys), { quiet: true });
-      if (moved.length) commit((s) => ({ tasks: s.tasks.map((t) => { const m = moved.find((x) => x.id === t.id); return m && t.stage === null ? { ...t, stage: m.stage } : t; }) }));
+      if (moved.length) commit((s) => ({ tasks: s.tasks.map((t) => { const m = moved.find((x) => x.id === t.id); return m && t.project === pid && t.stage === null ? { ...t, stage: m.stage } : t; }) }));
     });
   }
   return true;
@@ -593,7 +595,7 @@ export function addField(pid, sid, label) {
   return editCard(pid, (p) => {
     const f = { id: `${sid}f${uid('')}`, label: name, value: '', ...(card.placeOf(p) === 'there' ? { classified: true } : {}) };
     return { stages: p.stages.map((s) => (s.id === sid ? { ...s, fields: [...s.fields, f] } : s)) };
-  }, null);
+  }, `השדה '${name}' נוסף`);
 }
 export function removeField(pid, sid, fid) {
   const f = stageOf(pid, sid)?.fields.find((x) => x.id === fid);
@@ -696,7 +698,7 @@ export function renameFact(pid, fid, label) {
 export function addFact(pid, label) {
   const name = String(label ?? '').trim();
   if (!name) return false;
-  return editCard(pid, (p) => ({ facts: [...(p.facts || []), { id: uid('f'), label: name, hint: '', kind: 'text', value: '', ...(card.placeOf(p) === 'there' ? { classified: true } : {}) }] }), null);
+  return editCard(pid, (p) => ({ facts: [...(p.facts || []), { id: uid('f'), label: name, hint: '', kind: 'text', value: '', ...(card.placeOf(p) === 'there' ? { classified: true } : {}) }] }), `השדה '${name}' נוסף`);
 }
 export function removeFact(pid, fid) {
   const f = factOf(project(pid), fid);
@@ -719,7 +721,7 @@ export function setTrlTarget(pid, n) {
 export function addTrl(pid) {
   const p = project(pid);
   if (!p || p.trl !== undefined) return false;
-  return editCard(pid, () => ({ trl: null, trlTarget: typeOf(p)?.trlTarget ?? null }), null);
+  return editCard(pid, () => ({ trl: null, trlTarget: typeOf(p)?.trlTarget ?? null }), 'המוכנות נוספה');
 }
 export function removeTrl(pid) {
   const p = project(pid);
@@ -736,7 +738,8 @@ export function setDomain(pid, d) {
 }
 // Where the materials live (design §4.3), always after the confirm sheet: placeRule again, then place and level
 // together, so the hand-over of tasks runs. Lowering to בלמ"ס is the commander's, with a reason. It never rewrites
-// marks, and has no undo: it changes who sees what.
+// marks, and has no undo: it changes who sees what. A project it makes שמור / סודי drops its link out, which setLink
+// would never give it there: the work with Claude stays בלמ"ס (design §9).
 export function setPlace(pid, to, { reason = '' } = {}) {
   const p = project(pid);
   if (!p || !card.PLACES[to] || card.placeOf(p) === to || !placeCheck(pid, to).ok) return false;
@@ -745,7 +748,9 @@ export function setPlace(pid, to, { reason = '' } = {}) {
   if (lower && !why) return false;
   const label = card.PLACES[to].label;
   const text = lower ? `הפרויקט עבר לבלמ"ס: ${why}` : `הפרויקט עבר ל'${label}'`;
-  const { handed } = updateProject(pid, (x) => ({ place: to, classification: card.PLACES[to].level, log: withLog(x, text) }), { quiet: true });
+  const closed = card.isRestricted({ place: to });
+  const { handed } = updateProject(pid, (x) => ({ place: to, classification: card.PLACES[to].level, log: withLog(x, text),
+    ...(closed && x.link ? { link: null } : {}) }), { quiet: true });
   const m = project(pid).manager;
   const tasks = handed.length ? ` · המשימות הפתוחות של ${joinNames(handed)} עברו ${m === state.me ? 'אליך' : `ל${person(m).name}`}` : '';
   toast(lower ? 'הפרויקט עבר לבלמ"ס' : `הפרויקט עבר ל'${label}'${tasks}`);
@@ -791,10 +796,11 @@ export function takeChildTrl(pid, childId) {
   const n = hb.trl;
   return editCard(pid, (x) => ({ trl: n, log: withLog(x, `המוכנות עודכנה ל-TRL ${n} לפי הבדה"ת ${c.name}`) }), `המוכנות עודכנה ל-TRL ${n}`);
 }
-// "לפתוח בדה"ת מקושר": the opening sheet, with the בדה"ת type, the block's place as its floor, and its readiness.
+// "לפתוח בדה"ת מקושר": the opening sheet, with the בדה"ת type, the block's place as its floor, and its readiness. Not
+// while the team has hidden the בדה"ת type from opening a project (design §2.3): the card offers no button then.
 export function openLinkedBdt(pid) {
   const b = project(pid);
-  if (!canEditCard(b) || b.personal) return false;
+  if (!canEditCard(b) || b.personal || card.typeById(lib(), 'bdt')?.hidden) return false;
   openSheet('newproject', { preset: card.linkedBdtPreset(lib(), b) });
   return true;
 }

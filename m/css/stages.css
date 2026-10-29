@@ -18,7 +18,7 @@
 .st-why { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 0.8125rem; color: var(--fg-2); }
 .st-why:not(:empty) { padding: 8px 12px; border-radius: 12px; background: var(--fill); }
 .stage > .st-why:not(:empty) { margin-block-end: 10px; margin-inline-start: 34px; }
-.st-why .link-btn { align-self: baseline; font-size: 0.8125rem; }
+.st-why .link-btn { align-self: baseline; font-size: 0.8125rem; color: var(--accent-2); } /* 4.5:1 on the fill */
 
 /* One stage in edit mode: its name, its exit question, who closes it, and its fields. */
 .st-editor { display: flex; flex-direction: column; gap: 10px; }
@@ -68,13 +68,16 @@
 
 @media (max-width: 900px) {
   /* On a phone the controls take a line of their own under the stage's name, so every stage has them in the same place.
-     The lines a stage's line wraps into sit far enough apart that their 44px hit areas don't meet. */
+     The lines a stage's line wraps into sit far enough apart that their 44px hit areas don't meet, and the controls end
+     8px above the next stage, so their hit areas stay clear of its name's. */
   .stage-line { row-gap: 14px; }
-  .stage-edit { flex-basis: 100%; justify-content: flex-end; margin-block-start: 4px; }
+  .stage-edit { flex-basis: 100%; justify-content: flex-end; margin-block: 4px; }
   .stage > .st-why:not(:empty) { margin-inline-start: 0; }
   .st-hint, .sf-add { padding-inline-start: 0; }
 }
 @media (prefers-contrast: more) {
   .st-why:not(:empty) { color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong); }
+  .st-why .link-btn { color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); } /* the fill gets darker here */
   .st-btn[aria-disabled="true"] { opacity: 0.55; }
+  .add-stage .qchip { box-shadow: inset 0 0 0 1px var(--line-strong); } /* as the types page's library chips */
 }

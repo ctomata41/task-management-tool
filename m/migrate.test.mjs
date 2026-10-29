@@ -78,6 +78,16 @@ test('26 a v3 state: only field ids, perms and v change', () => {
   assert.equal('perms' in upgradeV4(v3()).people.find((x) => x.id === 'yahali'), false);
 });
 
+test('a stage field that is not a field passes through v4 as it was, so the load goes on as the v3 build\'s did', () => {
+  const s = v3();
+  s.projects[0].stages[2].fields = [null, { label: 'בלי מזהה', value: '' }, 'טקסט', [], { id: 'keep-me', label: 'עם מזהה', value: '' }];
+  let out;
+  assert.doesNotThrow(() => { out = migrate(clone(s)); });
+  assert.deepEqual(out.projects[0].stages[2].fields, [null, { label: 'בלי מזהה', value: '', id: 'scf1' }, 'טקסט', [], { id: 'keep-me', label: 'עם מזהה', value: '' }]);
+  assert.deepEqual(out.projects[0].stages[1].fields.map((f) => f.id), ['sbf0', 'sbf1']);
+  assert.deepEqual(migrate(clone(out)), out);
+});
+
 test('27 a v2 state goes through toV3, then v4', () => {
   const v2 = clone(v3());
   delete v2.v;

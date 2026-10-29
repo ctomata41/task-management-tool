@@ -92,9 +92,15 @@ export function useFlip(listRef) {
     if (reducedMotion()) {
       for (const el of kept) {
         if (Math.abs(prev.get(el) - now.get(el)) < 0.5) continue;
+        // The spring sets the opacity on every frame. A row's own CSS transition (for its background, which reduced
+        // motion turns into one on opacity too, app/styles.css) would smooth each step away, so it is off while the row
+        // fades in; the latest fade puts it back.
         const m = motion(el);
+        const mark = {};
+        el.__fade = mark;
+        el.style.transition = 'none';
         m.set({ opacity: 0 });
-        m.to({ opacity: 1 }, { response: 0.2 });
+        m.to({ opacity: 1 }, { response: 0.2 }).then(() => { if (el.__fade === mark) el.style.transition = ''; });
       }
       return;
     }

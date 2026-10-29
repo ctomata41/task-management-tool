@@ -12,7 +12,7 @@ import { html, Icon, Text, openMenu } from '../ui.js';
 import { useStore, project, lib, typeOf, isOpen, canSee, canSeeDetail, openSheet, placeCheck, updateProject, setType, setDomain, setMark,
   setFact, addFact, renameFact, removeFact, setTrl, setTrlTarget, addTrl, removeTrl, setLink, setParent, takeChildTrl } from '../store.js';
 import { CORE, TRL_HINT, PLACES, PLACE_ORDER, DOMAINS, NO_DOMAIN, domainTitle, openTypes, typeFitWhy, placeOf, isRestricted, coreHint,
-  cardFill, inValley, handBack, nextLink } from '../card.js';
+  cardFill, inValley, handBack, currentStage, nextLink } from '../card.js';
 
 const MARKABLE = ['forWhom', 'success', 'stopRule']; // `what` is never marked
 const MARK = { unknown: 'עוד לא ידוע', classified: 'ברשת המסווגת' };
@@ -141,8 +141,11 @@ function Row({ label, value, onMenu, href }) {
 
 // What the block's linked בדה"תים brought back (card.handBack). Whoever sees a בדה"ת in full reads its name, its TRL
 // and its recommendation; anyone else only that a linked one ended. The block's manager can take a higher TRL.
+// Whoever sees a בדה"ת only as its line must not learn its TRL (design §4.2), not even from whether it shows here:
+// before the block's flight stage a row means a higher TRL to take, so for them the row waits for the flight stage.
 function HandBack({ p, kids, can }) {
-  const list = handBack(p, kids);
+  const flight = currentStage(p)?.key === 'flight';
+  const list = handBack(p, kids).filter((b) => flight || canSeeDetail(project(b.id)));
   if (!list.length) return null;
   return html`<div class="note-band co-back"><${Icon} name="link" size=${16} /><div class="grow co-back-list">${list.map((b) => {
     const c = project(b.id);

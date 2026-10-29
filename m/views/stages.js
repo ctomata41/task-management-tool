@@ -7,7 +7,7 @@ import { useState, useRef, useEffect } from 'preact/hooks';
 import { html, Icon, StageStrip, Text, Seg, useFlip, keepFocus, openMenu, dueWord, dayDiff, ago, dateInput, OUT_KIND } from '../ui.js';
 import { projectOutputs, openSheet, setField, setStage, renameStage, setExit, setGate, addField, renameField, removeField, addStage,
   moveStage, skipStage, unskipStage, removeStage, openLinkedBdt, isOpen, actsAsCommander, commander, sayFill, lib, typeOf } from '../store.js';
-import { STAGES, CTO_TYPES, TEMPLATES, isRestricted, stageRule, gateRule, typeStages, stageLibrary, LOCKED_LINE_SHOWS_STAGE } from '../card.js';
+import { STAGES, CTO_TYPES, TEMPLATES, isRestricted, stageRule, gateRule, typeById, typeStages, stageLibrary, LOCKED_LINE_SHOWS_STAGE } from '../card.js';
 
 // In a שמור / סודי project the current stage's name is on the one line the rest of the team sees (card.lockedWhere).
 const NAME_HINT = 'שם השלב גלוי גם למי שלא בפרויקט. רק שם בלמ"ס.';
@@ -60,8 +60,10 @@ function StageRow({ p, st, i, mgr, edit, sig, outs }) {
   // Saved when cleared or inside the field's range, not while a year is half typed: "0002-11-06" is no target.
   const setTarget = (e) => { const f = e.currentTarget; setDraft(f.value); if (!f.validity.rangeUnderflow && !f.validity.rangeOverflow) setStage(p.id, st.id, { target: f.value || null }); };
   const live = st.state === 'todo' || cur;
-  // The block's flight stage opens a linked בדה"ת (design §6.6), for whoever manages the block while the stage is ahead or now.
-  const linkBdt = mgr && isOpen(p) && !p.personal && p.template === 'block' && st.key === 'flight' && (st.state === 'todo' || st.state === 'active');
+  // The block's flight stage opens a linked בדה"ת (design §6.6), for whoever manages the block while the stage is ahead or
+  // now, and while the team hasn't hidden the בדה"ת type from opening a project (§2.3).
+  const linkBdt = mgr && isOpen(p) && !p.personal && p.template === 'block' && st.key === 'flight' && (st.state === 'todo' || st.state === 'active')
+    && !typeById(lib(), 'bdt')?.hidden;
   return html`<li class=${'stage s-' + st.state + (open ? ' open' : '')}>
     <div class="stage-line">
       <span class="stage-ic">${icon ? html`<${Icon} name=${icon} size=${14} />` : i + 1}</span>
@@ -88,7 +90,8 @@ function StageRow({ p, st, i, mgr, edit, sig, outs }) {
 
 // Move up, move down, skip and remove, on a stage that is ahead or now. Each asks card.stageRule: a control that may
 // act runs its store action; one that may not shows its reason under the row. A move with no stage on that side has
-// nothing to say, so it only keeps its place. Every control is keyed, so the one pressed stays the same element.
+// nothing to say, so it only keeps its place. Every control is keyed, so the one pressed stays the same element. A row
+// that moves is put back in the list, though, which takes focus off it: each action hands focus back into the row.
 function PathControls({ p, st, i, say }) {
   const cmd = actsAsCommander(p); // in a personal project its owner decides its gates
   const ctl = (action, icon, label, aria, run, cls = '') => {
@@ -104,8 +107,8 @@ function PathControls({ p, st, i, say }) {
   };
   const edge = (action) => html`<span key=${action} class="st-btn st-ghost" aria-hidden="true"></span>`;
   return html`<span class="stage-edit">
-    ${i > 0 ? ctl('up', 'chevronUp', 'להזיז למעלה', `להזיז את '${st.name}' למעלה`, () => moveStage(p.id, st.id, -1)) : edge('up')}
-    ${i < p.stages.length - 1 ? ctl('down', 'chevronDown', 'להזיז למטה', `להזיז את '${st.name}' למטה`, () => moveStage(p.id, st.id, 1)) : edge('down')}
+    ${i > 0 ? ctl('up', 'chevronUp', 'להזיז למעלה', `להזיז את '${st.name}' למעלה`, (e) => { holdFocus(e, '.st-btn[data-a="up"]'); moveStage(p.id, st.id, -1); }) : edge('up')}
+    ${i < p.stages.length - 1 ? ctl('down', 'chevronDown', 'להזיז למטה', `להזיז את '${st.name}' למטה`, (e) => { holdFocus(e, '.st-btn[data-a="down"]'); moveStage(p.id, st.id, 1); }) : edge('down')}
     ${ctl('skip', 'chevronLeft', 'לדלג על השלב', `לדלג על '${st.name}'`, (e) => { holdFocus(e, '.st-unskip'); skipStage(p.id, st.id); })}
     ${ctl('remove', 'trash', 'להסיר את השלב', `להסיר את '${st.name}'`, (e) => { keepFocus(e, 'li.stage'); removeStage(p.id, st.id); }, ' danger')}
   </span>`;
@@ -210,6 +213,7 @@ function libraryItems(list, t) {
 
 // Adding goes at the end of the path: a stage of the project's type it doesn't have yet (by key), any stage from the
 // library, or one of the team's own by name. A chip that was added goes away, and focus moves to the chip now in its place.
+// The chips are one group, named by the line over them ("להוסיף מהסוג:"), or, with no such line, as adding a stage.
 function AddStage({ p }) {
   const [name, setName] = useState('');
   const t = typeOf(p);
@@ -220,8 +224,8 @@ function AddStage({ p }) {
   const pick = (e) => openMenu(e, libraryItems(more, t), { selected: null, onPick: (k) => addStage(p.id, k) });
   const own = (e) => { e.preventDefault(); const v = name.trim(); if (v && addStage(p.id, null, v)) setName(''); };
   return html`<div class="add-stage">
-    ${mine.length ? html`<div class="muted small">להוסיף מהסוג:</div>` : null}
-    ${mine.length || more.length ? html`<div class="chips-row">
+    ${mine.length ? html`<div class="muted small" id="st-add-l">להוסיף מהסוג:</div>` : null}
+    ${mine.length || more.length ? html`<div class="chips-row" role="group" aria-labelledby=${mine.length ? 'st-add-l' : null} aria-label=${mine.length ? null : 'להוסיף שלב'}>
       ${mine.map((d) => html`<button type="button" key=${d.key} class="qchip" onClick=${(e) => { keepFocus(e, '.qchip'); addStage(p.id, d.key); }}><${Icon} name="plus" size=${13} /><span class="st-chip-t">${d.name}</span></button>`)}
       ${more.length ? html`<button type="button" key="more" class="qchip lib-more" aria-haspopup="menu" onClick=${pick}>עוד מהספרייה…</button>` : null}</div>` : null}
     <form class="inline-form" onSubmit=${own}>
