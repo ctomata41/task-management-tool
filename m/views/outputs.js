@@ -1,10 +1,10 @@
 // Outputs: everything a project produced, in one place for its partners. A pilot or final output can be opened to the
 // whole team for feedback. In a restricted project an output is either unclassified material or a pointer: a name and
-// where it lives on the classified network, never the content.
+// where it lives on the classified network, never the content. In a project that is all there, only pointers.
 import { useState } from 'preact/hooks';
 import { html, Icon, Avatar, Pill, Seg, ProjectTag, Empty, ago, OUT_KIND, LEVEL } from '../ui.js';
 import { useStore, project, person, canSeeDetail, canManage, visibleOutputs, openSheet, closeSheet, updateOutput, addFeedback, addOutput, toast } from '../store.js';
-import { currentStage } from '../card.js';
+import { currentStage, placeOf, isRestricted } from '../card.js';
 
 const KIND_COLOR = { doc: 'var(--accent)', sheet: 'var(--s-done)', deck: 'var(--s-progress)', meeting: 'var(--s-waiting)', image: 'var(--h-risk)', link: 'var(--s-todo)', pointer: 'var(--fg-3)' };
 
@@ -28,7 +28,7 @@ export function OutputCard({ o, showProject = true }) {
 
 // Open for feedback reaches the whole team, even those outside the project, but never past the lock on a restricted
 // project: there an output stays with the project's people, so it is never offered or shown as open.
-const openToTeam = (o) => !!o.open && project(o.project)?.classification !== 'restricted';
+const openToTeam = (o) => !!o.open && !isRestricted(project(o.project));
 
 export function Outputs() {
   const s = useStore();
@@ -53,6 +53,8 @@ export function OutputSheetBody({ id }) {
   const [text, setText] = useState('');
   if (!o) return html`<${Empty}>התוצר נמחק.</${Empty}>`;
   const p = project(o.project);
+  // A project's output is for whoever sees the project in detail, and one open for feedback for the whole team too.
+  if (p && !(canSeeDetail(p) || (openToTeam(o) && person(s.me).role !== 'external'))) return html`<${Empty} icon="lock">התוצר הזה רק למי שבפרויקט</${Empty}>`;
   const member = p && canSeeDetail(p); // past a locked project's one line, as everywhere
   const mgr = p && (canManage(p) || o.by === s.me);
   const m = o.kind === 'meeting' ? s.meetings.find((x) => x.id === o.meeting || x.output === o.id) : null;
@@ -71,7 +73,7 @@ export function OutputSheetBody({ id }) {
     ${mgr ? html`<div class="os-controls">
       <span class="lbl">שלב בשלות</span>
       <${Seg} label="שלב בשלות" value=${o.level || 'draft'} onChange=${(lv) => updateOutput(o.id, { level: lv, open: lv === 'draft' ? false : o.open })} options=${Object.entries(LEVEL).map(([id, v]) => ({ id, label: v.label }))} />
-      ${o.level && o.level !== 'draft' && !p?.personal && p?.classification !== 'restricted' ? html`<label class="toggle-row"><input type="checkbox" checked=${!!o.open} onChange=${(e) => { updateOutput(o.id, { open: e.currentTarget.checked }); if (e.currentTarget.checked) toast('התוצר פתוח עכשיו למשוב של כל הצוות'); }} />
+      ${o.level && o.level !== 'draft' && !p?.personal && !isRestricted(p) ? html`<label class="toggle-row"><input type="checkbox" checked=${!!o.open} onChange=${(e) => { updateOutput(o.id, { open: e.currentTarget.checked }); if (e.currentTarget.checked) toast('התוצר פתוח עכשיו למשוב של כל הצוות'); }} />
         <span><b>פתוח למשוב של כל הצוות</b><span class="muted small">גם מי שלא בפרויקט יראה אותו ויוכל להגיב</span></span></label>` : null}
     </div>` : null}
 
@@ -102,8 +104,10 @@ export function MeetingSummary({ m }) {
 export function NewOutputBody({ project: pid }) {
   const s = useStore();
   const p = project(pid);
-  const restricted = p?.classification === 'restricted';
-  const [how, setHow] = useState(restricted ? 'pointer' : 'link');
+  const restricted = isRestricted(p);
+  const there = !!p && placeOf(p) === 'there'; // only a pointer: a name and where it is (store.addOutput)
+  const [pick, setHow] = useState(restricted ? 'pointer' : 'link');
+  const how = there ? 'pointer' : pick;
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
   const [where, setWhere] = useState('');
@@ -115,13 +119,15 @@ export function NewOutputBody({ project: pid }) {
   const save = (e) => {
     e.preventDefault();
     if (!ready) return;
-    addOutput({ project: pid, title: title.trim(), kind: how === 'pointer' ? 'pointer' : how === 'link' ? 'link' : kind, url: how === 'link' ? url.trim() : null,
+    const out = addOutput({ project: pid, title: title.trim(), kind: how === 'pointer' ? 'pointer' : how === 'link' ? 'link' : kind, url: how === 'link' ? url.trim() : null,
       where: how === 'pointer' ? where.trim() : null, fileName: how === 'file' ? file.name : null, stage: stage || null });
+    if (!out) return; // refused: not mine to add to (canAddOutput)
     closeSheet();
     toast('התוצר נוסף לפרויקט');
   };
   return html`<form class="form" onSubmit=${save}>
-    <${Seg} label="מה מוסיפים" value=${how} onChange=${setHow} options=${[{ id: 'link', label: 'קישור' }, { id: 'file', label: 'קובץ' }, ...(restricted ? [{ id: 'pointer', label: 'מצביע לרשת המסווגת' }] : [])]} />
+    ${there ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>בפרויקט שכולו ברשת המסווגת מוסיפים רק מצביע: שם ומיקום, בלי התוכן.</span></div>`
+      : html`<${Seg} label="מה מוסיפים" value=${how} onChange=${setHow} options=${[{ id: 'link', label: 'קישור' }, { id: 'file', label: 'קובץ' }, ...(restricted ? [{ id: 'pointer', label: 'מצביע לרשת המסווגת' }] : [])]} />`}
     <label class="lbl" for="o-title">שם התוצר</label>
     <input id="o-title" class="input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder="למשל: מסמך אפיון, גרסה 2" />
     ${how === 'link' ? html`<label class="lbl" for="o-url">קישור</label><input id="o-url" class="input" type="url" dir="ltr" value=${url} onInput=${(e) => setUrl(e.currentTarget.value)} placeholder="https://" />` : null}

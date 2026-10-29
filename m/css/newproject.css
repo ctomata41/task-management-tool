@@ -1,0 +1,68 @@
+/* The opening sheet: type, place, domain and the rest of a new project (m/views/newproject.js, design §6.1).
+   Tokens and logical properties only; hover only inside @media (hover: hover); press feedback joins the lists in m/m.css. */
+
+/* The preset's band ("נפתח מתוך…") sits above everything else. */
+.np .np-from { margin-block-end: 14px; }
+
+/* Small lines: the one under a heading, the "הוצע כי" reasons, the rule-only note above the buttons. */
+.np-sub { margin: -2px 0 8px; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.np-why { margin: 6px 0 0; padding-inline: 4px; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.np-help { margin: 18px 0 0; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.np .np-help + .form-actions { margin-block-start: 10px; }
+.np-note { display: flex; align-items: center; gap: 6px; margin: 8px 0 0; padding-inline: 4px; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+
+/* The type: two grouped lists, or the summary row of the one picked. Opening the lists cross-fades them in. */
+.np-types { display: flex; flex-direction: column; transition: opacity 0.25s ease; }
+.np-sum-wrap { transition: opacity 0.25s ease; }
+@starting-style {
+  .np-types, .np-sum-wrap { opacity: 0; }
+}
+.np-sum-wrap + .np-types, .np-why + .np-types { margin-block-start: 10px; }
+.np-group { padding: 0 14px 6px; font-size: 0.75rem; font-weight: 600; color: var(--fg-3); letter-spacing: 0.01em; }
+.np-types .tpl-list + .np-group { margin-block-start: 14px; }
+.np-sum .grow { gap: 2px; }
+.np-sum-l { font-size: 0.8125rem; color: var(--fg-2); }
+.np-sum-l.np-gates { color: var(--fg-3); }
+.np-change { flex: none; align-self: center; font-size: 0.875rem; font-weight: 500; color: var(--accent-2); }
+
+/* The three places. One the type does not allow stays focusable and in view, dimmed, with its reason under it. */
+.np-places .choice .grow { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.np-places .choice.off strong { color: var(--fg-3); }
+.np-no { margin-block-start: 2px; font-size: 0.75rem; color: var(--fg-2); letter-spacing: 0.01em; }
+@media (hover: hover) {
+  .np-places .choice.off:hover { background: transparent; }
+}
+
+/* A row in a grouped list draws its focus ring inside itself: the list clips anything outside it. */
+.np .tpl-list > button:focus-visible, .np .choice-list > button:focus-visible { outline-offset: -3px; }
+
+/* The separation band, with who sees the project and what the type adds. */
+.np .np-band { margin-block-start: 12px; }
+.np-band-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.np-band-t p { margin: 0; }
+.np-band-t b { color: var(--fg); font-weight: 600; }
+
+/* The link out (a web address, written left to right): a bad one says so under it. */
+.np .np-link.bad { border-color: var(--bad); }
+.np .np-link.bad:focus { box-shadow: 0 0 0 4px var(--bad-bg); }
+.np-err { margin: 6px 0 0; padding-inline: 4px; font-size: 0.8125rem; color: var(--bad); }
+
+/* The domain chips: the pressed one tinted, each a 44px target (rows spaced so the targets never overlap). */
+.np-chips { gap: 14px 6px; }
+.np-chips .qchip { overflow: visible; max-width: 100%; }
+.np-chips .qchip::after { content: ''; position: absolute; inset-block: -7px; inset-inline: -3px; }
+.np-chip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-chips .qchip.on { background: var(--accent-soft); color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); font-weight: 600; box-shadow: inset 0 0 0 1.5px var(--accent); }
+
+/* People chips and the two buttons: 44px targets. */
+.np-people { gap: 10px 6px; }
+.np-people .person-chip { position: relative; }
+.np-people .person-chip::after { content: ''; position: absolute; inset-block: -5px; inset-inline: -3px; }
+.np .form-actions .btn { position: relative; }
+.np .form-actions .btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
+
+/* More contrast: the grouped lists get a defined edge. */
+@media (prefers-contrast: more) {
+  .np .tpl-list, .np .choice-list { box-shadow: 0 0 0 1px var(--line-strong); }
+  .np-chips .qchip:not(.on) { box-shadow: inset 0 0 0 1px var(--line-strong); }
+}

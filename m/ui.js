@@ -6,7 +6,7 @@ import htm from 'htm';
 import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
 import { useStore, set, getState, person, project, dismissToast, holdToast, closeSheet, isCommander, setRank, rankedProjects, canSeeTask } from './store.js';
-import { HEALTH, CLASSIFICATION, ASK_STATE, status, localDay, inOrder, askState } from './card.js';
+import { HEALTH, CLASSIFICATION, PLACES, ASK_STATE, status, localDay, inOrder, askState, placeOf, isRestricted } from './card.js';
 
 export const html = htm.bind(h);
 
@@ -36,9 +36,10 @@ export function ProjectTag({ id }) {
   if (!p) return null;
   return html`<a class="ptag" href=${`#/project/${p.id}`} style=${`--c:${p.color}`} onClick=${(e) => e.stopPropagation()}><i></i>${p.name}</a>`;
 }
+// The lock on a שמור / סודי project (card.isRestricted), titled with where its materials live.
 export function Classified({ p, small }) {
-  if (!p || p.classification !== 'restricted') return null;
-  return html`<span class=${'cls-tag' + (small ? ' sm' : '')} title=${CLASSIFICATION.restricted.hint}><${Icon} name="lock" size=${small ? 11 : 13} />${CLASSIFICATION.restricted.label}</span>`;
+  if (!isRestricted(p)) return null;
+  return html`<span class=${'cls-tag' + (small ? ' sm' : '')} title=${PLACES[placeOf(p)].hint}><${Icon} name="lock" size=${small ? 11 : 13} />${CLASSIFICATION.restricted.label}</span>`;
 }
 export function Health({ p }) {
   const st = status(p);
@@ -70,8 +71,9 @@ export function RankCap({ p, full = false }) {
 }
 
 // When the rows of a list change order, each row slides from where it was on screen to its new place, on a spring
-// (damping 1) that starts at the row's current offset and speed. Under reduced motion the rows just swap. The rows
-// must be keyed, so that Preact moves the same nodes instead of rewriting them in place.
+// (damping 1) that starts at the row's current offset and speed. Under reduced motion nothing slides: the rows that
+// moved fade in at their new place, the cross-fade motion.js gives layers. The rows must be keyed, so that Preact
+// moves the same nodes instead of rewriting them in place.
 export function useFlip(listRef) {
   const last = useRef(null);
   useLayoutEffect(() => {
@@ -83,10 +85,19 @@ export function useFlip(listRef) {
     const now = new Map(rows.map((el) => [el, el.getBoundingClientRect().top - top - (el.__motion ? el.__motion.get('y') : 0)]));
     const prev = last.current;
     last.current = now;
-    if (!prev || reducedMotion()) return;
+    if (!prev) return;
     const kept = rows.filter((el) => prev.has(el));
     const was = [...prev.keys()].filter((el) => now.has(el));
     if (kept.every((el, i) => el === was[i])) return; // the same order: nothing moves
+    if (reducedMotion()) {
+      for (const el of kept) {
+        if (Math.abs(prev.get(el) - now.get(el)) < 0.5) continue;
+        const m = motion(el);
+        m.set({ opacity: 0 });
+        m.to({ opacity: 1 }, { response: 0.2 });
+      }
+      return;
+    }
     let far = null;
     for (const el of kept) {
       const dy = prev.get(el) - now.get(el);
@@ -133,11 +144,14 @@ export function StageStrip({ p, labels, onPick, bare = false }) {
   </div>`;
 }
 
-export function Seg({ value, options, onChange, label, cls = '' }) {
+// A segmented control. An option with `disabled: true` stays focusable and pressable (aria-disabled, class off) but
+// never calls onChange; pressing it calls onDisabled, so the caller can show the reason line.
+export function Seg({ value, options, onChange, onDisabled, label, cls = '' }) {
   const ref = useRef();
   useThumb(ref);
   return html`<div class=${'seg ' + cls} role="tablist" aria-label=${label} ref=${ref}><span class="seg-thumb"></span>
-    ${options.map((o) => html`<button type="button" role="tab" aria-selected=${o.id === value} class=${o.id === value ? 'on' : ''} onClick=${() => onChange(o.id)}>${o.label}${o.n ? html`<span class="seg-n">${o.n}</span>` : null}</button>`)}
+    ${options.map((o) => html`<button type="button" role="tab" aria-selected=${o.id === value} aria-disabled=${o.disabled ? 'true' : null} class=${(o.id === value ? 'on' : '') + (o.disabled ? ' off' : '')}
+      onClick=${() => (o.disabled ? onDisabled?.(o.id) : onChange(o.id))}>${o.label}${o.n ? html`<span class="seg-n">${o.n}</span>` : null}</button>`)}
   </div>`;
 }
 
@@ -295,6 +309,21 @@ function Toast({ t }) {
   </div>`;
 }
 
+// A text field that saves when it is left (and Enter in a one-line field leaves it). Read-only, it shows the text or the
+// placeholder. The ID card's core, stages and facts, and the types page, all write through it.
+export function Text({ value, onSave, placeholder, disabled, multiline = true, label, describedBy = null }) {
+  const [v, setV] = useState(value || '');
+  const ref = useRef();
+  useEffect(() => setV(value || ''), [value]);
+  const grow = () => { const el = ref.current; if (el && multiline) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } };
+  useEffect(grow, [v]);
+  if (disabled) return html`<div class=${'ftext ro' + (v ? '' : ' muted')}>${v || placeholder}</div>`;
+  const save = () => { if ((v || '') !== (value || '')) onSave(v.trim()); };
+  return multiline
+    ? html`<textarea ref=${ref} class="ftext" rows="1" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save}></textarea>`
+    : html`<input class="ftext" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save} onKeyDown=${(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />`;
+}
+
 export function Empty({ icon = 'check', children }) {
   return html`<div class="m-empty"><${Icon} name=${icon} size=${20} /><span>${children}</span></div>`;
 }
@@ -356,6 +385,9 @@ export const LEVEL = {
 };
 
 // ---------- menus: a menu grows out of the control that opened it ----------
+// An item is { id, label, hint?, icon?, dot?, person?, danger? }. One with `off: true` can't be picked now: it stays
+// focusable, shows its reason as its hint, and picking it does nothing. { sep: true } is a separator line, which the
+// arrow keys skip.
 export function openMenu(e, items, { selected, onPick }) {
   const trigger = e.currentTarget;
   set({ menu: { rect: trigger.getBoundingClientRect(), trigger, items, selected, onPick } });
@@ -380,7 +412,11 @@ function Menu({ m }) {
   const panel = useRef();
   const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
   const W = 240;
-  const H = Math.min(m.items.reduce((h, it) => h + row + (it.hint ? 8 : 0), 12), 380); // a hint's line makes a row 46px
+  // A hint's line makes a row 46px. A label and a hint wrap instead of being cut (m.css), about 24 letters a line for a
+  // label and 30 for a hint; the estimate errs long, since the menu is only as tall as its items.
+  const lines = (s, n) => Math.max(1, Math.ceil(String(s ?? '').length / n));
+  const itemH = (it) => row + 19 * (lines(it.label, 24) - 1) + (it.hint ? 8 + 16 * (lines(it.hint, 30) - 1) : 0);
+  const H = Math.min(m.items.reduce((h, it) => h + (it.sep ? 9 : itemH(it)), 12), 380);
   let left = m.rect.right - W;
   left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
   let top = m.rect.bottom + 6;
@@ -419,14 +455,15 @@ function Menu({ m }) {
   };
   return html`<div class="menu-backdrop" ref=${root} onClick=${closeMenu}>
     <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()} onKeyDown=${onKeyDown}>
-      ${m.items.map((it) => html`<button type="button" role="menuitem" class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '')}
-        onClick=${() => { closeMenu(); m.onPick(it.id); }}>
+      ${m.items.map((it) => (it.sep ? html`<div class="menu-sep" role="separator"></div>` : html`<button type="button" role="menuitem"
+        class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '') + (it.off ? ' off' : '')} aria-disabled=${it.off ? 'true' : null}
+        onClick=${() => { if (it.off) return; closeMenu(); m.onPick(it.id); }}>
         ${it.person ? html`<${Avatar} id=${it.person} size=${22} />` : null}
         ${it.dot ? html`<span class="dot" style=${`background:${it.dot}`}></span>` : null}
         ${it.icon ? html`<${Icon} name=${it.icon} size=${16} />` : null}
         <span class="menu-label">${it.label}${it.hint ? html`<small class="menu-hint">${it.hint}</small>` : null}</span>
         ${it.id === m.selected ? html`<${Icon} name="check" size=${15} cls="menu-check" />` : null}
-      </button>`)}
+      </button>`))}
     </div>
   </div>`;
 }

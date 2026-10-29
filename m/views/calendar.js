@@ -4,9 +4,9 @@
 // project), each stage a capsule in time; tapping one sets its target.
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { html, Icon, Seg, Empty, ProjectTag, isoDay, dueWord, dateInput } from '../ui.js';
-import { useStore, myTasks, teamProjects, personalProjects, project, canManage, isCommander, isOpen, openSheet, closeSheet, setStage,
+import { useStore, myTasks, teamProjects, personalProjects, project, canManage, canSeeDetail, isCommander, isOpen, openSheet, closeSheet, setStage,
   STATUS, PRIORITY_ORDER } from '../store.js';
-import { schedule, dayStart, addDays, plausibleDay, STAGE_DAYS, DAY } from '../card.js';
+import { schedule, dayStart, addDays, plausibleDay, stageDays, DAY } from '../card.js';
 import { useGcal, GcalCard, GcalChip } from '../gcal.js';
 
 const VIEW_KEY = 'm.cal.view';
@@ -218,6 +218,7 @@ export function StageBody({ pid, sid }) {
   // the stored target would wipe a year typed halfway; on leaving the field, a year never finished gives way to it.
   const [draft, setDraft] = useState(null);
   const p = project(pid);
+  if (p && !canSeeDetail(p)) return html`<${Empty} icon="lock">השלב הזה רק למי שבפרויקט</${Empty}>`; // past the one line
   const st = p?.stages.find((x) => x.id === sid);
   if (!p || !st) return html`<${Empty}>השלב לא נמצא.</${Empty}>`;
   const r = schedule(p).find((x) => x.id === sid);
@@ -238,7 +239,7 @@ export function StageBody({ pid, sid }) {
           : html`<label class="fact-btn"><${Icon} name="calendar" size=${16} /><input type="date" value=${draft ?? dateInput(st.target)} disabled=${!mgr} aria-label="יעד לסיום השלב"
             min="2000-01-01" max="2100-12-31" onInput=${setTarget} onBlur=${() => setDraft(null)} />${st.target ? dueWord(st.target) : mgr ? 'לקבוע יעד' : 'עוד לא נקבע'}</label>`}</div>
     </div>
-    ${!closed && !st.target ? html`<p class="muted small">עד שנקבע יעד, הגאנט מעריך את השלב לפי האורך הרגיל שלו: ${STAGE_DAYS[st.key] || 14} ימים.</p>` : null}
+    ${!closed && !st.target ? html`<p class="muted small">עד שנקבע יעד, הגאנט מעריך את השלב לפי האורך הרגיל שלו: ${stageDays(st)} ימים.</p>` : null}
     ${r.late ? html`<p class="small bad-t">היעד עבר והשלב עוד פתוח.</p>` : null}
     <div class="form-actions"><a class="btn" href=${`#/project/${p.id}`} onClick=${closeSheet}>לפתוח את הפרויקט</a></div>
   </div>`;

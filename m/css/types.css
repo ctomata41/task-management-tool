@@ -1,0 +1,153 @@
+/* The types page: the list of project types and one type's DNA (m/views/types.js, design §6.4). Cards use --r-card
+   with no borders; tokens and logical properties only; hover only inside @media (hover: hover); small targets get a 44px
+   hit area. */
+
+/* Forms and lists read best at a measured width: the page keeps its place (and its title where every page has it),
+   and what it holds stops at 880px. */
+.ty-list > *, .ty-page > * { max-width: 880px; }
+
+/* ---------- the list ---------- */
+.ty-demo { margin: 6px 0 0; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.ty-new { padding-block: 12px; }
+.ty-rows, .ty-log { list-style: none; margin: 0; padding: 0; }
+.ty-row { display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 12px 16px; color: var(--fg); }
+.ty-row > .ic { flex: none; color: var(--fg-3); }
+/* The grouped list clips what lies outside it, so a row draws its focus ring inside itself. */
+.ty-row:focus-visible, .ty-log-row:focus-visible { outline-offset: -3px; }
+.ty-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ty-name { font-weight: 600; overflow-wrap: anywhere; }
+.ty-hint { font-size: 0.8125rem; color: var(--fg-2); line-height: 1.4; }
+.ty-meta { font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+/* "שינויים אחרונים": one line each, who in full weight, when quieter. */
+.ty-log-row { padding: 11px 16px; font-size: 0.875rem; line-height: 1.45; color: var(--fg-2); overflow-wrap: anywhere; }
+.ty-log-row b { color: var(--fg); font-weight: 600; }
+.ty-more { margin-inline-start: 16px; }
+
+/* ---------- one type ---------- */
+.ty-back { margin-block-start: 8px; } /* clear of the bar, hit area included */
+.ty-back + .ty-head { margin-block-start: -12px; }
+.ty-title { min-width: 0; }
+.ty-title h1 { overflow-wrap: anywhere; }
+.ty-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-block-start: 8px; }
+
+/* "כללי": the longer labels ("איפה החומרים כברירת מחדל") take two lines at most beside their values. */
+@media (min-width: 901px) {
+  .ty-page .core-row { grid-template-columns: 190px minmax(0, 1fr); }
+}
+/* In edit mode the rows sit 8px apart, so the hit areas of the values on them (a menu, the switch) never meet. */
+.ty-editing .core { gap: 8px; }
+.ty-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ty-cell > .fact-btn, .ty-cell > .toggle, .ty-cell > .seg, .ty-cell > .input { align-self: flex-start; }
+.ty-allowed { margin: 0; padding-inline: 10px; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.ty-pick { color: var(--fg); }
+.ty-pick .ic { color: var(--fg-3); flex: none; }
+/* The switch sits on the label's line. */
+.ty-switch { margin-block: 5px; margin-inline-start: 10px; }
+
+/* ---------- "שלבים": the path, as a project's stages look ---------- */
+.ty-stages > .stage:first-child { border-top: 0; }
+.ty-stage .stage-name { flex: 0 1 auto; min-width: min(44px, 100%); overflow-wrap: anywhere; } /* a long name wraps; a short one is still a 44px target */
+.ty-chev { color: var(--fg-3); flex: none; }
+.ty-days { margin-inline-start: auto; font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; white-space: nowrap; }
+/* Up and down: 36px buttons 8px apart, each with a 44px hit area (inset -4px), so the two areas meet without
+   overlapping. At either end a button stays focusable and only looks quieter. */
+.ty-move { display: inline-flex; gap: 8px; flex: none; }
+.ty-mv::after { content: ''; position: absolute; inset: -4px; }
+.ty-mv[aria-disabled="true"] { opacity: 0.35; }
+/* A stage's body in the read view: its exit question, then its fields as a short list. */
+.ty-flist-wrap { display: flex; flex-direction: column; gap: 4px; padding-inline: 12px; }
+.ty-flist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.ty-flist li { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: 0.9375rem; }
+.ty-flist li::before { content: ''; inline-size: 5px; block-size: 5px; border-radius: 50%; background: var(--fg-3); flex: none; }
+.ty-none { margin: 0; padding-inline: 12px; }
+
+/* A stage in edit mode: its name, exit question, who closes it, its days and its fields, then its removal. */
+.ty-editor { display: flex; flex-direction: column; gap: 10px; padding-block-start: 2px; }
+.ty-days-in { inline-size: 7rem; block-size: 38px; font-variant-numeric: tabular-nums; }
+.ty-flds { display: flex; flex-direction: column; gap: 8px; }
+.ty-flds:empty { display: none; }
+.ty-fld { display: flex; align-items: center; gap: 4px 8px; min-width: 0; }
+.ty-fld > .ftext { flex: 1 1 auto; min-width: 0; }
+.ty-fld-acts { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.ty-add-fld { margin-block-start: 8px; }
+.ty-add-fld .btn { flex: none; }
+/* "מתחיל ברשת המסווגת" as a toggle chip: pressed, it is tinted with an accent edge. Its hit area reaches past its
+   edges, so the chip doesn't clip (its text is short enough to fit). */
+.qchip.ty-cls { overflow: visible; max-width: none; }
+.qchip.ty-cls[aria-pressed="true"] { background: var(--accent-soft); color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); font-weight: 600; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.ty-x { color: var(--fg-3); }
+.ty-x::after { content: ''; position: absolute; inset: -4px; }
+.ty-remove { display: flex; flex-direction: column; gap: 8px; padding-block-start: 4px; }
+.ty-rm { color: var(--bad); }
+.ty-rm[aria-disabled="true"] { color: var(--fg-3); }
+
+/* Why a control can't act, under it. Empty, it takes no room but stays in place, so it is read out when it fills. */
+.ty-why { margin: 0; align-self: flex-start; font-size: 0.8125rem; color: var(--fg-2); }
+.ty-why:not(:empty) { padding: 8px 12px; border-radius: 12px; background: var(--fill); }
+.ty-cell > .ty-why:not(:empty) { margin-block-start: 6px; }
+
+/* Adding a stage: chips from the library, then one by name. */
+.ty-add { display: flex; flex-direction: column; gap: 8px; padding-block-start: 12px; border-top: 0.5px solid var(--line); }
+.ty-stages + .ty-add { margin-block-start: -12px; }
+.ty-lib { row-gap: 16px; margin-block-end: 6px; }
+.ty-lib .qchip { overflow: visible; }
+.ty-chip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- "שדות בליבה" ---------- */
+.ty-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ty-fact { display: flex; align-items: flex-start; gap: 10px; padding-block: 10px; }
+.ty-fact + .ty-fact { border-top: 0.5px solid var(--line); }
+.ty-fact:first-child { padding-block-start: 2px; }
+.ty-fact-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ty-fact-l { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.ty-fact-hint { font-size: 0.8125rem; color: var(--fg-2); line-height: 1.4; }
+.ty-opts { font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; }
+.ty-fact > .ty-x { margin-block-start: -6px; }
+
+/* ---------- the footer and the actions ---------- */
+.ty-foot { margin: 0; padding-inline: 4px; font-size: 0.8125rem; color: var(--fg-2); }
+.ty-actions { display: flex; flex-direction: column; gap: 8px; }
+.ty-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.ty-acts .btn[aria-disabled="true"] { color: var(--fg-3); }
+
+/* 44px hit areas for buttons under 44px, grown along the block axis only, so buttons side by side never share one.
+   Link buttons already reach 8px past every edge (m/m.css); here they reach 44px each way. */
+.ty-acts .btn, .ty-add .btn, .ty-add-fld .btn, .ty-add-fact .btn, .ty-new .btn { position: relative; }
+.ty-acts .btn::after, .ty-add .btn::after, .ty-add-fld .btn::after, .ty-add-fact .btn::after, .ty-new .btn::after, .ty-pick::after,
+.ty-gate button::after, .ty-lib .qchip::after, .qchip.ty-cls::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
+.ty-back::after, .ty-more::after, .ty-rm::after { inset: min(-8px, (100% - 44px) / 2); }
+.ty-switch::after { content: ''; position: absolute; inset: -8px; }
+/* Press feedback (CLAUDE.md): the switch scales like a button (.toggle in the press lists of m/m.css). */
+
+/* ---------- phones ---------- */
+@media (max-width: 900px) {
+  .ty-row { padding-inline: 14px; }
+  .ty-log-row { padding-inline: 14px; }
+  .ty-more { margin-inline-start: 14px; }
+  .ty-allowed, .ty-flist-wrap, .ty-none { padding-inline: 10px; }
+  .ty-switch { margin-block: 4px 2px; }
+  /* Every stage the same way, whatever the length of its name: the name on the first line, its days under it, and in
+     edit mode the moves at the inline end, beside both. */
+  .ty-stage .stage-line { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; grid-template-areas: "ic name move" ". days move";
+    column-gap: 10px; row-gap: 0; align-items: center; padding-block: 6px; }
+  .ty-stage .stage-ic { grid-area: ic; }
+  .ty-stage .stage-name { grid-area: name; justify-self: start; min-height: 34px; }
+  .ty-days { grid-area: days; margin-inline-start: 0; }
+  .ty-move { grid-area: move; }
+  /* A field: its label with its removal at the end of the line, and its chip under the label. */
+  .ty-flds { gap: 10px; }
+  .ty-fld { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label x" "cls ."; gap: 8px; }
+  .ty-fld > .ftext { grid-area: label; }
+  .ty-fld-acts { display: contents; }
+  .ty-cls { grid-area: cls; justify-self: start; margin-inline-start: 4px; }
+  .ty-fld .ty-x { grid-area: x; }
+  .ty-acts .btn { flex: 1 1 auto; }
+}
+
+/* More contrast: defined edges and darker text. */
+@media (prefers-contrast: more) {
+  .ty-why:not(:empty) { color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong); }
+  .ty-lib .qchip, .qchip.ty-cls:not([aria-pressed="true"]) { box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .ty-mv[aria-disabled="true"] { opacity: 0.55; }
+  .ty-meta, .ty-demo, .ty-allowed, .ty-opts, .ty-days { color: var(--fg-2); }
+}
