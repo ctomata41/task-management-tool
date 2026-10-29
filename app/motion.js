@@ -111,10 +111,14 @@ function modeOf(kind) {
   return kind === 'drawer' ? 'side' : 'dialog';
 }
 const endSign = (el) => (getComputedStyle(el).direction === 'rtl' ? -1 : 1);
+// A toast comes in from the edge it sits by and leaves toward it: up near the top of the screen (on phones while a sheet
+// is open, toasts move to the top), down near the bottom.
+const edgeSign = (el) => (el.getBoundingClientRect().top < window.innerHeight / 2 ? -1 : 1);
 const scrimOf = (root) => (p) => root.style.setProperty('--scrim', Math.min(1, Math.max(0, p)).toFixed(3));
 const POP = { dialog: 0.92, alert: 1.1, menu: 0.86, toast: 0.92 };
 
 function enter(root, panel, mode) {
+  root.__layer = { mode, at: performance.now() }; // see shield()
   const m = motion(panel);
   const scrim = scrimOf(root);
   if (reducedMotion()) { // a cross-fade instead of a slide
@@ -134,7 +138,7 @@ function enter(root, panel, mode) {
   } else {
     if (mode === 'dialog') growFrom(panel);
     m.onFrame = () => scrim(m.get('opacity'));
-    const lift = mode === 'toast' ? { y: 16 } : {};
+    const lift = mode === 'toast' ? { y: 16 * edgeSign(panel) } : {};
     m.set({ scale: POP[mode], opacity: 0, ...lift });
     m.to({ scale: 1, opacity: 1, ...(mode === 'toast' ? { y: 0 } : {}) }, { damping: 1, response: mode === 'menu' ? 0.24 : 0.32 });
   }
@@ -194,9 +198,31 @@ function copyOf(root, panel) {
   return { host, root: copy, panel: p };
 }
 
+// While a layer leaves, a press where it was (a second tap on its X, the second click of a double click) is still meant
+// for it, so it doesn't reach what the layer uncovers until the layer has gone, as on iOS. A toast, which sits above
+// every layer, and a layer that opens meanwhile (the next sheet of a hand-over) take presses as usual, and a key's click
+// (Enter, Space) always goes through. A toast that leaves has no shield: one docked over a sheet's head lets drags
+// through to it (m/m.css), and it leaves on a timer.
+function shield(r, since, done) {
+  const stop = (e) => {
+    if ((e.type === 'click' && !e.detail) || e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    for (let n = e.target; n; n = n.parentElement) if (n.__layer && (n.__layer.mode === 'toast' || n.__layer.at > since)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener('pointerdown', stop, true);
+  document.addEventListener('click', stop, true);
+  Promise.race([done, new Promise((ok) => setTimeout(ok, 700))]).then(() => {
+    document.removeEventListener('pointerdown', stop, true);
+    document.removeEventListener('click', stop, true);
+  });
+}
+
 function leave(root, panel, mode) {
   const m = panel.__motion;
   m?.stop();
+  const since = performance.now();
+  const rect = panel.getBoundingClientRect();
   const copy = copyOf(root, panel);
   if (!copy) return;
   const g = motion(copy.panel);
@@ -218,9 +244,10 @@ function leave(root, panel, mode) {
     done = g.to({ x: extent }, { damping: 1, response: 0.34, velocity: { x: speed('x') } });
   } else {
     g.onFrame = () => scrim(g.get('opacity'));
-    done = g.to({ scale: mode === 'toast' ? 0.94 : 0.97, opacity: 0, ...(mode === 'toast' ? { y: 10 } : {}) }, { damping: 1, response: mode === 'menu' ? 0.18 : 0.24 });
+    done = g.to({ scale: mode === 'toast' ? 0.94 : 0.97, opacity: 0, ...(mode === 'toast' ? { y: 10 * edgeSign(copy.panel) } : {}) }, { damping: 1, response: mode === 'menu' ? 0.18 : 0.24 });
   }
   done.then(() => copy.host.remove());
+  if (mode !== 'toast') shield(rect, since, done);
 }
 
 // A sheet follows the finger 1:1 from its handle, or from its content when that is scrolled to the top. Past its open
@@ -289,8 +316,9 @@ function dragToDismiss(panel, close) {
     end(e.timeStamp);
     setTimeout(() => panel.removeEventListener('click', swallow, true), 0);
   };
-  // From the content: only a pull down while it is scrolled to the top, decided on the first movement.
-  const body = panel.querySelector('.modal-body, .drawer-body');
+  // From the content (Jarvis's stage included): only a pull down while it is scrolled to the top, decided on the first
+  // movement.
+  const body = panel.querySelector('.modal-body, .drawer-body, .jv-stage');
   const tStart = (e) => { touch = !drag && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, mode: null } : null; };
   const tMove = (e) => {
     if (!touch) return;
@@ -342,17 +370,28 @@ export function useLayer(rootRef, panelRef, { kind = 'modal', onClose } = {}) {
 }
 
 // The selected segment's background slides to a new choice, from wherever it is now.
+function placeThumb(root, slide) {
+  const thumb = root?.querySelector(':scope > .seg-thumb');
+  if (!thumb) return;
+  const on = root.querySelector(':scope > .on');
+  thumb.style.visibility = on ? '' : 'hidden';
+  if (!on) return;
+  const m = motion(thumb, (el, mm) => { el.style.transform = `translate3d(${mm.get('x')}px, 0, 0)`; el.style.width = `${mm.get('w')}px`; });
+  const x = on.offsetLeft;
+  const w = on.offsetWidth;
+  // A resize that only confirms where the thumb is already heading (a bolder label changes the control's width as it
+  // slides) leaves the slide alone; a resize that moves the segment puts the thumb straight under it.
+  if (!slide && thumb.__placed && m.spring('x').goal === x && m.spring('w').goal === w) return;
+  if (!slide || !thumb.__placed || reducedMotion()) { m.set({ x, w }); thumb.__placed = true; } else if (m.spring('x').goal !== x || m.spring('w').goal !== w) m.to({ x, w }, { damping: 1, response: 0.3 });
+}
 export function useThumb(ref) {
+  useLayoutEffect(() => placeThumb(ref.current, true));
+  // A resize (a turned phone, a wider window) moves the segments under the thumb, so it goes straight back on.
   useLayoutEffect(() => {
     const root = ref.current;
-    const thumb = root?.querySelector(':scope > .seg-thumb');
-    if (!thumb) return;
-    const on = root.querySelector(':scope > .on');
-    thumb.style.visibility = on ? '' : 'hidden';
-    if (!on) return;
-    const m = motion(thumb, (el, mm) => { el.style.transform = `translate3d(${mm.get('x')}px, 0, 0)`; el.style.width = `${mm.get('w')}px`; });
-    const x = on.offsetLeft;
-    const w = on.offsetWidth;
-    if (!thumb.__placed || reducedMotion()) { m.set({ x, w }); thumb.__placed = true; } else if (m.spring('x').goal !== x || m.spring('w').goal !== w) m.to({ x, w }, { damping: 1, response: 0.3 });
-  });
+    if (!root || typeof ResizeObserver !== 'function') return undefined;
+    const ro = new ResizeObserver(() => placeThumb(root, false));
+    ro.observe(root);
+    return () => ro.disconnect();
+  }, []);
 }

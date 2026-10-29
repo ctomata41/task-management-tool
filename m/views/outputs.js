@@ -2,8 +2,8 @@
 // whole team for feedback. In a restricted project an output is either unclassified material or a pointer: a name and
 // where it lives on the classified network, never the content.
 import { useState } from 'preact/hooks';
-import { html, Icon, Avatar, Pill, Seg, ProjectTag, Classified, Empty, ago, OUT_KIND, LEVEL } from '../ui.js';
-import { useStore, project, person, canSee, canManage, visibleOutputs, openSheet, closeSheet, updateOutput, addFeedback, addOutput, getState, toast } from '../store.js';
+import { html, Icon, Avatar, Pill, Seg, ProjectTag, Empty, ago, OUT_KIND, LEVEL } from '../ui.js';
+import { useStore, project, person, canSeeDetail, canManage, visibleOutputs, openSheet, closeSheet, updateOutput, addFeedback, addOutput, toast } from '../store.js';
 import { currentStage } from '../card.js';
 
 const KIND_COLOR = { doc: 'var(--accent)', sheet: 'var(--s-done)', deck: 'var(--s-progress)', meeting: 'var(--s-waiting)', image: 'var(--h-risk)', link: 'var(--s-todo)', pointer: 'var(--fg-3)' };
@@ -19,19 +19,24 @@ export function OutputCard({ o, showProject = true }) {
       <strong class="oc-title">${o.title}</strong>
       <span class="oc-meta">${showProject && p ? html`<${ProjectTag} id=${p.id} />` : null}${st ? html`<span class="muted small">${st.name}</span>` : null}<span class="muted small">${person(o.by).name} · ${ago(o.at)}</span></span>
       <span class="oc-tags"><${Pill} color=${lv.color}>${lv.label}</${Pill}>
-        ${o.open ? html`<${Pill} color="var(--accent)">פתוח למשוב${o.feedback?.length ? ` · ${o.feedback.length}` : ''}</${Pill}>` : null}
+        ${openToTeam(o) ? html`<${Pill} color="var(--accent)">פתוח למשוב${o.feedback?.length ? ` · ${o.feedback.length}` : ''}</${Pill}>` : null}
         ${o.kind === 'pointer' ? html`<span class="cls-tag sm"><${Icon} name="lock" size=${11} />ברשת המסווגת</span>` : null}
         ${o.hasAudio ? html`<span class="muted small"><${Icon} name="mic" size=${12} /> הקלטה מצורפת</span>` : null}</span>
     </span>
   </button>`;
 }
 
+// Open for feedback reaches the whole team, even those outside the project, but never past the lock on a restricted
+// project: there an output stays with the project's people, so it is never offered or shown as open.
+const openToTeam = (o) => !!o.open && project(o.project)?.classification !== 'restricted';
+
 export function Outputs() {
   const s = useStore();
   const [filter, setFilter] = useState('all');
   const all = visibleOutputs().filter((o) => !project(o.project)?.personal || project(o.project)?.personal === s.me);
-  // Open-for-feedback outputs reach the whole team, even from projects they are not part of.
-  const openAll = s.outputs.filter((o) => o.open && !project(o.project)?.personal);
+  // Open-for-feedback outputs reach the whole team, even from projects they are not part of, and an outside partner
+  // only from their own projects (canSeeDetail).
+  const openAll = s.outputs.filter((o) => openToTeam(o) && !project(o.project)?.personal && canSeeDetail(project(o.project)));
   const shown = filter === 'open' ? openAll : filter === 'mine' ? all.filter((o) => o.by === s.me) : all;
   return html`<div class="page">
     <header class="page-head2"><div><h1>תוצרים</h1><p class="sub">מסמכים, טבלאות, סיכומי פגישות ומצביעים לחומר שברשת המסווגת, מכל הפרויקטים שלך.</p></div></header>
@@ -48,11 +53,11 @@ export function OutputSheetBody({ id }) {
   const [text, setText] = useState('');
   if (!o) return html`<${Empty}>התוצר נמחק.</${Empty}>`;
   const p = project(o.project);
-  const member = p && canSee(p);
+  const member = p && canSeeDetail(p); // past a locked project's one line, as everywhere
   const mgr = p && (canManage(p) || o.by === s.me);
   const m = o.kind === 'meeting' ? s.meetings.find((x) => x.id === o.meeting || x.output === o.id) : null;
   const k = OUT_KIND[o.kind] || OUT_KIND.link;
-  const canFeedback = member || o.open;
+  const canFeedback = member || openToTeam(o);
   return html`<div class="osheet">
     <div class="os-head" style=${`--c:${KIND_COLOR[o.kind] || 'var(--accent)'}`}><span class="oc-ic"><${Icon} name=${k.icon} size=${22} /></span>
       <div class="grow"><strong>${o.title}</strong><div class="muted small">${k.label}${p ? ` · ${p.name}` : ''} · ${person(o.by).name} · ${ago(o.at)}</div></div></div>
@@ -66,8 +71,8 @@ export function OutputSheetBody({ id }) {
     ${mgr ? html`<div class="os-controls">
       <span class="lbl">שלב בשלות</span>
       <${Seg} label="שלב בשלות" value=${o.level || 'draft'} onChange=${(lv) => updateOutput(o.id, { level: lv, open: lv === 'draft' ? false : o.open })} options=${Object.entries(LEVEL).map(([id, v]) => ({ id, label: v.label }))} />
-      ${o.level && o.level !== 'draft' && !p?.personal ? html`<label class="toggle-row"><input type="checkbox" checked=${!!o.open} onChange=${(e) => { updateOutput(o.id, { open: e.currentTarget.checked }); if (e.currentTarget.checked) toast('התוצר פתוח עכשיו למשוב של כל הצוות'); }} />
-        <span><b>פתוח למשוב של כל הצוות</b><span class="muted small">גם מי שלא בפרויקט יראה אותו ויוכל להגיב${p?.classification === 'restricted' ? '. רק חומר בלמ"ס' : ''}</span></span></label>` : null}
+      ${o.level && o.level !== 'draft' && !p?.personal && p?.classification !== 'restricted' ? html`<label class="toggle-row"><input type="checkbox" checked=${!!o.open} onChange=${(e) => { updateOutput(o.id, { open: e.currentTarget.checked }); if (e.currentTarget.checked) toast('התוצר פתוח עכשיו למשוב של כל הצוות'); }} />
+        <span><b>פתוח למשוב של כל הצוות</b><span class="muted small">גם מי שלא בפרויקט יראה אותו ויוכל להגיב</span></span></label>` : null}
     </div>` : null}
 
     ${canFeedback ? html`<div class="sec">
