@@ -46,12 +46,17 @@ function briefWords(p) {
   return [b.trl && `מוכנות היום ${b.trl}`, b.target && `היעד ${b.target}`, b.commit && `מחויבות היעד: ${b.commit}`].filter(Boolean).join(', ');
 }
 // For whoever sees the project in full: the brief line ("TRL 3 → 6 · כוונה") and the valley mark. Neither is ever on a
-// locked line (card.sees), so the callers render it only with canSeeDetail.
+// locked line (card.sees), so the callers render it only with canSeeDetail. The line runs right to left with the page,
+// readiness first and then the commitment; only its Latin part ("TRL 3 → 6", "TRL 3") sits in an LTR <bdi>, which
+// keeps the arrow in order.
+const TRL_PART = /TRL \d+(?: → \d+)?/;
 export function Brief({ p }) {
   const line = briefLine(p);
   const valley = inValley(p);
   if (!line && !valley) return null;
-  return html`<span class="py-brief">${line ? html`<bdi dir="ltr" class="py-trl" role="img" aria-label=${briefWords(p)}>${line}</bdi>` : null}${valley ? html`<span class="valley">עוד אין גוף קולט</span>` : null}</span>`;
+  const m = TRL_PART.exec(line);
+  const text = m ? html`${line.slice(0, m.index)}<bdi dir="ltr">${m[0]}</bdi>${line.slice(m.index + m[0].length)}` : line;
+  return html`<span class="py-brief">${line ? html`<span class="py-trl" role="img" aria-label=${briefWords(p)}>${text}</span>` : null}${valley ? html`<span class="valley">עוד אין גוף קולט</span>` : null}</span>`;
 }
 
 // How מצב shows the order: as it is, or by the pyramid. Remembered on this device; the page works without storage.

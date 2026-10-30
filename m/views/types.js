@@ -9,7 +9,7 @@
 // description, a question, a label, a hint, the usual days) saves when its field is left, with a log line and no toast.
 // Outside partners don't see the page.
 import { useState, useRef, useEffect } from 'preact/hooks';
-import { html, Icon, Text, Seg, Empty, Pill, useFlip, keepFocus, openMenu, ago } from '../ui.js';
+import { html, Icon, Text, Seg, Empty, Pill, useFlip, keepFocus, openMenu, ago, saveOnEnter } from '../ui.js';
 import { useStore, person, commander, lib, canEditTypes, typeLog, setTypeDef, typeCheck, newType, duplicateType, hideType, resetType,
   hasOverride, openProjectsOfType } from '../store.js';
 import { CORE, DOMAINS, PYRAMID_ORDER, NO_DOMAIN, domainTitle, PLACES, PLACE_ORDER, placesFor, STAGES, typeById, openTypes, typeStages, stageLibrary, gateCount,
@@ -154,7 +154,10 @@ function TypePage({ id }) {
   }, []);
   const t = typeById(lib(), id);
   const back = html`<a class="link-btn ty-back" href="#/types"><${Icon} name="chevronRight" size=${16} />סוגי פרויקטים</a>`;
-  if (!t) return html`<div class="page ty-page">${back}<${Empty} icon="layers">הסוג הזה לא נמצא.</${Empty}></div>`;
+  // A type that isn't here (a link to one made in another browser, or the toast's ביטול of a type just made or copied)
+  // still gets a title, as a page does, and focus lands on it when what held it went with the type (ui.Toast).
+  if (!t) return html`<div class="page ty-page">${back}
+    <header class="page-head2 ty-head"><div class="ty-title"><h1>הסוג הזה לא נמצא</h1></div></header></div>`;
   const can = canEditTypes();
   const editing = edit && can;
   const n = openProjectsOfType(t.id);
@@ -262,10 +265,12 @@ function StageDef({ t, d, i, n, edit, open, onToggle, why, say }) {
     return out;
   });
   // At either end a move stays in place, focusable, so focus never drops when a stage reaches the top or the bottom.
+  // Moving a row down puts its node back in the list after the next one, which takes focus off the button pressed in
+  // it; the button is the same one, now in the row's new place, so focus goes back to it.
   const mv = (dir, icon, label) => {
     const edge = dir < 0 ? i === 0 : i === n - 1;
     return html`<button type="button" class="icon-btn ty-mv" aria-label=${`להזיז את '${d.name}' ${label}`} title=${`להזיז ${label}`} aria-disabled=${edge ? 'true' : null}
-      onClick=${() => { if (!edge) { say(null); move(dir); } }}><${Icon} name=${icon} size=${16} /></button>`;
+      onClick=${(e) => { if (!edge) { const btn = e.currentTarget; say(null); refocus(() => btn); move(dir); } }}><${Icon} name=${icon} size=${16} /></button>`;
   };
   return html`<li class=${'stage ty-stage' + (open ? ' open' : '')}>
     <div class="stage-line">
@@ -320,7 +325,7 @@ function StageEditor({ t, d, i, why, say }) {
         onChange=${(g) => { say(null); if (g !== d.gate) edit((s) => ({ ...s, gate: g })); }} onDisabled=${(g) => say('gate', gateWhy(g))} />
       <p class="ty-why" role="status">${why?.at === 'gate' ? why.text : null}</p>`)}
     ${row('ימים בערך', html`<input class="input sm ty-days-in" type="number" inputmode="numeric" min="1" max="730" step="1" value=${days ?? d.days} aria-label="ימים בערך"
-      onInput=${(e) => setDays(e.currentTarget.value)} onBlur=${(e) => saveDays(e.currentTarget.value)} onKeyDown=${(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />`)}
+      onInput=${(e) => setDays(e.currentTarget.value)} onBlur=${(e) => saveDays(e.currentTarget.value)} onKeyDown=${(e) => saveOnEnter(e, (el) => saveDays(el.value))} />`)}
     ${row('שדות', html`<div class="ty-flds">${d.fields.map((f, k) => html`<${FieldDef} key=${k} t=${t} d=${d} i=${i} k=${k} f=${f} />`)}</div>
       <${AddFieldDef} t=${t} d=${d} i=${i} />`)}
     <div class="ty-remove">
@@ -350,7 +355,8 @@ function FieldDef({ t, d, i, k, f }) {
   return html`<div class="ty-fld">
     <${Text} key=${nk} label="שם השדה" value=${label} multiline=${false} onSave=${rename} />
     <span class="ty-fld-acts">
-      <button type="button" class="qchip ty-cls" aria-pressed=${cls ? 'true' : 'false'} onClick=${() => edit((fs) => setAt(fs, k, (x) => asField(fieldLabel(x), !fieldCls(x))))}>
+      <button type="button" class="qchip ty-cls" aria-pressed=${cls ? 'true' : 'false'} aria-label=${`מתחיל ברשת המסווגת: ${label}`}
+        onClick=${() => edit((fs) => setAt(fs, k, (x) => asField(fieldLabel(x), !fieldCls(x))))}>
         <${Icon} name="lock" size=${13} />מתחיל ברשת המסווגת</button>
       <button type="button" class="icon-btn ty-x" aria-label=${`להסיר את השדה '${label}'`} title="להסיר את השדה" onClick=${remove}><${Icon} name="x" size=${16} /></button>
     </span>

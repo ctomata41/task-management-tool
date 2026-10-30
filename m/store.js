@@ -14,7 +14,7 @@ const ME_KEY = 'm.me';
 const LIB_KEY = 'm.lib';
 const LS = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; /* storage blocked or full */ } },
   del(k) { try { localStorage.removeItem(k); } catch (e) { /* storage blocked */ } },
 };
 const uid = (p) => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -845,10 +845,11 @@ export function addPerson({ name, title, org, account }) {
 }
 
 // ---------- the project types: the team's edits ----------
-// Every change goes through editLib (design §2.7, §7): m.lib is read again from storage, so another tab's edits stay;
-// the change is applied to that copy; one line goes into the types' log (the last 20); it is written, and state.lib
-// follows. Its toast's ביטול puts back what was there, as long as nothing changed since, here or in another tab, and no
-// project was opened from a type it would take away. A team type is never deleted, only hidden.
+// Every change goes through editLib (design §2.7, §7): m.lib is read again from storage, so another tab's edits stay
+// (not while this tab's own writes fail: libUnsaved); the change is applied to that copy; one line goes into the types'
+// log (the last 20); it is written, and state.lib follows. Its toast's ביטול puts back what was there, as long as
+// nothing changed since, here or in another tab, and no project was opened from a type it would take away. A team type
+// is never deleted, only hidden.
 const CODE_TYPES = [...card.CTO_TYPES, ...card.TEMPLATES];
 const codeType = (id) => CODE_TYPES.find((t) => t.id === id) || null;
 const sameJSON = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -877,21 +878,25 @@ function libRule(was, next) {
   }
   return true;
 }
+// Whether this tab's last write of m.lib failed (storage full or blocked). Until one goes in, what is saved is older
+// than this tab's copy, so the next edit and an undo go by this tab's copy, and no edit the screen showed is lost.
+let libUnsaved = false;
+const saveLib = (lib) => { libUnsaved = !LS.set(LIB_KEY, lib); };
 export function editLib(fn, say, { undo = true, log = say } = {}) {
   if (!canEditTypes()) return null;
-  const was = LS.get(LIB_KEY) ? readLib() : state.lib; // storage blocked: this tab's own copy
+  const was = !libUnsaved && LS.get(LIB_KEY) ? readLib() : state.lib; // storage blocked or not written: this tab's own copy
   const next = fn(was);
   if (!isObj(next) || !isObj(next.types) || !libRule(was, next)) return null;
   const line = String(log ?? '').trim();
   const out = { v: 1, types: next.types, log: line ? [...was.log, { id: uid('l'), at: new Date().toISOString(), who: state.me, text: line }].slice(-20) : was.log };
-  LS.set(LIB_KEY, out);
+  saveLib(out);
   set({ lib: out });
   if (say && undo) {
     showUndo(say, () => {
-      const saved = LS.get(LIB_KEY);
+      const saved = libUnsaved ? null : LS.get(LIB_KEY);
       const opened = Object.keys(out.types).some((id) => !codeType(id) && !(id in was.types) && state.projects.some((p) => p.template === id));
       if (state.lib !== out || (saved && !sameJSON(saved, out)) || opened) { toast('אי אפשר לבטל: הסוגים השתנו מאז'); return; }
-      LS.set(LIB_KEY, was);
+      saveLib(was);
       set({ lib: was });
     });
   }
@@ -927,6 +932,14 @@ function trimOverride(code, entry) {
   }
   return out;
 }
+// A team type keeps the keys it may hold (TEAM_KEYS) and a place its own places allow (`t`, the type as read). A key
+// this build doesn't know (one a later build added) or a place outside its places is dropped here as reading drops it
+// (card.cleanType), so an edit of another key, or hiding it, is never refused for it (libRule).
+function trimTeam(t, entry) {
+  const out = pick(entry, TEAM_KEYS.filter((k) => k in entry));
+  if (out.place != null && !card.placesFor(t).includes(out.place)) delete out.place;
+  return out;
+}
 // A change to one type. `say` is a structural edit's toast (with ביטול) and its log line; a text edit (a name, a hint,
 // a question, a label) passes none and gets only the log line "הסוג '{name}' עודכן".
 export function setTypeDef(id, patch, say) {
@@ -938,7 +951,7 @@ export function setTypeDef(id, patch, say) {
     const own = isObj(L.types[id]) ? L.types[id] : null;
     if (!code && !own) return null;
     const types = { ...L.types };
-    if (!code) types[id] = { ...own, ...fix };
+    if (!code) types[id] = { ...trimTeam(cur, own), ...fix };
     else { const o = trimOverride(code, { ...(own || {}), ...fix }); if (Object.keys(o).length) types[id] = o; else delete types[id]; }
     return { ...L, types };
   }, say, { undo: !!say, log: say || `הסוג '${fix.name || cur.name}' עודכן` });

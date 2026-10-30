@@ -12,13 +12,13 @@ import { html, Icon, Text, openMenu } from '../ui.js';
 import { useStore, project, lib, typeOf, isOpen, canSee, canSeeDetail, openSheet, placeCheck, updateProject, setType, setDomain, setMark,
   setFact, addFact, renameFact, removeFact, setTrl, setTrlTarget, addTrl, removeTrl, setLink, setParent, takeChildTrl } from '../store.js';
 import { CORE, TRL_HINT, PLACES, PLACE_ORDER, DOMAINS, NO_DOMAIN, domainTitle, openTypes, typeFitWhy, placeOf, isRestricted, coreHint,
-  cardFill, inValley, handBack, currentStage, nextLink } from '../card.js';
+  cardFill, inValley, handBack, currentStage, nextLink, typeStages } from '../card.js';
 
 const MARKABLE = ['forWhom', 'success', 'stopRule']; // `what` is never marked
 const MARK = { unknown: 'עוד לא ידוע', classified: 'ברשת המסווגת' };
 const LINK_ERR = 'הקישור צריך להוביל לפלטפורמה המחוברת, לכתובת עם /next/';
 const CLAUDE_WORK = 'העבודה עם Claude נעשית בפלטפורמה המחוברת. כאן רואים את השלב ואת העדכון השבועי.';
-const RETYPED = "את השלבים של הסוג החדש אפשר להוסיף מ'להוסיף מהסוג'";
+const RETYPED = "את השלבים של הסוג החדש אפשר להוסיף ב'עריכת השלבים', תחת 'להוסיף מהסוג'";
 const NO_PARENT = 'בלי אבן בניין';
 const HIDDEN_PARENT = 'אבן בניין שלא מוצגת כאן';
 const TRLS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -84,6 +84,9 @@ export function CoreCard({ p, mgr }) {
   const kids = p.personal ? [] : s.projects.filter((x) => x.parent === p.id && x.id !== p.id && canSee(x));
   const parent = p.parent ? project(p.parent) : null;
   const shown = parent && canSee(parent) ? parent : null;
+  // The line about the new type's stages shows only while it has one the project lacks (by key): the stages card's
+  // "להוסיף מהסוג" lists exactly those.
+  const toAdd = !!retyped && retyped === p.template && typeStages(t).some((d) => !p.stages.some((x) => x.key === d.key));
   const pickType = (id) => { if (id !== p.template && setType(p.id, id)) setRetyped(id); };
   const pickPlace = (to) => { if (to !== placeOf(project(p.id))) openSheet('confirm', { what: 'place', pid: p.id, to }); };
   const pickParent = (id) => { if ((id || null) !== (p.parent || null)) setParent(p.id, id || null); };
@@ -111,7 +114,7 @@ export function CoreCard({ p, mgr }) {
         <div class="chips-row co-chips" role="group" aria-labelledby="co-kids-l">${kids.map((k) => html`<a key=${k.id} class="qchip" href=${`#/project/${k.id}`}>
           <i style=${`background:${k.color}`}></i><span class="co-chip-t">${k.name}</span></a>`)}</div></div>` : null}
     </div>
-    <p class="co-note" role="status">${retyped && retyped === p.template ? RETYPED : null}</p>
+    <p class="co-note" role="status">${toAdd ? RETYPED : null}</p>
 
     ${t?.link === 'next' || p.link ? html`<${Platform} key=${p.id} p=${p} can=${can} restricted=${restricted} />` : null}
 
@@ -162,7 +165,8 @@ function HandBack({ p, kids, can }) {
 
 // The Claude type's link out (design §9): the band and "לפתוח בפלטפורמה", or the line that there is none yet, with an
 // inline field to add one. Only a link to /next/ is kept (card.nextLink), so a link from older data that isn't one is
-// treated as none. A שמור / סודי project takes no link (the store refuses), so it isn't offered there.
+// treated as none. A שמור / סודי project takes no link (the store refuses), so it isn't offered there. The field always
+// opens clean: Chromium blurs it as Escape removes it, and that blur's check must not carry over to the next opening.
 function Platform({ p, can, restricted }) {
   const [adding, setAdding] = useState(false);
   const [v, setV] = useState('');
@@ -188,7 +192,7 @@ function Platform({ p, can, restricted }) {
         </div>`
       : html`
         <p class="co-none" tabindex="-1">עוד לא נוסף קישור לפרויקט בפלטפורמה</p>
-        ${can && !restricted && !adding ? html`<button type="button" class="link-btn co-addlink" onClick=${(e) => { refocus(e.currentTarget, '.co-platform', '.co-platform input'); setAdding(true); }}>להוסיף קישור</button>` : null}
+        ${can && !restricted && !adding ? html`<button type="button" class="link-btn co-addlink" onClick=${(e) => { refocus(e.currentTarget, '.co-platform', '.co-platform input'); setAdding(true); setBad(false); }}>להוסיף קישור</button>` : null}
         ${can && !restricted && adding ? html`<form class="inline-form co-linkform" onSubmit=${save}>
             <input class=${'input sm' + (bad ? ' bad' : '')} dir="ltr" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
               value=${v} aria-label="קישור לפרויקט בפלטפורמה" aria-invalid=${bad ? 'true' : null} aria-describedby=${bad ? 'co-link-err' : null}

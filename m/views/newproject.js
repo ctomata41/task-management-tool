@@ -24,7 +24,7 @@ const BAND = {
 const SPLIT_CODE = "יש בפרויקט חלק של קוד עם Claude? פותחים אותו כפרויקט נפרד מסוג 'כלי עם Claude'.";
 const CLAUDE_WORK = 'העבודה עם Claude נעשית בפלטפורמה המחוברת. כאן רואים את השלב ואת העדכון השבועי.';
 const LINK_ERR = 'הקישור צריך להוביל לפלטפורמה המחוברת, לכתובת עם /next/';
-const BLMS_WHAT = ' במשפט בלמ"ס אחד';
+const BLMS_ONE = 'משפט בלמ"ס אחד';
 const DOMAIN_CHOICES = [...PYRAMID_ORDER, null]; // the four tiers, the two side areas, then "בלי רובד"
 
 // The Claude type, or a team copy of it (a copy keeps its link out).
@@ -47,6 +47,13 @@ function labelsLine(t) {
   const all = t ? classifiedLabels(t) : [];
   if (!all.length) return 'מה שמסמנים ככזה';
   return all.length > 4 ? `${all.slice(0, 4).join(', ')} ועוד ${all.length - 4}` : all.join(', ');
+}
+// The "מה ולמה" hint in a closed place: it asks for one בלמ"ס sentence, in place of the hint's "משפט אחד" or as a
+// sentence of its own, and never twice ("…אם נצליח. משפט בלמ"ס אחד, בלי ז׳רגון", "…ולמה עכשיו. משפט בלמ"ס אחד").
+function blmsWhat(h) {
+  if (/בלמ["״]ס/.test(h)) return h;
+  if (h.includes('משפט אחד')) return h.replace('משפט אחד', BLMS_ONE);
+  return h ? `${h}${/[.?!]$/.test(h) ? '' : '.'} ${BLMS_ONE}` : BLMS_ONE;
 }
 
 export function NewProjectBody({ preset = null }) {
@@ -200,7 +207,7 @@ export function NewProjectBody({ preset = null }) {
 
   // 9. What it is for: the type's hint; in a closed place, one בלמ"ס sentence (unless the hint already asks for one).
   const whatHint = coreHint(personal ? typeById(L, 'blank') : t, 'what');
-  const whatPh = restricted && !whatHint.includes('בלמ"ס') ? whatHint + BLMS_WHAT : whatHint;
+  const whatPh = restricted ? blmsWhat(whatHint) : whatHint;
 
   return html`<form class="form np" onSubmit=${save}>
     ${linked && !personal ? html`<div class="note-band np-from"><${Icon} name="link" size=${16} /><span>נפתח מתוך ${preset.parentName}</span></div>` : null}

@@ -36,7 +36,7 @@ export function ConfirmBody({ what, pid, to }) {
       <span class="muted small">${PLACES[to].hint}</span></div>
     ${lines.length ? html`<div class="gate-facts">${lines.map((l) => html`<span>${l}</span>`)}</div>` : null}
     <div class="note-band"><${Icon} name="eye" size=${16} /><span><b>מי רואה:</b> ${whoSees(to).join(' ')}</span></div>
-    ${lower ? html`<label class="lbl" for="c-why">למה? (נרשם ביומן)</label>
+    ${lower ? html`<label class="lbl" for="c-why">למה? (נרשם בהחלטות הפרויקט)</label>
       <textarea id="c-why" class="input area" rows="2" value=${reason} onInput=${(e) => setReason(e.currentTarget.value)} placeholder="למשל: התברר שאין בפרויקט חומר מסווג"></textarea>` : null}
     <div class="form-actions"><button type="button" class="btn btn-primary" disabled=${!ready} onClick=${go}>להעביר</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
   </div>`;

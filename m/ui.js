@@ -287,7 +287,8 @@ function useGlide(ref) {
 // (m.css: .held). When it goes with focus in it (its ביטול, its X, or the time ran out), focus goes back to where it
 // was when the toast came (t.back), or else to where it came into the toast from, never to the top of the page. After a
 // tap or a click, though, never into a text field, which on a phone would raise the keyboard: for a field in an open
-// sheet focus goes to the sheet itself, and for one on the page it stays where the press left it.
+// sheet focus goes to the sheet itself, and for one on the page it stays where the press left it. When both are gone
+// (a ביטול that took away the type this page showed), focus goes to the open sheet, else to the page's title.
 function Toast({ t }) {
   const ref = useRef();
   const on = useRef({ hover: false, focus: false, from: null, pressed: false });
@@ -301,7 +302,11 @@ function Toast({ t }) {
       const back = typeof t.back === 'function' ? t.back() : t.back;
       const live = [back, from].filter((x) => x?.isConnected && x !== document.body && !x.closest('.toasts, [inert]'));
       const to = !pressed ? live[0] : live.find((x) => !x.matches(TYPING)) || live.map((x) => x.closest('[role=dialog]')).find(Boolean);
-      to?.focus({ preventScroll: true });
+      if (to) { to.focus({ preventScroll: true }); return; }
+      const a = document.activeElement;
+      if (live.length || (a && a !== document.body && a.isConnected)) return;
+      const sheet = document.querySelector('.overlay [role=dialog]');
+      if (sheet) sheet.focus({ preventScroll: true }); else focusTitle();
     });
   }, []);
   const out = (e) => !e.currentTarget.contains(e.relatedTarget); // its own node: focus can leave after it unmounted
@@ -315,8 +320,28 @@ function Toast({ t }) {
   </div>`;
 }
 
-// A text field that saves when it is left (and Enter in a one-line field leaves it). Read-only, it shows the text or the
-// placeholder. The ID card's core, stages and facts, and the types page, all write through it.
+// Enter in a one-line field saves it (`save` gets the field) and focus stays in the field, so a keyboard or a screen
+// reader keeps its place. A save that is refused brings the saved text back by mounting a new field in its place (its
+// caller's key); focus goes on to that one. With a touch screen Enter leaves the field instead, which closes the
+// on-screen keyboard, and leaving saves.
+export function saveOnEnter(e, save) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const el = e.currentTarget;
+  if (matchMedia('(pointer: coarse)').matches) { el.blur(); return; }
+  const box = el.parentElement;
+  const at = [...box.children].indexOf(el);
+  save(el);
+  requestAnimationFrame(() => {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.isConnected) return;
+    const now = box.isConnected ? box.children[at] : null;
+    if (now?.matches('input')) now.focus();
+  });
+}
+
+// A text field that saves when it is left, and a one-line field also on Enter (saveOnEnter). Read-only, it shows the
+// text or the placeholder. The ID card's core, stages and facts, and the types page, all write through it.
 export function Text({ value, onSave, placeholder, disabled, multiline = true, label, describedBy = null }) {
   const [v, setV] = useState(value || '');
   const ref = useRef();
@@ -325,9 +350,11 @@ export function Text({ value, onSave, placeholder, disabled, multiline = true, l
   useEffect(grow, [v]);
   if (disabled) return html`<div class=${'ftext ro' + (v ? '' : ' muted')}>${v || placeholder}</div>`;
   const save = () => { if ((v || '') !== (value || '')) onSave(v.trim()); };
+  // Saved on Enter, the field shows what was saved, so leaving it later doesn't save the same text again.
+  const enter = () => { save(); setV(v.trim()); };
   return multiline
     ? html`<textarea ref=${ref} class="ftext" rows="1" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save}></textarea>`
-    : html`<input class="ftext" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save} onKeyDown=${(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />`;
+    : html`<input class="ftext" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save} onKeyDown=${(e) => saveOnEnter(e, enter)} />`;
 }
 
 export function Empty({ icon = 'check', children }) {

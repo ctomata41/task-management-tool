@@ -223,7 +223,7 @@ export const CTO_TYPES = [
     why: 'מה מוכיחים, התקציב ומועד השיגור נשארים ברשת המסווגת',
     trl: true, trlTarget: 7,
     stages: [
-      { key: 'define', name: 'הגדרת הניסוי', exit: 'כתוב מה הניסוי צריך להוכיח, איך מודדים את זה במסלול ומה נחשב הצלחה?', gate: 'manager', days: 21, fields: [C('מה מוכיחים'), C('מדד הצלחה במסלול')] },
+      { key: 'define', name: 'הגדרת הניסוי', exit: 'הוגדר בכתב מה הניסוי צריך להוכיח, איך מודדים את זה במסלול ומה נחשב הצלחה?', gate: 'manager', days: 21, fields: [C('מה מוכיחים'), C('מדד הצלחה במסלול')] },
       { key: 'ride', name: 'הזדמנות טיסה', exit: 'יש דרך ממשית לעלות לחלל, ומי שבונה ומפעיל את הניסוי?', gate: 'manager', days: 60, fields: ['הבונה והמפעיל', C('חלון שיגור משוער')] },
       { key: 'fund', name: 'משאבים והתחייבות', exit: 'תקציב, הסכמים ולוח זמנים מאושרים אצל כל הצדדים?', gate: 'commander', days: 45, fields: [C('תקציב'), 'מקור מימון', 'ההסכמים'] },
       { key: 'design', name: 'תכן', exit: 'התכן עבר סקר תכן קריטי בלי פריטים פתוחים מהותיים?', gate: 'manager', days: 120, fields: ['סקר תכן מקדים', 'סקר תכן קריטי', 'פריטים פתוחים'] },
@@ -484,7 +484,9 @@ export function suggest(L, typeId, preset = null) {
   const mine = !!preset && preset.type === t.id;
   const min = PLACES[preset?.minPlace] ? preset.minPlace : null;
   const allowed = (pl) => !!pl && !placeRefusal(t, pl, { minPlace: min });
-  const floor = min ? `לא נמוך יותר מאבן הבניין: ${PLACES[min].label}` : null;
+  // A reason after "הוצע כי", so a sentence (placeRefusal's short text is for the rows it closes). Not only a בדה"ת:
+  // the floor stays when another type is picked in the same sheet.
+  const floor = min ? `אבן הבניין ב'${PLACES[min].label}', ולא פותחים ממנה פרויקט נמוך יותר` : null;
   let place = null;
   let placeWhy = null;
   if (mine && allowed(preset.place)) { place = preset.place; placeWhy = place === t.place ? t.why || null : floor; }

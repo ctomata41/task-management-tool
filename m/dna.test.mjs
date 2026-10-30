@@ -9,6 +9,7 @@ import {
   stagesFromTemplate, canMoveStage, canSkipStage, canRemoveStage, canUnskipStage, canSetGate, gateRule, stageRule, stagesAfter, makeStage,
   placeRule, placeOf, levelOf, isRestricted, sees, levelEffects, cardFill, stageDays, schedule, daysBetween, nextLink, briefLine, briefParts,
   inValley, handBack, whoSees, lockedWhere, status, placeRefusal, typeFitWhy, domainTitle, domainName, PYRAMID_ORDER, DOMAINS,
+  EDITABLE_KEYS,
 } from './card.js';
 import * as data from './data.js';
 
@@ -184,8 +185,14 @@ test('10 presets: a linked בדה"ת is never lower than its block', () => {
   const sg = suggest(L0, 'bdt', pt);
   assert.equal(sg.place, 'there');
   assert.equal(sg.typeWhy, "הפרויקט נפתח מתוך 'אבן'");
-  assert.equal(sg.placeWhy, 'לא נמוך יותר מאבן הבניין: הכול ברשת המסווגת');
+  // the reason reads as one after "הוצע כי"; the rows below the floor keep their short text
+  assert.equal(sg.placeWhy, "אבן הבניין ב'הכול ברשת המסווגת', ולא פותחים ממנה פרויקט נמוך יותר");
   assert.equal(placeRefusal(T('bdt'), 'both', { minPlace: 'there' }), 'לא נמוך יותר מאבן הבניין: הכול ברשת המסווגת');
+  // another type picked in the same sheet keeps the floor, and the same reason
+  const other = suggest(L0, 'block', pt);
+  assert.deepEqual([other.place, other.placeWhy, other.typeWhy], ['there', sg.placeWhy, null]);
+  // a block at its type's own place: the type's reason, not the floor
+  assert.equal(suggest(L0, 'bdt', pr).placeWhy, T('bdt').why);
   const plain = suggest(L0, 'block');
   assert.deepEqual([plain.place, plain.placeWhy, plain.domain, plain.domainWhy, plain.typeWhy], ['both', T('block').why, 'blocks', "זה הרובד הרגיל של 'אבן בניין טכנולוגית'", null]);
   assert.deepEqual([suggest(L0, 'tool').place, suggest(L0, 'tool').placeWhy, suggest(L0, 'tool').domain], [null, null, null]);
@@ -592,10 +599,12 @@ const mem = new Map();
 const LINE = { id: 'l1', at: '2026-10-29T10:00:00.000Z', who: 'yahali', text: 'שורה ביומן' };
 let S = null;
 let libAtLoad = null;
+let full = false; // storage that is full: every write throws, as a browser's does
+const quota = () => { const e = new Error('The quota has been exceeded.'); e.name = 'QuotaExceededError'; return e; };
 async function store() {
   if (S) return S;
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value: {
-    getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { mem.set(k, String(v)); }, removeItem: (k) => { mem.delete(k); } } });
+    getItem: (k) => (mem.has(k) ? mem.get(k) : null), setItem: (k, v) => { if (full) throw quota(); mem.set(k, String(v)); }, removeItem: (k) => { mem.delete(k); } } });
   mem.set('m.lib', JSON.stringify({ v: 1, types: {}, log: [null, LINE, 7, 'שורה', []] }));
   const src = (code) => `data:text/javascript,${encodeURIComponent(code)}`;
   const stubs = { hooks: src('export const useState = (v) => [v, () => {}]; export const useEffect = () => {};'), motion: src('export const haptic = () => {};') };
@@ -784,7 +793,7 @@ test('store: in a project that is all on the classified network, no task goes to
   quiet();
 });
 
-test('store: a saved path that is not a list, or a place the type does not allow, is dropped on the next edit: no empty path, no refusal (design §2.7)', async () => {
+test('store: a saved path that is not a list, a place the type does not allow, or a key this build does not know, is dropped on the next edit of a code type or a team type: no empty path, no refusal (design §2.7)', async () => {
   await store();
   const keys = (id) => typeStages(S.lib().types.find((t) => t.id === id)).map((s) => s.key);
   const broken = (id) => { const L = { v: 1, types: { [id]: { hint: 'רמז', stages: { broken: true } } }, log: [] }; mem.set('m.lib', JSON.stringify(L)); S.set({ lib: L }); };
@@ -822,6 +831,31 @@ test('store: a saved path that is not a list, or a place the type does not allow
   assert.equal(S.setTypeDef('study', { stages: [...rest, first] }, 'הסדר עודכן'), true);
   assert.deepEqual(keys('study'), [...rest, first].map((s) => s.key));
   assert.deepEqual(JSON.parse(mem.get('m.lib')).types.study.stages.map((s) => s.key), [...rest, first].map((s) => s.key));
+  // the same for a team type: a saved place outside its own places, or a key this build doesn't know (a later build's),
+  // is dropped on the next edit, and the edit goes in, a text edit, a structural one or hiding it
+  const TEAM = [...EDITABLE_KEYS, 'team', 'places', 'link'];
+  const team = (extra) => ({ team: true, name: 'סוג של הצוות', hint: 'רמז', places: ['here', 'both', 'there'], place: null, domain: null, stages: [], facts: [], ...extra });
+  const teamLib = (t) => { const L = { v: 1, types: { tyX: t }, log: [] }; mem.set('m.lib', JSON.stringify(L)); S.set({ lib: L }); };
+  for (const extra of [{ places: ['here'], place: 'there' }, { place: 'mars' }, { color: 'teal' }, { id: 'other', cto: false }]) {
+    const tag = JSON.stringify(extra);
+    fresh('yahali');
+    teamLib(team(extra));
+    assert.equal(S.lib().types.find((t) => t.id === 'tyX').place ?? null, null, tag);
+    assert.equal(S.setTypeDef('tyX', { hint: 'רמז חדש' }), true, tag);
+    assert.equal(S.setTypeDef('tyX', { domain: 'infra' }, "הסוג 'סוג של הצוות' עודכן"), true, tag);
+    assert.equal(S.hideType('tyX', true), true, tag);
+    const saved = JSON.parse(mem.get('m.lib')).types.tyX;
+    assert.deepEqual([saved.hint, saved.domain, saved.hidden, saved.place ?? null], ['רמז חדש', 'infra', true, null], tag);
+    assert.deepEqual(Object.keys(saved).filter((k) => !TEAM.includes(k)), [], tag);
+    assert.deepEqual(saved.places, team(extra).places, tag);
+    quiet();
+  }
+  // a place its places allow stays
+  fresh('yahali');
+  teamLib(team({ places: ['here', 'both'], place: 'both', color: 'teal' }));
+  assert.equal(S.setTypeDef('tyX', { hint: 'רמז חדש' }), true);
+  const kept = JSON.parse(mem.get('m.lib')).types.tyX;
+  assert.deepEqual([kept.place, kept.hint, 'color' in kept], ['both', 'רמז חדש', false]);
   mem.delete('m.lib');
   S.set({ lib: EMPTY_LIB });
   quiet();
@@ -865,5 +899,45 @@ test('store: the block\'s log line about a linked בדה"ת is read only by whoe
   undo();
   assert.equal(S.project('p6').trl, 5);
   assert.deepEqual(read('yahali'), ['דיברנו על בקשה', 'החלטה של אבן הבניין']);
+  quiet();
+});
+
+test('store: while m.lib cannot be written (storage full), each type edit starts from this tab\'s copy and keeps the one before, and its ביטול goes in (design §2.7, §7)', async () => {
+  await store();
+  fresh('yahali');
+  // the team's edits were saved before the storage filled up
+  const before = { v: 1, types: { rnd: { hint: 'נשמר קודם' } }, log: [] };
+  mem.set('m.lib', JSON.stringify(before));
+  S.set({ lib: before });
+  const block = () => S.lib().types.find((t) => t.id === 'block');
+  const sayNo = 'אי אפשר לבטל: הסוגים השתנו מאז';
+  full = true;
+  try {
+    assert.equal(S.setTypeDef('block', { hint: 'תיאור חדש' }), true);
+    assert.equal(S.setTypeDef('block', { name: 'שם חדש' }), true);
+    assert.deepEqual([block().hint, block().name], ['תיאור חדש', 'שם חדש']);
+    assert.equal(S.setTypeDef('block', { domain: 'infra' }, "הסוג 'שם חדש' עודכן"), true);
+    assert.deepEqual([block().domain, block().name, block().hint], ['infra', 'שם חדש', 'תיאור חדש']);
+    // nothing reached storage, and what was saved before stays on screen
+    assert.equal(mem.get('m.lib'), JSON.stringify(before));
+    assert.equal(S.lib().types.find((t) => t.id === 'rnd').hint, 'נשמר קודם');
+    // nothing changed since, so its ביטול goes in, and takes back that edit alone
+    undo();
+    assert.deepEqual([block().domain, block().name, block().hint], [T('block').domain, 'שם חדש', 'תיאור חדש']);
+    assert.ok(!S.getState().toasts.some((t) => t.text === sayNo));
+  } finally {
+    full = false;
+  }
+  // once a write goes in, it carries everything this tab kept
+  assert.equal(S.setTypeDef('block', { why: 'הסבר חדש' }), true);
+  const saved = JSON.parse(mem.get('m.lib'));
+  assert.deepEqual([saved.types.block.hint, saved.types.block.name, saved.types.block.why, saved.types.block.domain, saved.types.rnd.hint],
+    ['תיאור חדש', 'שם חדש', 'הסבר חדש', undefined, 'נשמר קודם']);
+  // and from then on m.lib is read again, so another tab's edit stays
+  mem.set('m.lib', JSON.stringify({ ...saved, types: { ...saved.types, study: { hint: 'מלשונית אחרת' } } }));
+  assert.equal(S.setTypeDef('block', { hint: 'עוד תיאור' }), true);
+  assert.equal(JSON.parse(mem.get('m.lib')).types.study.hint, 'מלשונית אחרת');
+  mem.delete('m.lib');
+  S.set({ lib: EMPTY_LIB });
   quiet();
 });
