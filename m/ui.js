@@ -28,6 +28,25 @@ export function Faces({ ids, size = 24, max = 4 }) {
   return html`<span class="faces">${shown.map((id) => html`<${Avatar} key=${id} id=${id} size=${size} ring />`)}${ids.length > max ? html`<span class="faces-more">+${ids.length - max}</span>` : null}</span>`;
 }
 
+// A line cut short with an ellipsis loses what is past its visual end, which in a Hebrew line is the left edge. When a
+// Latin word or a number sits there, the cut takes its first letters ("כלי עם laude…"). Each such run becomes one box
+// (.ltr-run) the cut takes whole or not at all, while a Hebrew word is still cut at its logical end. A name with no
+// Hebrew runs left to right in a box of its own that cuts its own end (.ltr-cut).
+const LTR_RUN = /[A-Za-z0-9](?:[A-Za-z0-9 .,'’&+_:/-]*[A-Za-z0-9])?/g;
+export function cutSafe(text) {
+  const s = String(text ?? '');
+  if (!/[֐-׿]/.test(s)) return s ? html`<bdi dir="ltr" class="ltr-cut">${s}</bdi>` : s;
+  const out = [];
+  let at = 0;
+  for (const m of s.matchAll(LTR_RUN)) {
+    if (m.index > at) out.push(s.slice(at, m.index));
+    out.push(html`<bdi class="ltr-run">${m[0]}</bdi>`);
+    at = m.index + m[0].length;
+  }
+  if (at < s.length) out.push(s.slice(at));
+  return out;
+}
+
 export function Pill({ color, children, cls = '' }) {
   return html`<span class=${'spill ' + cls} style=${`--c:${color}`}>${children}</span>`;
 }

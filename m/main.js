@@ -3,7 +3,7 @@
 // and the project types, #/types and #/types/:id (under פרויקטים).
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
+import { html, Icon, Avatar, Sheet, Toasts, MenuLayer, cutSafe } from './ui.js';
 import { QuickAdd } from './parts.js';
 import { useStore, openSheet, handOver, person, isCommander, canSee, canSeeTask, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount, lib } from './store.js';
 import { typeById } from './card.js';
@@ -128,13 +128,13 @@ function App() {
           <${Icon} name=${n.icon} /><span>${n.label}</span>${counts[n.id] ? html`<span class="side-count">${counts[n.id]}</span>` : null}</a>`)}
       </nav>
       ${mine.length ? html`<div class="side-projects"><div class="side-sub">הפרויקטים שלי</div>
-        ${mine.map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${p.name}</span></a>`)}</div>` : null}
+        ${mine.map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${cutSafe(p.name)}</span></a>`)}</div>` : null}
       ${personalProjects().length ? html`<div class="side-projects"><div class="side-sub">אישי</div>
-        ${personalProjects().map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${p.name}</span></a>`)}</div>` : null}
+        ${personalProjects().map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${cutSafe(p.name)}</span></a>`)}</div>` : null}
       <button type="button" class="side-me" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${32} /><div><strong>${me.name}</strong><span>${me.role === 'commander' ? 'מפקד' : me.role === 'external' ? me.org : me.title} · דמו</span></div></button>
     </aside>
     <div class="main">
-      <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
+      <header class="topbar"><div class="topbar-title">${cutSafe(title)}</div><div class="grow"></div>
         <span class="proto-badge" title="הנתונים נשמרים רק בדפדפן הזה">דמו · נתונים מקומיים</span>
         <${ThemeButton} />
         <button type="button" class="icon-btn mobile-only" aria-label="החלפת משתמש" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${30} /></button>

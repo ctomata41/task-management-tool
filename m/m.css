@@ -4,6 +4,10 @@
 
 .logo-m { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: var(--on-accent); background: var(--accent); flex: none; }
 .m-app .side-projects + .side-projects { margin-top: 10px; }
+/* ui.cutSafe: a Latin or number run inside a Hebrew name is one box, so an ellipsis takes it whole or not at all; a name
+   with no Hebrew cuts its own end, left to right. Aligned to the top: a box that clips sits on its bottom edge. */
+.ltr-run { display: inline-block; }
+.ltr-cut { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: top; }
 .page-head2 { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-top: 8px; }
 .page-head2 .sub { margin-top: 6px; }
 .ok-t { color: var(--ok); }
