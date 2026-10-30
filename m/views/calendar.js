@@ -4,9 +4,9 @@
 // project), each stage a capsule in time; tapping one sets its target.
 import { useState, useEffect, useRef } from 'preact/hooks';
 import { html, Icon, Seg, Empty, ProjectTag, isoDay, dueWord, dateInput } from '../ui.js';
-import { useStore, myTasks, teamProjects, personalProjects, project, canManage, isCommander, isOpen, openSheet, closeSheet, setStage,
+import { useStore, myTasks, teamProjects, personalProjects, project, canManage, canSeeDetail, isCommander, isOpen, openSheet, closeSheet, setStage,
   STATUS, PRIORITY_ORDER } from '../store.js';
-import { schedule, dayStart, addDays, plausibleDay, STAGE_DAYS, DAY } from '../card.js';
+import { schedule, dayStart, addDays, plausibleDay, stageDays, DAY } from '../card.js';
 import { useGcal, GcalCard, GcalChip } from '../gcal.js';
 
 const VIEW_KEY = 'm.cal.view';
@@ -67,9 +67,12 @@ function dayItems(s, t, events) {
   // My projects: the ones I run or am a partner in (the commander: every team project). Their meetings, and mine.
   const mine = [...teamProjects(), ...personalProjects()].filter((p) => p.manager === s.me || p.partners.includes(s.me) || (isCommander() && !p.personal));
   for (const m of s.meetings) {
-    // Only my projects' meetings, which also keeps a locked project's meetings from those outside it.
-    if (isoDay(new Date(m.at)) !== key || !(m.by === s.me || mine.some((p) => p.id === m.project))) continue;
-    out.push({ kind: 'meeting', key: `m${m.id}`, time: hhmm(m.at), title: m.title, output: m.output, p: project(m.project), rank: `0${hhmm(m.at)}` });
+    // Only my projects' meetings, which also keeps a locked project's meetings from those outside it. One I recorded
+    // myself shows only while I still see its project past the one line (card.sees), as its output does: not once I'm
+    // taken out of a locked project, nor for an outside partner once the project is all on the classified network.
+    const p = project(m.project);
+    if (isoDay(new Date(m.at)) !== key || !(mine.some((x) => x.id === m.project) || (m.by === s.me && (!p || canSeeDetail(p))))) continue;
+    out.push({ kind: 'meeting', key: `m${m.id}`, time: hhmm(m.at), title: m.title, output: m.output, p, rank: `0${hhmm(m.at)}` });
   }
   // Stage targets only while a project runs: a stopped or finished project's target is no longer anyone's date.
   for (const p of mine.filter(isOpen)) {
@@ -218,6 +221,7 @@ export function StageBody({ pid, sid }) {
   // the stored target would wipe a year typed halfway; on leaving the field, a year never finished gives way to it.
   const [draft, setDraft] = useState(null);
   const p = project(pid);
+  if (p && !canSeeDetail(p)) return html`<${Empty} icon="lock">השלב הזה רק למי שבפרויקט</${Empty}>`; // past the one line
   const st = p?.stages.find((x) => x.id === sid);
   if (!p || !st) return html`<${Empty}>השלב לא נמצא.</${Empty}>`;
   const r = schedule(p).find((x) => x.id === sid);
@@ -238,7 +242,7 @@ export function StageBody({ pid, sid }) {
           : html`<label class="fact-btn"><${Icon} name="calendar" size=${16} /><input type="date" value=${draft ?? dateInput(st.target)} disabled=${!mgr} aria-label="יעד לסיום השלב"
             min="2000-01-01" max="2100-12-31" onInput=${setTarget} onBlur=${() => setDraft(null)} />${st.target ? dueWord(st.target) : mgr ? 'לקבוע יעד' : 'עוד לא נקבע'}</label>`}</div>
     </div>
-    ${!closed && !st.target ? html`<p class="muted small">עד שנקבע יעד, הגאנט מעריך את השלב לפי האורך הרגיל שלו: ${STAGE_DAYS[st.key] || 14} ימים.</p>` : null}
+    ${!closed && !st.target ? html`<p class="muted small">עד שנקבע יעד, הגאנט מעריך את השלב לפי האורך הרגיל שלו: ${stageDays(st)} ימים.</p>` : null}
     ${r.late ? html`<p class="small bad-t">היעד עבר והשלב עוד פתוח.</p>` : null}
     <div class="form-actions"><a class="btn" href=${`#/project/${p.id}`} onClick=${closeSheet}>לפתוח את הפרויקט</a></div>
   </div>`;

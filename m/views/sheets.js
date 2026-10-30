@@ -1,97 +1,30 @@
-// Every sheet in the manual version: a new project, closing a stage (the gate), the weekly update, the commander's ask
-// to a manager, a task (an ask with its breakdown), people, and recording a meeting. Each is short on purpose: a few
-// taps, then back to work.
+// Every sheet in the manual version: closing a stage (the gate), the weekly update, the commander's ask to a manager, a
+// task (an ask with its breakdown), people, and recording a meeting (a new project is views/newproject.js, and a
+// change of place is views/confirm.js). Each is short on purpose: a few taps, then back to work.
 import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, Seg, Empty, Classified, AskPill, dueWord, dueDate, dateInput, isoDay, ago, openMenu, OUT_KIND } from '../ui.js';
-import { useStore, project, person, team, isCommander, canManage, canEditTask, closeSheet, openSheet, addProject, closeStage, approveGate, returnGate,
+import { useStore, project, person, isCommander, actsAsCommander, canManage, canEditTask, closeSheet, openSheet, closeStage, approveGate, returnGate,
   weeklyUpdate, resolveSenior, updateTask, setStatus, deleteTask, toggleFocus, addPerson, updateProject, saveMeeting, projectOutputs,
-  STATUS, STATUS_ORDER, visibleProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, inProject, canSeeDetail, canSeeTask, projectAsks, askTasks, isOpen } from '../store.js';
-import { TEMPLATES, CLASSIFICATION, HILL, CONFIDENCE, GATE_CHOICES, currentStage, askState } from '../card.js';
+  STATUS, STATUS_ORDER, visibleProjects, meetingProjects, getState, toast, switchTo, resetSample, sendAsk, ackAsk, talked, leads, inProject, canSeeDetail, canSeeTask, projectAsks, askTasks, isOpen } from '../store.js';
+import { HILL, CONFIDENCE, GATE_CHOICES, currentStage, askState, placeOf, isRestricted } from '../card.js';
 import { MeetingSummary } from './outputs.js';
 import { ownerItems, ownerPool, ADD, TaskTable, focusStar } from '../table.js';
-
-// ---------- a new project ----------
-export function NewProjectBody() {
-  const s = useStore();
-  const cmd = isCommander();
-  const [kind, setKind] = useState('team');
-  const [name, setName] = useState('');
-  const [cls, setCls] = useState(null);
-  const [tpl, setTpl] = useState('tool');
-  const [what, setWhat] = useState('');
-  const [manager, setManager] = useState(s.me);
-  const [partners, setPartners] = useState([]);
-  const [ext, setExt] = useState(null);
-  const extBtn = useRef();
-  const [exts, setExts] = useState([]); // outsiders typed here: they become people only when the project is saved
-  const personal = kind === 'personal';
-  const ready = name.trim() && (personal || cls);
-  const toggle = (id) => setPartners(partners.includes(id) ? partners.filter((x) => x !== id) : [...partners, id]);
-  const save = (e) => {
-    e.preventDefault();
-    if (!ready) return;
-    const ids = personal ? [] : partners.filter((x) => x !== manager).map((id) => {
-      const x = exts.find((y) => y.id === id);
-      return x ? addPerson({ name: x.name, org: x.org, account: false }).id : id;
-    });
-    const p = addProject({ name: name.trim(), classification: cls || 'open', template: personal ? 'blank' : tpl, what: what.trim(), manager, partners: ids, personal });
-    closeSheet();
-    location.hash = `#/project/${p.id}`;
-    toast(personal ? 'הפרויקט האישי נפתח. רק את/ה רואה אותו' : 'הפרויקט נפתח. תעודת הזהות מחכה למילוי לאורך הדרך');
-  };
-  const pool = [...s.people.filter((x) => x.id !== manager), ...exts];
-  const addExt = () => {
-    if (!ext.name.trim()) return;
-    const id = `new:${exts.length}`;
-    setExts([...exts, { id, name: ext.name.trim(), org: ext.org.trim(), role: 'external' }]);
-    setPartners([...partners, id]);
-    setExt(null);
-    extBtn.current?.focus(); // the fields are about to go; focus stays beside the new chip
-  };
-  const face = (x) => (x.id.startsWith('new:') ? html`<span class="avatar ext pending" style="width:22px;height:22px;font-size:9px">${x.name.slice(0, 2)}</span>` : html`<${Avatar} id=${x.id} size=${22} />`);
-  const enterAdds = (e) => { if (e.key === 'Enter') { e.preventDefault(); addExt(); } };
-  return html`<form class="form" onSubmit=${save}>
-    <${Seg} label="סוג" value=${kind} onChange=${setKind} options=${[{ id: 'team', label: 'פרויקט צוות' }, { id: 'personal', label: 'פרויקט אישי' }]} />
-    ${personal ? html`<p class="muted small">פרויקט אישי נשאר רק אצלך: קורס, לימודים, משהו שלך. הוא לא מופיע לצוות ולא למפקד.</p>` : null}
-    <label class="lbl" for="np-name">שם</label>
-    <input id="np-name" class="input" value=${name} onInput=${(e) => setName(e.currentTarget.value)} placeholder=${personal ? 'למשל: קורס ניהול מוצר' : 'למשל: מערכת אישורי כניסה'} />
-    ${personal ? null : html`
-      <span class="lbl">סיווג הפרויקט</span>
-      <div class="pick-2">${Object.entries(CLASSIFICATION).map(([id, c]) => html`<button type="button" class=${'opt-card' + (cls === id ? ' on' : '')} aria-pressed=${cls === id} onClick=${() => setCls(id)}>
-        <span class="oc-top">${id === 'restricted' ? html`<${Icon} name="lock" size=${16} />` : html`<${Icon} name="unlock" size=${16} />`}<strong>${c.label}</strong></span><span class="muted small">${c.hint}</span></button>`)}</div>
-      ${cmd ? html`<span class="lbl">מי מוביל/ה</span><div class="chips-row">${team().map((x) => html`<button type="button" class=${'person-chip' + (manager === x.id ? ' on' : '')} onClick=${() => setManager(x.id)}><${Avatar} id=${x.id} size=${22} />${x.name}</button>`)}</div>` : null}
-      <span class="lbl">שותפים <span class="muted">(אפשר להוסיף גם אחר כך)</span></span>
-      <div class="chips-row">${pool.map((x) => html`<button type="button" class=${'person-chip' + (partners.includes(x.id) ? ' on' : '')} aria-pressed=${partners.includes(x.id)} onClick=${() => toggle(x.id)}>${face(x)}${x.name}${x.role === 'external' ? html`<span class="muted small">· מבחוץ</span>` : null}</button>`)}
-        <button type="button" class="person-chip add" ref=${extBtn} aria-expanded=${!!ext} onClick=${() => setExt(ext ? null : { name: '', org: '' })}><${Icon} name="plus" size=${16} />גורם מבחוץ</button></div>
-      ${ext ? html`<div class="inline-form ext-form">
-        <input class="input" value=${ext.name} onInput=${(e) => setExt({ ...ext, name: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="שם" aria-label="שם השותף" />
-        <input class="input" value=${ext.org} onInput=${(e) => setExt({ ...ext, org: e.currentTarget.value })} onKeyDown=${enterAdds} placeholder="מאיפה: ארגון, מחלקה, ספק" aria-label="מאיפה" />
-        <button type="button" class="btn" disabled=${!ext.name.trim()} onClick=${addExt}>הוספה</button></div>` : null}
-      <span class="lbl">תבנית שלבים</span>
-      <div class="tpl-list">${TEMPLATES.map((t) => html`<button type="button" class=${'tpl-opt' + (tpl === t.id ? ' on' : '')} aria-pressed=${tpl === t.id} onClick=${() => setTpl(t.id)}>
-        <span class="grow"><strong>${t.name}</strong><span class="muted small">${t.stages.length ? t.stages.map((k) => k).length + ' שלבים · ' : ''}${t.hint}</span></span>${tpl === t.id ? html`<${Icon} name="check" size=${16} />` : null}</button>`)}</div>
-      <p class="muted small">את השלבים אפשר לשנות בכל רגע: להוסיף, לדלג, לסדר מחדש.</p>
-      <label class="lbl" for="np-what">מה ולמה <span class="muted">(אפשר גם אחר כך)</span></label>
-      <textarea id="np-what" class="input area" rows="2" value=${what} onInput=${(e) => setWhat(e.currentTarget.value)} placeholder="מה מנסים לעשות, ומה ישתנה אם נצליח"></textarea>
-    `}
-    <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!ready}>פתיחת הפרויקט</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
-  </form>`;
-}
 
 // ---------- closing a stage ----------
 export function GateBody({ id }) {
   const s = useStore();
   const p = project(id);
   const cur = p && currentStage(p);
-  const [choice, setChoice] = useState('next');
+  const [chosen, setChoice] = useState('next');
   const [note, setNote] = useState('');
-  const [ev, setEv] = useState([]);
-  const [backTo, setBackTo] = useState('');
+  const [picks, setPicks] = useState([]);
+  const [backPick, setBackPick] = useState('');
   if (!p) return null;
   // Only whoever manages the project (its manager, the commander) closes or approves its stage.
   if (!canManage(p)) return html`<${Empty} icon="lock">רק מי שמנהל את הפרויקט סוגר את השלב שלו.</${Empty}>`;
   if (!cur) return html`<${Empty}>אין שלב פתוח בפרויקט הזה.</${Empty}>`;
-  const cmd = isCommander();
+  // The commander decides a commander gate; in a personal project its owner does (store.actsAsCommander).
+  const cmd = actsAsCommander(p);
   const pending = cur.state === 'pending';
   // The commander answers a stage that waits for approval: approve, or return it with a direction.
   if (pending && cmd) {
@@ -111,6 +44,12 @@ export function GateBody({ id }) {
   const open = tasks.filter((t) => t.status !== 'done').length;
   const empty = cur.fields.filter((f) => !(f.value && f.value.trim()) && !f.unknown && !f.classified).map((f) => f.label);
   const before = p.stages.slice(0, p.stages.indexOf(cur)).filter((x) => x.state === 'done' || x.state === 'skipped');
+  // The sheet saves what it shows, from the live path: a toast's ביטול can change the current stage while it is open.
+  // A pick that no longer fits then gives way: evidence from another stage, a stage to go back to that is no longer
+  // behind this one, and going back at all when none is.
+  const choice = chosen === 'back' && !before.length ? 'next' : chosen;
+  const backTo = before.some((x) => x.id === backPick) ? backPick : '';
+  const ev = picks.filter((x) => outs.some((o) => o.id === x));
   const waits = choice === 'next' && cur.gate === 'commander' && !cmd;
   const save = () => {
     if (choice === 'stop' && !note.trim()) return;
@@ -126,8 +65,8 @@ export function GateBody({ id }) {
     <span class="lbl">מה עושים</span>
     <div class="choice-list">${Object.entries(GATE_CHOICES).map(([k, c]) => (k === 'back' && !before.length ? null : html`<button type="button" class=${'choice' + (choice === k ? ' on' : '') + (k === 'stop' ? ' danger' : '')} aria-pressed=${choice === k} onClick=${() => setChoice(k)}>
       <${Icon} name=${c.icon} size=${17} /><span class="grow">${c.label}</span>${choice === k ? html`<${Icon} name="check" size=${16} />` : null}</button>`))}</div>
-    ${choice === 'next' && outs.length ? html`<span class="lbl">הראיות לסגירה</span><div class="chips-row">${outs.map((o) => html`<button type="button" class=${'person-chip' + (ev.includes(o.id) ? ' on' : '')} aria-pressed=${ev.includes(o.id)} onClick=${() => setEv(ev.includes(o.id) ? ev.filter((x) => x !== o.id) : [...ev, o.id])}><${Icon} name=${(OUT_KIND[o.kind] || OUT_KIND.link).icon} size=${14} />${o.title}</button>`)}</div>` : null}
-    ${choice === 'back' ? html`<label class="lbl" for="g-back">לאיזה שלב</label><select id="g-back" class="input" value=${backTo} onChange=${(e) => setBackTo(e.currentTarget.value)}>
+    ${choice === 'next' && outs.length ? html`<span class="lbl">הראיות לסגירה</span><div class="chips-row">${outs.map((o) => html`<button type="button" class=${'person-chip' + (ev.includes(o.id) ? ' on' : '')} aria-pressed=${ev.includes(o.id)} onClick=${() => setPicks(ev.includes(o.id) ? ev.filter((x) => x !== o.id) : [...ev, o.id])}><${Icon} name=${(OUT_KIND[o.kind] || OUT_KIND.link).icon} size=${14} />${o.title}</button>`)}</div>` : null}
+    ${choice === 'back' ? html`<label class="lbl" for="g-back">לאיזה שלב</label><select id="g-back" class="input" value=${backTo} onChange=${(e) => setBackPick(e.currentTarget.value)}>
       <option value="">לשלב הקודם</option>${before.map((x) => html`<option value=${x.id}>${x.name}</option>`)}</select>` : null}
     <label class="lbl" for="g-note">${choice === 'stop' ? 'למה עוצרים (חובה)' : 'מה למדנו, במשפט'}</label>
     <textarea id="g-note" class="input area" rows="2" value=${note} onInput=${(e) => setNote(e.currentTarget.value)} placeholder=${choice === 'stop' ? 'עצירה היא החלטה טובה כשיודעים למה. זה נשמר בהחלטות' : 'לא חובה. נשמר בהחלטות הפרויקט'}></textarea>
@@ -158,13 +97,16 @@ export function ReturnBody({ id }) {
 }
 
 // ---------- the weekly update: three taps ----------
-export function WeeklyBody({ id }) {
+// With `senior` (from a stage only the commander may skip or remove, views/stages.js), "צריך בכיר?" opens on "כן" with
+// that request after the one already there.
+export function WeeklyBody({ id, senior: ask = null }) {
   const p = project(id);
+  const was = p?.needsSenior?.what || '';
   const [hill, setHill] = useState(p?.hill || 'up');
   const [conf, setConf] = useState(p?.confidence || 'on');
   const [note, setNote] = useState(p?.confNote || '');
-  const [senior, setSenior] = useState(!!p?.needsSenior);
-  const [what, setWhat] = useState(p?.needsSenior?.what || '');
+  const [senior, setSenior] = useState(!!p?.needsSenior || !!ask);
+  const [what, setWhat] = useState(!ask || was.includes(ask) ? was : was ? `${was} · ${ask}` : ask);
   const [by, setBy] = useState(dateInput(p?.needsSenior?.by));
   if (!p) return null;
   const needNote = conf !== 'on';
@@ -236,7 +178,7 @@ export function AskBody({ id }) {
     <div class="conf-pick ask-when" role="group" aria-labelledby="a-when">${WHEN.map((w) => html`<button type="button" class=${'conf-opt' + (when === w.id ? ' on' : '')} style="--c:var(--accent)"
       aria-pressed=${when === w.id} onClick=${() => setWhen(when === w.id ? null : w.id)}>${w.label}<small>${dueDate(whenDay(w.id))}</small></button>`)}</div>
     <div class="ask-to"><${Avatar} id=${p.manager} size=${28} /><span>תגיע ל${person(p.manager).name}, שמנהל/ת את הפרויקט${open ? ` · ${open === 1 ? 'כבר פתוחה שם בקשה אחת ממך' : `כבר פתוחות שם ${open} בקשות ממך`}` : ''}</span></div>
-    ${p.classification === 'restricted' ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>בלי פרטים מסווגים: הם נשארים ברשת המסווגת</span></div>` : null}
+    ${isRestricted(p) ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>בלי פרטים מסווגים: הם נשארים ברשת המסווגת</span></div>` : null}
     <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim()}>לשלוח את הבקשה</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
   </form>`;
 }
@@ -354,7 +296,9 @@ export function PartnerBody({ id, task: taskId }) {
   const [account, setAccount] = useState('no');
   if (!p) return null;
   const inIt = new Set([p.manager, ...p.partners]);
-  const pool = s.people.filter((x) => !inIt.has(x.id));
+  const there = placeOf(p) === 'there'; // outside partners have no access to it here (card.sees)
+  const pool = s.people.filter((x) => !inIt.has(x.id) && !(there && x.role === 'external'));
+  const pick = there || mode === 'pick';
   const task = taskId && !s.tasks.find((x) => x.id === taskId)?.ask ? taskId : null;
   const add = (pid) => {
     updateProject(p.id, { partners: [...p.partners, pid] });
@@ -363,8 +307,9 @@ export function PartnerBody({ id, task: taskId }) {
   };
   const done = closeSheet; // with `back`, closing returns to the task
   return html`<div class="form">
-    <${Seg} label="מי" value=${mode} onChange=${setMode} options=${[{ id: 'pick', label: 'מהרשימה' }, { id: 'new', label: 'גורם חיצוני חדש' }]} />
-    ${mode === 'pick' ? (pool.length ? html`<div class="who-list">${pool.map((x) => html`<button type="button" class="who-row" onClick=${() => { add(x.id); done(); }}><${Avatar} id=${x.id} size=${34} />
+    ${there ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>בפרויקט שכולו ברשת המסווגת אין גישה לשותפים מבחוץ.</span></div>`
+      : html`<${Seg} label="מי" value=${mode} onChange=${setMode} options=${[{ id: 'pick', label: 'מהרשימה' }, { id: 'new', label: 'גורם חיצוני חדש' }]} />`}
+    ${pick ? (pool.length ? html`<div class="who-list">${pool.map((x) => html`<button type="button" class="who-row" onClick=${() => { add(x.id); done(); }}><${Avatar} id=${x.id} size=${34} />
       <div class="grow"><strong>${x.name}</strong><span class="muted small">${x.role === 'external' ? `${x.org || 'מבחוץ'}${x.account ? '' : ' · בלי משתמש'}` : x.title}</span></div><${Icon} name="plus" size=${18} /></button>`)}</div>` : html`<${Empty}>כולם כבר בפרויקט.</${Empty}>`)
     : html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (!name.trim()) return; const x = addPerson({ name: name.trim(), org: org.trim(), account: account === 'yes' }); add(x.id); done(); }}>
       <label class="lbl" for="pp-name">שם</label><input id="pp-name" class="input" value=${name} onInput=${(e) => setName(e.currentTarget.value)} />
@@ -396,12 +341,13 @@ export function MeetingBody({ project: pid }) {
   const [step, setStep] = useState('details');
   const [title, setTitle] = useState('');
   const [purpose, setPurpose] = useState('');
-  const [proj, setProj] = useState(pid || '');
+  const [proj, setProj] = useState(pid && meetingProjects().some((x) => x.id === pid) ? pid : '');
   const [sec, setSec] = useState(0);
   const [saved, setSaved] = useState(null);
   const rec = useRef(null);
   const p = project(proj);
-  const restricted = p?.classification === 'restricted';
+  const restricted = isRestricted(p);
+  const can = !proj || meetingProjects().some((x) => x.id === proj); // store.saveMeeting asks the same
   useEffect(() => {
     if (step !== 'rec') return undefined;
     const t = setInterval(() => setSec((n) => n + 1), 1000);
@@ -428,7 +374,13 @@ export function MeetingBody({ project: pid }) {
       const minutes = Math.max(1, Math.round(sec / 60));
       const m = saveMeeting({ project: proj || null, title: title.trim(), purpose: purpose.trim(), minutes, state: 'done', audio,
         summary: { decisions: ['(דוגמה) ממשיכים בכיוון שהוצג'], tasks: [{ text: '(דוגמה) לשלוח סיכום לשותפים', owner: person(s.me).name }], questions: ['(דוגמה) מי מאשר את השלב הבא?'], next: '(דוגמה) פגישת המשך בשבוע הבא' } });
-      setTimeout(() => { setSaved(m); setStep('done'); }, 900);
+      // Refused (the project changed while recording): back to the details. One now שמור / סודי says so there; one I
+      // can no longer record in (closed, or I left it) gives way to "בלי פרויקט".
+      setTimeout(() => {
+        setSaved(m);
+        setStep(m ? 'done' : 'details');
+        if (!m && !meetingProjects().some((x) => x.id === proj)) setProj('');
+      }, 900);
     };
     const r = rec.current;
     if (r && r.mr.state !== 'inactive') {
@@ -438,14 +390,14 @@ export function MeetingBody({ project: pid }) {
   };
   const mm = `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(sec % 60).padStart(2, '0')}`;
   if (step === 'details') {
-    return html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (title.trim() && !restricted) start(); }}>
+    return html`<form class="form" onSubmit=${(e) => { e.preventDefault(); if (title.trim() && !restricted && can) start(); }}>
       <label class="lbl" for="m-title">שם הפגישה</label><input id="m-title" class="input" value=${title} onInput=${(e) => setTitle(e.currentTarget.value)} placeholder="למשל: פגישה עם הקב״ט" />
       <label class="lbl" for="m-purpose">מטרה</label><input id="m-purpose" class="input" value=${purpose} onInput=${(e) => setPurpose(e.currentTarget.value)} placeholder="מה רוצים לצאת איתו מהפגישה" />
       <label class="lbl" for="m-proj">פרויקט</label><select id="m-proj" class="input" value=${proj} onChange=${(e) => setProj(e.currentTarget.value)}>
-        <option value="">בלי פרויקט</option>${visibleProjects().filter((x) => x.phase !== 'stopped').map((x) => html`<option value=${x.id}>${x.name}</option>`)}</select>
+        <option value="">בלי פרויקט</option>${meetingProjects().map((x) => html`<option value=${x.id}>${x.name}</option>`)}</select>
       ${restricted ? html`<div class="note-band lock"><${Icon} name="lock" size=${16} /><span>זה פרויקט שמור/סודי. לא מקליטים כאן את הפגישות שלו. אפשר לרשום את ההחלטות בלשונית "החלטות", בלי פרטים מסווגים.</span></div>`
         : html`<p class="muted small">מבקשים רשות מכל המשתתפים לפני שמקליטים. בסוף נשמר סיכום כתוצר, וההקלטה המקורית מצורפת אליו.</p>`}
-      <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim() || restricted}><${Icon} name="mic" size=${16} />להתחיל להקליט</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
+      <div class="form-actions"><button type="submit" class="btn btn-primary" disabled=${!title.trim() || restricted || !can}><${Icon} name="mic" size=${16} />להתחיל להקליט</button><button type="button" class="btn" onClick=${closeSheet}>ביטול</button></div>
     </form>`;
   }
   if (step === 'rec') {

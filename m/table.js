@@ -4,7 +4,7 @@
 import { useState, useRef } from 'preact/hooks';
 import { html, Icon, Avatar, ProjectTag, openMenu, dueDate, dueRel, dayDiff, dateInput, isoDay, keepFocus } from './ui.js';
 import { useStore, STATUS, STATUS_ORDER, PRIORITY, PRIORITY_ORDER, setStatus, updateTask, toggleFocus, addTask, openSheet, person, project,
-  canEditTask, canSeeTask, isOpen, team, isCommander, leads, inProject, getState, focusCount } from './store.js';
+  canEditTask, canSeeTask, isOpen, team, isCommander, leads, inProject, takesWork, getState, focusCount } from './store.js';
 import { byRank } from './card.js';
 
 export const COLS = {
@@ -183,13 +183,14 @@ export function DueLines({ iso, late }) {
   return html`<span class="cd-date">${late ? html`<${Icon} name="alert" size=${12} />` : null}${dueDate(iso)}</span><span class="cd-rel">${dueRel(iso)}</span>`;
 }
 
-// Who a task can be given to: the project's people; with no project, the whole team for the commander and only
-// myself for anyone else. The commander never reaches past a manager, so in a team project he doesn't run he can give
-// it only to its manager, and it goes as an ask (store.updateTask).
+// Who a task can be given to: the project's people who take work in it (store.takesWork: not an outside partner while
+// it is all on the classified network); with no project, the whole team for the commander and only myself for anyone
+// else. The commander never reaches past a manager, so in a team project he doesn't run he can give it only to its
+// manager, and it goes as an ask (store.updateTask).
 export function ownerPool(t, p) {
   const me = getState().me;
   if (p && !p.personal && isCommander() && !leads(p)) return [...new Set([t.owner, p.manager].filter(Boolean))];
-  return p ? [p.manager, ...p.partners] : isCommander() ? team().map((x) => x.id) : [me];
+  return p ? [p.manager, ...p.partners].filter((id) => takesWork(p, id)) : isCommander() ? team().map((x) => x.id) : [me];
 }
 // The owner menu: the pool, and for whoever runs the project, a way to bring in someone new who takes the task.
 export const ADD = '+partner';
@@ -258,10 +259,11 @@ export function groupTasks(tasks, by, base = {}) {
   if (by === 'status') return STATUS_ORDER.map((k) => ({ id: k, name: STATUS[k].label, color: STATUS[k].color, tasks: tasks.filter((t) => t.status === k), add: base ? { ...base, status: k } : null })).filter((g) => g.tasks.length);
   if (by === 'priority') return [...PRIORITY_ORDER, null].map((k) => ({ id: k || 'none', name: k ? PRIORITY[k].label : 'בלי עדיפות', color: k ? PRIORITY[k].color : 'var(--fill-2)', tasks: tasks.filter((t) => (t.priority || null) === k), add: base ? { ...base, priority: k } : null })).filter((g) => g.tasks.length);
   if (by === 'owner') {
-    // A new task goes only to someone in the project, and an outside partner adds only their own (store.addTask).
+    // A new task goes only to someone who takes work in the project, and an outside partner adds only their own
+    // (store.addTask).
     const p = project(base?.project);
     const me = getState().me;
-    const takes = (id) => !p || (inProject(p, id) && (person(me).role !== 'external' || id === me));
+    const takes = (id) => !p || (takesWork(p, id) && (person(me).role !== 'external' || id === me));
     const ids = [...new Set(tasks.map((t) => t.owner))];
     return ids.map((id) => ({ id, name: person(id).name, color: person(id).color, focusOf: id, tasks: tasks.filter((t) => t.owner === id), add: base && takes(id) ? { ...base, owner: id } : null }));
   }

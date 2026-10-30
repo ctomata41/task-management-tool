@@ -6,7 +6,7 @@ import htm from 'htm';
 import { useLayer, useThumb, motion, reducedMotion } from '../app/motion.js';
 import { ICONS } from './icons.js';
 import { useStore, set, getState, person, project, dismissToast, holdToast, closeSheet, isCommander, setRank, rankedProjects, canSeeTask } from './store.js';
-import { HEALTH, CLASSIFICATION, ASK_STATE, status, localDay, inOrder, askState } from './card.js';
+import { HEALTH, CLASSIFICATION, PLACES, ASK_STATE, status, localDay, inOrder, askState, placeOf, isRestricted } from './card.js';
 
 export const html = htm.bind(h);
 
@@ -28,6 +28,25 @@ export function Faces({ ids, size = 24, max = 4 }) {
   return html`<span class="faces">${shown.map((id) => html`<${Avatar} key=${id} id=${id} size=${size} ring />`)}${ids.length > max ? html`<span class="faces-more">+${ids.length - max}</span>` : null}</span>`;
 }
 
+// A line cut short with an ellipsis loses what is past its visual end, which in a Hebrew line is the left edge. When a
+// Latin word or a number sits there, the cut takes its first letters ("כלי עם laude…"). Each such run becomes one box
+// (.ltr-run) the cut takes whole or not at all, while a Hebrew word is still cut at its logical end. A name with no
+// Hebrew runs left to right in a box of its own that cuts its own end (.ltr-cut).
+const LTR_RUN = /[A-Za-z0-9](?:[A-Za-z0-9 .,'’&+_:/-]*[A-Za-z0-9])?/g;
+export function cutSafe(text) {
+  const s = String(text ?? '');
+  if (!/[֐-׿]/.test(s)) return s ? html`<bdi dir="ltr" class="ltr-cut">${s}</bdi>` : s;
+  const out = [];
+  let at = 0;
+  for (const m of s.matchAll(LTR_RUN)) {
+    if (m.index > at) out.push(s.slice(at, m.index));
+    out.push(html`<bdi class="ltr-run">${m[0]}</bdi>`);
+    at = m.index + m[0].length;
+  }
+  if (at < s.length) out.push(s.slice(at));
+  return out;
+}
+
 export function Pill({ color, children, cls = '' }) {
   return html`<span class=${'spill ' + cls} style=${`--c:${color}`}>${children}</span>`;
 }
@@ -36,9 +55,10 @@ export function ProjectTag({ id }) {
   if (!p) return null;
   return html`<a class="ptag" href=${`#/project/${p.id}`} style=${`--c:${p.color}`} onClick=${(e) => e.stopPropagation()}><i></i>${p.name}</a>`;
 }
+// The lock on a שמור / סודי project (card.isRestricted), titled with where its materials live.
 export function Classified({ p, small }) {
-  if (!p || p.classification !== 'restricted') return null;
-  return html`<span class=${'cls-tag' + (small ? ' sm' : '')} title=${CLASSIFICATION.restricted.hint}><${Icon} name="lock" size=${small ? 11 : 13} />${CLASSIFICATION.restricted.label}</span>`;
+  if (!isRestricted(p)) return null;
+  return html`<span class=${'cls-tag' + (small ? ' sm' : '')} title=${PLACES[placeOf(p)].hint}><${Icon} name="lock" size=${small ? 11 : 13} />${CLASSIFICATION.restricted.label}</span>`;
 }
 export function Health({ p }) {
   const st = status(p);
@@ -70,8 +90,9 @@ export function RankCap({ p, full = false }) {
 }
 
 // When the rows of a list change order, each row slides from where it was on screen to its new place, on a spring
-// (damping 1) that starts at the row's current offset and speed. Under reduced motion the rows just swap. The rows
-// must be keyed, so that Preact moves the same nodes instead of rewriting them in place.
+// (damping 1) that starts at the row's current offset and speed. Under reduced motion nothing slides: the rows that
+// moved fade in at their new place, the cross-fade motion.js gives layers. The rows must be keyed, so that Preact
+// moves the same nodes instead of rewriting them in place.
 export function useFlip(listRef) {
   const last = useRef(null);
   useLayoutEffect(() => {
@@ -83,10 +104,25 @@ export function useFlip(listRef) {
     const now = new Map(rows.map((el) => [el, el.getBoundingClientRect().top - top - (el.__motion ? el.__motion.get('y') : 0)]));
     const prev = last.current;
     last.current = now;
-    if (!prev || reducedMotion()) return;
+    if (!prev) return;
     const kept = rows.filter((el) => prev.has(el));
     const was = [...prev.keys()].filter((el) => now.has(el));
     if (kept.every((el, i) => el === was[i])) return; // the same order: nothing moves
+    if (reducedMotion()) {
+      for (const el of kept) {
+        if (Math.abs(prev.get(el) - now.get(el)) < 0.5) continue;
+        // The spring sets the opacity on every frame. A row's own CSS transition (for its background, which reduced
+        // motion turns into one on opacity too, app/styles.css) would smooth each step away, so it is off while the row
+        // fades in; the latest fade puts it back.
+        const m = motion(el);
+        const mark = {};
+        el.__fade = mark;
+        el.style.transition = 'none';
+        m.set({ opacity: 0 });
+        m.to({ opacity: 1 }, { response: 0.2 }).then(() => { if (el.__fade === mark) el.style.transition = ''; });
+      }
+      return;
+    }
     let far = null;
     for (const el of kept) {
       const dy = prev.get(el) - now.get(el);
@@ -133,11 +169,14 @@ export function StageStrip({ p, labels, onPick, bare = false }) {
   </div>`;
 }
 
-export function Seg({ value, options, onChange, label, cls = '' }) {
+// A segmented control. An option with `disabled: true` stays focusable and pressable (aria-disabled, class off) but
+// never calls onChange; pressing it calls onDisabled, so the caller can show the reason line.
+export function Seg({ value, options, onChange, onDisabled, label, cls = '' }) {
   const ref = useRef();
   useThumb(ref);
   return html`<div class=${'seg ' + cls} role="tablist" aria-label=${label} ref=${ref}><span class="seg-thumb"></span>
-    ${options.map((o) => html`<button type="button" role="tab" aria-selected=${o.id === value} class=${o.id === value ? 'on' : ''} onClick=${() => onChange(o.id)}>${o.label}${o.n ? html`<span class="seg-n">${o.n}</span>` : null}</button>`)}
+    ${options.map((o) => html`<button type="button" role="tab" aria-selected=${o.id === value} aria-disabled=${o.disabled ? 'true' : null} class=${(o.id === value ? 'on' : '') + (o.disabled ? ' off' : '')}
+      onClick=${() => (o.disabled ? onDisabled?.(o.id) : onChange(o.id))}>${o.label}${o.n ? html`<span class="seg-n">${o.n}</span>` : null}</button>`)}
   </div>`;
 }
 
@@ -267,7 +306,8 @@ function useGlide(ref) {
 // (m.css: .held). When it goes with focus in it (its ביטול, its X, or the time ran out), focus goes back to where it
 // was when the toast came (t.back), or else to where it came into the toast from, never to the top of the page. After a
 // tap or a click, though, never into a text field, which on a phone would raise the keyboard: for a field in an open
-// sheet focus goes to the sheet itself, and for one on the page it stays where the press left it.
+// sheet focus goes to the sheet itself, and for one on the page it stays where the press left it. When both are gone
+// (a ביטול that took away the type this page showed), focus goes to the open sheet, else to the page's title.
 function Toast({ t }) {
   const ref = useRef();
   const on = useRef({ hover: false, focus: false, from: null, pressed: false });
@@ -281,7 +321,11 @@ function Toast({ t }) {
       const back = typeof t.back === 'function' ? t.back() : t.back;
       const live = [back, from].filter((x) => x?.isConnected && x !== document.body && !x.closest('.toasts, [inert]'));
       const to = !pressed ? live[0] : live.find((x) => !x.matches(TYPING)) || live.map((x) => x.closest('[role=dialog]')).find(Boolean);
-      to?.focus({ preventScroll: true });
+      if (to) { to.focus({ preventScroll: true }); return; }
+      const a = document.activeElement;
+      if (live.length || (a && a !== document.body && a.isConnected)) return;
+      const sheet = document.querySelector('.overlay [role=dialog]');
+      if (sheet) sheet.focus({ preventScroll: true }); else focusTitle();
     });
   }, []);
   const out = (e) => !e.currentTarget.contains(e.relatedTarget); // its own node: focus can leave after it unmounted
@@ -293,6 +337,43 @@ function Toast({ t }) {
     ${t.action ? html`<button type="button" onClick=${() => { dismissToast(t.id); t.action.run(); }}>${t.action.label}</button>` : null}
     <button type="button" class="toast-x" aria-label="סגירה" onClick=${() => dismissToast(t.id)}><${Icon} name="x" size=${14} /></button>
   </div>`;
+}
+
+// Enter in a one-line field saves it (`save` gets the field) and focus stays in the field, so a keyboard or a screen
+// reader keeps its place. A save that is refused brings the saved text back by mounting a new field in its place (its
+// caller's key); focus goes on to that one. With a touch screen Enter leaves the field instead, which closes the
+// on-screen keyboard, and leaving saves.
+export function saveOnEnter(e, save) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const el = e.currentTarget;
+  if (matchMedia('(pointer: coarse)').matches) { el.blur(); return; }
+  const box = el.parentElement;
+  const at = [...box.children].indexOf(el);
+  save(el);
+  requestAnimationFrame(() => {
+    const a = document.activeElement;
+    if (a && a !== document.body && a.isConnected) return;
+    const now = box.isConnected ? box.children[at] : null;
+    if (now?.matches('input')) now.focus();
+  });
+}
+
+// A text field that saves when it is left, and a one-line field also on Enter (saveOnEnter). Read-only, it shows the
+// text or the placeholder. The ID card's core, stages and facts, and the types page, all write through it.
+export function Text({ value, onSave, placeholder, disabled, multiline = true, label, describedBy = null }) {
+  const [v, setV] = useState(value || '');
+  const ref = useRef();
+  useEffect(() => setV(value || ''), [value]);
+  const grow = () => { const el = ref.current; if (el && multiline) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } };
+  useEffect(grow, [v]);
+  if (disabled) return html`<div class=${'ftext ro' + (v ? '' : ' muted')}>${v || placeholder}</div>`;
+  const save = () => { if ((v || '') !== (value || '')) onSave(v.trim()); };
+  // Saved on Enter, the field shows what was saved, so leaving it later doesn't save the same text again.
+  const enter = () => { save(); setV(v.trim()); };
+  return multiline
+    ? html`<textarea ref=${ref} class="ftext" rows="1" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save}></textarea>`
+    : html`<input class="ftext" value=${v} placeholder=${placeholder} aria-label=${label} aria-describedby=${describedBy || null} onInput=${(e) => setV(e.currentTarget.value)} onBlur=${save} onKeyDown=${(e) => saveOnEnter(e, enter)} />`;
 }
 
 export function Empty({ icon = 'check', children }) {
@@ -356,6 +437,9 @@ export const LEVEL = {
 };
 
 // ---------- menus: a menu grows out of the control that opened it ----------
+// An item is { id, label, hint?, icon?, dot?, person?, danger? }. One with `off: true` can't be picked now: it stays
+// focusable, shows its reason as its hint, and picking it does nothing. { sep: true } is a separator line, which the
+// arrow keys skip.
 export function openMenu(e, items, { selected, onPick }) {
   const trigger = e.currentTarget;
   set({ menu: { rect: trigger.getBoundingClientRect(), trigger, items, selected, onPick } });
@@ -380,7 +464,11 @@ function Menu({ m }) {
   const panel = useRef();
   const row = matchMedia('(max-width: 900px)').matches ? 46 : 40;
   const W = 240;
-  const H = Math.min(m.items.reduce((h, it) => h + row + (it.hint ? 8 : 0), 12), 380); // a hint's line makes a row 46px
+  // A hint's line makes a row 46px. A label and a hint wrap instead of being cut (m.css), about 24 letters a line for a
+  // label and 30 for a hint; the estimate errs long, since the menu is only as tall as its items.
+  const lines = (s, n) => Math.max(1, Math.ceil(String(s ?? '').length / n));
+  const itemH = (it) => row + 19 * (lines(it.label, 24) - 1) + (it.hint ? 8 + 16 * (lines(it.hint, 30) - 1) : 0);
+  const H = Math.min(m.items.reduce((h, it) => h + (it.sep ? 9 : itemH(it)), 12), 380);
   let left = m.rect.right - W;
   left = Math.max(8, Math.min(left, window.innerWidth - W - 8));
   let top = m.rect.bottom + 6;
@@ -419,14 +507,15 @@ function Menu({ m }) {
   };
   return html`<div class="menu-backdrop" ref=${root} onClick=${closeMenu}>
     <div class="menu" role="menu" ref=${panel} style=${`left:${left}px;top:${top}px;width:${W}px;max-height:${H}px;transform-origin:${ox}px ${oy}px`} onClick=${(e) => e.stopPropagation()} onKeyDown=${onKeyDown}>
-      ${m.items.map((it) => html`<button type="button" role="menuitem" class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '')}
-        onClick=${() => { closeMenu(); m.onPick(it.id); }}>
+      ${m.items.map((it) => (it.sep ? html`<div class="menu-sep" role="separator"></div>` : html`<button type="button" role="menuitem"
+        class=${'menu-item' + (it.id === m.selected ? ' sel' : '') + (it.danger ? ' danger' : '') + (it.off ? ' off' : '')} aria-disabled=${it.off ? 'true' : null}
+        onClick=${() => { if (it.off) return; closeMenu(); m.onPick(it.id); }}>
         ${it.person ? html`<${Avatar} id=${it.person} size=${22} />` : null}
         ${it.dot ? html`<span class="dot" style=${`background:${it.dot}`}></span>` : null}
         ${it.icon ? html`<${Icon} name=${it.icon} size=${16} />` : null}
         <span class="menu-label">${it.label}${it.hint ? html`<small class="menu-hint">${it.hint}</small>` : null}</span>
         ${it.id === m.selected ? html`<${Icon} name="check" size=${15} cls="menu-check" />` : null}
-      </button>`)}
+      </button>`))}
     </div>
   </div>`;
 }

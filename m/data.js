@@ -1,8 +1,10 @@
-// Sample data for the manual version: the team, two partners from outside, five projects at different points of the
+// Sample data for the manual version: the team, two partners from outside, eight projects at different points of the
 // stage path, and enough tasks, outputs and meetings that every screen has something real to show. Dates are relative
-// to now, so the sample never goes stale. Yoash has set the order of the four team projects (rank) and sent two asks:
-// one Yahali hasn't answered yet (t11), and one Yarden accepted and has started breaking down (t21).
-import { stagesFromTemplate, makeStage } from './card.js';
+// to now, so the sample never goes stale. Yoash has set the order of the team projects (rank) and sent two asks: one
+// Yahali hasn't answered yet (t11), and one Yarden accepted and has started breaking down (t21). p6 to p8 show the CTO
+// types: a building block with no body committed to take it yet, a בדה"ת opened from it that waits for a place in the
+// order, and a Claude tool with its link out. Every text here is generic and unclassified (the repo is public).
+import { library, EMPTY_LIB, stagesFromType, newProjectParts, makeStage } from './card.js';
 
 // Days on the calendar here, not 24-hour steps, so a clock change between then and now doesn't move a date.
 const at = (days, h = 10) => { const d = new Date(); d.setDate(d.getDate() + days); d.setHours(h, 0, 0, 0); return d.toISOString(); };
@@ -11,26 +13,33 @@ const date = (days) => at(days).slice(0, 10);
 export const people = [
   { id: 'yoash', name: 'יואש', role: 'commander', title: 'מפקד', color: '#5856d6', account: true },
   { id: 'yonatan', name: 'יונתן', role: 'member', title: 'סגן', color: '#0071e3', account: true, command: true },
-  { id: 'yahali', name: 'יהלי', role: 'member', title: 'צוות', color: '#ff9500', account: true },
+  // perms: what Yoash granted. Until sign-in, the sample gives Yahali the types in his place.
+  { id: 'yahali', name: 'יהלי', role: 'member', title: 'צוות', color: '#ff9500', account: true, perms: ['types'] },
   { id: 'yarden', name: 'ירדן', role: 'member', title: 'יועצת', color: '#34c759', account: true },
   { id: 'avi', name: 'אבי כהן', role: 'external', title: 'ספק פיתוח', org: 'חברת הפיתוח', color: '#30b0c7', account: true },
   { id: 'ronit', name: 'ד"ר רונית לוי', role: 'external', title: 'חוקרת', org: 'מחלקת המו"פ', color: '#af52de', account: false },
 ];
 
-// Walk a template forward: close the first `done` stages, give the active one a target date.
-function path(template, done, { target = 14, fill = {} } = {}) {
-  const st = stagesFromTemplate(template).map((s, i) => ({
+// The code's types, with no team edits: the sample is the same in every browser.
+const L = library(EMPTY_LIB);
+// Walk a type's path forward: close the first `done` stages, give the active one a target date. Fields the place keeps
+// on the classified network stay marked and empty.
+function path(type, done, { target = 14, fill = {}, place = 'here' } = {}) {
+  const st = stagesFromType(L, type, { place }).map((s, i) => ({
     ...s,
     state: i < done ? 'done' : i === done ? 'active' : 'todo',
     closedAt: i < done ? at(-7 * (done - i)) : null,
     target: i === done ? date(target) : null,
-    fields: s.fields.map((f) => ({ ...f, value: fill[f.label] || '' })),
+    fields: s.fields.map((f) => (f.classified ? f : { ...f, value: fill[f.label] || '' })),
   }));
   return st;
 }
+// What a new project of a CTO type takes from it (card.newProjectParts), its stages walked forward apart.
+const fromType = (type, opts) => { const { stages, ...rest } = newProjectParts(L, type, opts); return rest; };
+const withFacts = (parts, values) => ({ ...parts, facts: parts.facts.map((f) => (f.key in values ? { ...f, value: values[f.key] } : f)) });
 
 const p1Stages = path('tool', 2, { target: 9, fill: { 'גבולות': 'אישורי כניסה לאורחים וספקים, בלי כרטיסי עובדים', 'הצורך במשפט': 'אישור כניסה תוך יום במקום שבוע', 'הדורש': 'מנהלת החלל' } });
-const p2Stages = path('rnd', 5, { target: -3, fill: { 'גבולות': 'ניסוי מעבדה בלבד', 'פתרונות קיימים': 'נמצא ברשת המסווגת', 'הצורך במשפט': 'קישור יציב בתנאי שטח', 'הדורש': 'אגף המבצעים' } });
+const p2Stages = path('rnd', 5, { target: -3, place: 'both', fill: { 'גבולות': 'ניסוי מעבדה בלבד', 'פתרונות קיימים': 'נמצא ברשת המסווגת', 'הצורך במשפט': 'קישור יציב בתנאי שטח', 'הדורש': 'אגף המבצעים' } });
 p2Stages[5].state = 'pending';
 p2Stages[5].askedAt = at(-2);
 p2Stages[5].fields = [{ label: 'תקציב', value: '', classified: true }, { label: 'אנשים', value: 'צוות של 3 + חוקרת' }, { label: 'לוח זמנים', value: '4 חודשים' }];
@@ -39,12 +48,17 @@ const p3Stages = path('study', 1, { target: 5, fill: { 'גבולות': 'כלים
 const p4Stages = path('process', 2, { target: -1, fill: { 'הצורך במשפט': 'עובד חדש עובד ביום השני ולא בשבוע השני', 'הדורש': 'משאבי אנוש', 'קישור לתוכנית': 'https://example.org/onboarding-plan' } });
 const p5Stages = [makeStage(null, 'שבועות 1-3'), makeStage(null, 'פרויקט גמר')];
 p5Stages[0].state = 'active';
+const p6Stages = path('block', 4, { place: 'both', fill: {
+  'מה השתנה': 'רכיב הבסיס זול יותר וזמין אצל כמה ספקים', 'שותף המו"פ': 'מחלקת המו"פ', 'מה זה מכפיל': 'מקצר את הבנייה של מערכות שנשענות עליו',
+  'גבולות': 'רק רכיב הבסיס, בלי המערכות שמשתמשות בו', 'הדורש': 'גוף מבצעי במנהלת', 'המסלול: קרקע, בדה"ת או שניהם': 'שניהם: קודם בקרקע, ואחר כך בדה"ת' } });
+const p7Stages = path('bdt', 1, { place: 'there', target: 20 });
+const p8Stages = path('claude', 1, { target: 4, fill: { 'הצורך במשפט': 'סיכום פגישה מוכן תוך שעה, בלי לכתוב אותו ביד', 'הדורש': 'הצוות' } });
 // A place in the order Yoash set three days ago, which its manager has already seen.
 const placed = (rank) => ({ rank, rankSeen: rank, rankAt: at(-3), rankBy: 'yoash' });
 
 export const projects = [
   {
-    id: 'p1', name: 'מערכת אישורי כניסה למנהלת החלל', color: '#ff9500', classification: 'open', template: 'tool',
+    id: 'p1', name: 'מערכת אישורי כניסה למנהלת החלל', color: '#ff9500', classification: 'open', place: 'here', domain: null, template: 'tool',
     what: 'טופס ותהליך אישור דיגיטלי לכניסת אורחים וספקים, כדי שאישור ייקח יום ולא שבוע', forWhom: 'מנהלת החלל, קב"ט האתר', success: '80% מהבקשות מאושרות תוך יום עבודה', stopRule: 'אם עד סוף נובמבר אין הסכמה של הקב"ט על התהליך, עוצרים',
     manager: 'yahali', partners: ['yarden', 'avi'], stages: p1Stages, hill: 'up', confidence: 'on', confNote: '', lastUpdate: at(-3), tolDays: 14, ...placed(1),
     log: [
@@ -53,25 +67,40 @@ export const projects = [
     ],
   },
   {
-    id: 'p2', name: 'ניסוי תקשורת בתנאי שטח', color: '#5856d6', classification: 'restricted', template: 'rnd', trl: 3,
+    id: 'p2', name: 'ניסוי תקשורת בתנאי שטח', color: '#5856d6', classification: 'restricted', place: 'both', domain: 'blocks', template: 'rnd', trl: 3,
     what: 'ניסוי מעבדה שבודק אם הקישור מחזיק בתנאי שטח', forWhom: 'אגף המבצעים', success: '', stopRule: '',
     manager: 'yonatan', partners: ['ronit'], stages: p2Stages, hill: 'top', confidence: 'on', lastUpdate: at(-6), tolDays: 14, ...placed(2),
     log: [{ id: 'l3', kind: 'decision', text: 'מתחילים בניסוי מעבדה לפני שטח', who: 'yonatan', at: at(-20), reversible: true }],
   },
   {
-    id: 'p3', name: 'סקר כלים לניהול ידע', color: '#34c759', classification: 'open', template: 'study',
+    id: 'p3', name: 'סקר כלים לניהול ידע', color: '#34c759', classification: 'open', place: 'here', domain: 'infra', template: 'study',
     what: 'למפות אילו כלים לניהול ידע מתאימים לצוותים בלי ענן ציבורי', forWhom: 'הצוות ויחידות שכנות', success: 'המלצה אחת עם שתי חלופות', stopRule: '',
     manager: 'yarden', partners: ['yahali'], stages: p3Stages, hill: 'up', confidence: 'risk', confNote: 'אין גישה לסביבת הבדיקות של מחלקת המחשוב',
     needsSenior: { what: 'פתיחת דלת למחלקת המחשוב כדי לקבל סביבת בדיקות', by: date(4), at: at(-1) }, lastUpdate: at(-1), tolDays: 14, log: [], ...placed(4),
   },
   {
-    id: 'p4', name: 'תהליך קליטת עובדים חדשים', color: '#30b0c7', classification: 'open', template: 'process',
+    id: 'p4', name: 'תהליך קליטת עובדים חדשים', color: '#30b0c7', classification: 'open', place: 'here', domain: null, template: 'process',
     what: 'שעובד חדש יעבוד כבר ביום השני', forWhom: 'משאבי אנוש וכל הצוותים', success: 'עובד חדש פותח משימה ראשונה ביום השני', stopRule: '',
     manager: 'yonatan', partners: ['yarden'], stages: p4Stages, hill: 'down', confidence: 'stuck', confNote: 'מחכים למשאבי אנוש שיאשרו את הטופס החדש', stuckSince: at(-15), lastUpdate: at(-8), tolDays: 14, log: [], ...placed(3),
   },
   {
-    id: 'p5', name: 'קורס ניהול מוצר', color: '#ff2d55', classification: 'open', template: 'blank', personal: 'yahali',
+    id: 'p5', name: 'קורס ניהול מוצר', color: '#ff2d55', classification: 'open', place: 'here', template: 'blank', personal: 'yahali',
     what: 'קורס ערב, 6 שבועות', forWhom: '', success: '', stopRule: '', manager: 'yahali', partners: [], stages: p5Stages, hill: 'top', confidence: 'on', lastUpdate: at(-2), log: [],
+  },
+  {
+    id: 'p6', name: 'אבן בניין לדוגמה', color: '#af52de', ...withFacts(fromType('block', { place: 'both', trl: 5 }), { target: 'existing', commit: 'none' }),
+    what: 'יכולת בסיס לדוגמה שתאפשר לבנות מערכות חלל מהר יותר', forWhom: '', success: '', stopRule: '',
+    manager: 'yahali', partners: ['ronit'], stages: p6Stages, hill: 'up', confidence: 'on', confNote: '', lastUpdate: at(-4), tolDays: 14, log: [], ...placed(5),
+  },
+  {
+    id: 'p7', name: 'בדה"ת לדוגמה', color: '#0071e3', ...fromType('bdt', { place: 'there', trl: 5, parent: 'p6' }),
+    what: 'ניסוי לדוגמה שבודק במסלול את אבן הבניין לדוגמה', forWhom: '', success: '', stopRule: '',
+    manager: 'yonatan', partners: ['yahali'], stages: p7Stages, hill: 'up', confidence: 'on', confNote: '', lastUpdate: at(-2), tolDays: 14, log: [], rank: null, rankSeen: null,
+  },
+  {
+    id: 'p8', name: 'כלי עם Claude לדוגמה', color: '#a2845e', ...fromType('claude', { place: 'here', link: '/next/?demo#/project/platform' }),
+    what: 'כלי לדוגמה שמסכם פגישות של הצוות ומציע משימות', forWhom: '', success: '', stopRule: '',
+    manager: 'yarden', partners: ['yahali'], stages: p8Stages, hill: 'up', confidence: 'on', confNote: '', lastUpdate: at(-5), tolDays: 14, log: [], ...placed(6),
   },
 ];
 
@@ -100,6 +129,12 @@ export const tasks = [
   T('t12', 'שיעורי בית: פרסונה', 'p5', p5Stages[0].id, 'yahali', 'todo', 3, { personal: true, priority: 'medium' }),
   T('t13', 'לקבוע תור לרכב', null, null, 'yahali', 'todo', 1, { personal: true, priority: 'low' }),
   T('t14', 'לסגור את סיכום החודש', null, null, 'yoash', 'todo', 2, { priority: 'medium' }),
+  T('t22', 'לתאם בדיקה בסביבה רלוונטית', 'p6', st('p6', 4), 'yahali', 'todo', 5, { priority: 'high' }),
+  T('t23', 'לכתוב מה נבדק בבדיקה הראשונה', 'p6', st('p6', 4), 'yahali', 'doing', 2, { priority: 'medium' }),
+  T('t24', 'לבדוק שתי הזדמנויות טיסה', 'p7', st('p7', 1), 'yonatan', 'todo', 6, { priority: 'high' }),
+  T('t25', 'לשאול את הבונה על לוח הזמנים', 'p7', st('p7', 1), 'yahali', 'todo', 8, { by: 'yonatan', priority: 'medium' }),
+  T('t26', 'למפות אילו נתונים נכנסים לכלי', 'p8', st('p8', 1), 'yarden', 'doing', 3, { priority: 'high' }),
+  T('t27', 'לבקש אישור על המידע שנכנס לכלי', 'p8', st('p8', 1), 'yahali', 'todo', 5, { by: 'yarden', priority: 'medium' }),
 ];
 
 export const outputs = [

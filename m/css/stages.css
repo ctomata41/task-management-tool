@@ -1,0 +1,83 @@
+/* Stage editing on the ID card: names, exit questions, gates, fields, order, skip, remove and add
+   (m/views/stages.js, design §6.3). Tokens and logical properties only; small targets get a 44px hit area. */
+
+/* The controls on a stage's line: 28px buttons, each with a 44px hit area (inset -8px) and set 16px apart, so the hit
+   areas meet without overlapping. On a narrow line they wrap together and stay at the inline end. */
+.stage-edit { gap: 16px; align-items: center; margin-inline-start: auto; }
+.st-btn { width: 28px; height: 28px; }
+.icon-btn.st-btn::after { content: ''; position: absolute; inset: -8px; }
+.st-ghost { display: inline-block; flex: none; }
+/* A control that can't act now stays focusable and pressable (it says why); it only looks quieter. */
+.st-btn[aria-disabled="true"] { opacity: 0.4; }
+.st-chev { color: var(--fg-3); }
+.st-unskip { align-self: center; margin-inline-start: auto; }
+/* A stage moving up or down passes over its neighbor (ui.useFlip). */
+.stage.flip-lift { background: var(--surface); }
+
+/* Why a control can't act, under its row. Empty, it takes no room but stays in place, so it is read out when it fills. */
+.st-why { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 0.8125rem; color: var(--fg-2); }
+.st-why:not(:empty) { padding: 8px 12px; border-radius: 12px; background: var(--fill); }
+.stage > .st-why:not(:empty) { margin-block-end: 10px; margin-inline-start: 34px; }
+.st-why .link-btn { align-self: baseline; font-size: 0.8125rem; color: var(--accent-2); } /* 4.5:1 on the fill */
+
+/* One stage in edit mode: its name, its exit question, who closes it, and its fields. */
+.st-editor { display: flex; flex-direction: column; gap: 10px; }
+.st-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.st-cell > .seg { align-self: flex-start; }
+.st-hint { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 0.75rem; letter-spacing: 0.01em; color: var(--fg-3); padding-inline-start: 10px; }
+.sf-list { gap: 4px; }
+.sf-edit { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sf-edit .ftext { flex: 1 1 auto; min-width: 0; }
+.sf-x { color: var(--fg-3); }
+.sf-add { margin-block-start: 4px; padding-inline-start: 10px; }
+.sf-add .btn { flex: none; }
+.st-flight { display: flex; padding-block-start: 4px; }
+
+/* "עוד מהספרייה…": the chip that opens the whole library, tinted as an action. */
+.qchip.lib-more { background: var(--accent-soft); color: var(--accent-2); font-weight: 500; }
+@media (hover: hover) {
+  .qchip.lib-more:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+}
+/* A chip's hit area reaches past its edges, so its text clips on its own instead of the chip clipping it. */
+.add-stage .qchip { overflow: visible; }
+.st-chip-t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.add-stage .chips-row { row-gap: 14px; }
+
+/* A stage's name opens its body: it dims the moment it is pressed (the press lists in m/m.css). A short name ("MVP")
+   still makes a 44px-wide target. */
+.stage-name { position: relative; min-inline-size: 44px; }
+
+/* An empty field's marks ("עוד לא ידוע", "ברשת המסווגת") sit on a 44px line under it, 20px apart, so each link's 44px
+   hit area stays on that line: clear of the field above, of the next one and of each other (as on the core card). */
+.sfield-acts { min-height: 44px; align-items: center; flex-wrap: wrap; column-gap: 20px; }
+.sfield-acts .link-btn { align-self: center; }
+.sfield-acts .link-btn::after { inset-block: min(0px, (100% - 44px) / 2); }
+/* A field kept on the classified network shows its capsule at its own size, also where the row is one column. */
+.sfield > .cls-tag { justify-self: start; }
+
+/* 44px hit areas for the card's controls under 44px, grown along the block axis only, so controls side by side on a
+   line never share one. Link buttons (the toggle, "לבקש מ…", "להחזיר למסלול") get theirs from the shared rule in
+   m.css: 8px past each side, and 44px tall. */
+.st-flight .btn, .sf-add .btn, .add-stage .btn { position: relative; }
+.stage-name::after, .st-gate button::after, .st-flight .btn::after, .sf-add .btn::after, .add-stage .btn::after,
+.add-stage .qchip::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
+/* The target date: its input lies over the whole chip, invisible, so the chip shows the input's focus (also while
+   the input's own calendar button has it). */
+.stage-target input { inset-block: min(0px, (100% - 44px) / 2); }
+.stage-target:has(> input:focus-within) { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 1px; }
+
+@media (max-width: 900px) {
+  /* On a phone the controls take a line of their own under the stage's name, so every stage has them in the same place.
+     The lines a stage's line wraps into sit far enough apart that their 44px hit areas don't meet, and the controls end
+     8px above the next stage, so their hit areas stay clear of its name's. */
+  .stage-line { row-gap: 14px; }
+  .stage-edit { flex-basis: 100%; justify-content: flex-end; margin-block: 4px; }
+  .stage > .st-why:not(:empty) { margin-inline-start: 0; }
+  .st-hint, .sf-add { padding-inline-start: 0; }
+}
+@media (prefers-contrast: more) {
+  .st-why:not(:empty) { color: var(--fg); box-shadow: 0 0 0 1px var(--line-strong); }
+  .st-why .link-btn { color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); } /* the fill gets darker here */
+  .st-btn[aria-disabled="true"] { opacity: 0.55; }
+  .add-stage .qchip { box-shadow: inset 0 0 0 1px var(--line-strong); } /* as the types page's library chips */
+}

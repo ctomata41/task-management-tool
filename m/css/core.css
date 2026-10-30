@@ -1,0 +1,117 @@
+/* The core of the ID card: type, domain and place rows, the core fields with their marks, facts, readiness, the hand-back and the link out (m/views/core.js, design §6.2, §6.6 and §9). Tokens and logical properties only. */
+/* Small targets get a 44px hit area, grown so that controls side by side never share one; hover only inside
+   @media (hover: hover); press feedback joins the lists in m/m.css (.fact-btn, .qchip, .link-btn, .trl-n, .btn). */
+
+/* The head: how much is filled, and the card's own edit toggle. */
+.co-head-r { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px 18px; min-width: 0; }
+.co-toggle::after { inset-block: min(-8px, (100% - 44px) / 2); }
+
+/* The bands at the top: where a בדה"ת came from (its block, a link), and what a linked one brought back. A link on a
+   band or a row is --accent-2, which keeps 4.5:1 on their fills. */
+.co-from a { position: relative; color: var(--accent-2); font-weight: 600; }
+.co-from a::after { content: ''; position: absolute; inset-inline: -4px; inset-block: min(-8px, (100% - 44px) / 2); }
+.co-back-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.co-back-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }
+.co-back-row > span { min-width: 0; }
+
+/* The rows: a menu for whoever manages an open project, else the value (aligned with a button's text). */
+.co-rows .fact-btn { min-width: 0; }
+.co-rows .fact-btn::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
+.co-v { min-width: 0; }
+.co-chev { color: var(--fg-3); flex: none; }
+.co-val { padding-inline: 10px; justify-self: start; min-width: 0; }
+.co-link { position: relative; color: var(--accent-2); font-weight: 500; }
+.co-link::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(-8px, (100% - 44px) / 2); }
+/* A link in a band or a row dims the moment it is pressed (the press lists in m/m.css). */
+
+/* The type just changed: where its stages are. Empty, it takes no room but stays in place, so it is read out when it fills. */
+.co-note { margin: 0; font-size: 0.8125rem; letter-spacing: 0.01em; color: var(--fg-2); }
+.co-note:not(:empty) { padding: 8px 12px; border-radius: 12px; background: var(--fill); }
+.co-note:empty { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
+
+/* A cell: the value, then its marks or its hint. */
+.co-cell { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.co-hint { margin: 0; font-size: 0.75rem; line-height: 1.4; letter-spacing: 0.01em; color: var(--fg-3); padding-inline-start: 10px; }
+.trl + .co-hint, .co-chips + .co-hint { padding-inline-start: 0; }
+
+/* The marks an empty field can take, and a field that has one: the tag, and "ביטול" for the manager. Each sits on a
+   44px line with its link in the middle, so the link's 44px hit area stays on that line: clear of the field above it
+   and of the next row (which, on a wide screen, starts right under it). */
+.co-marks { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 20px; min-height: 44px; margin-block-start: -8px; padding-inline-start: 10px; }
+.co-marked { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; min-height: 44px; padding-inline-start: 10px; }
+.co-marks .link-btn, .co-marked .link-btn { min-height: 28px; align-self: center; }
+.co-marks .link-btn::after, .co-marked .link-btn::after { inset-block: min(-8px, (100% - 44px) / 2); }
+.co-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 0.6875rem; font-weight: 600;
+  letter-spacing: 0.01em; white-space: nowrap; background: color-mix(in srgb, var(--fg-3) 15%, transparent); color: var(--fg-2); flex: none; }
+
+/* Chips: a choice fact's options and marks, and the linked בדה"תים. A chip's hit area reaches past its edges, so its
+   text clips on its own; rows sit far enough apart that the hit areas never overlap. */
+.co-chips { gap: 14px 6px; }
+.co-chips .qchip, .co-trl-unknown { overflow: visible; max-width: 100%; }
+.co-chips .qchip::after, .co-trl-unknown::after { content: ''; position: absolute; inset-block: -7px; inset-inline: -3px; }
+.co-chip-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.co-rows .co-chips { padding-block: 8px; }
+.co-cell > .co-chips { padding-block: 4px 7px; } /* level with the label, and the last line's hit areas inside */
+.co-card .qchip[aria-pressed="true"] { background: var(--accent-soft); color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); font-weight: 600; box-shadow: inset 0 0 0 1.5px var(--accent); }
+.co-card .qchip .ic { flex: none; }
+
+/* Readiness: nine buttons and "עוד לא ידוע". On a wide screen each button has a full 44px target. */
+.co-card .trl { gap: 12px; padding-block: 4px; }
+.co-card .trl-n { width: 32px; height: 32px; }
+.co-card .trl-n::after { inset: min(0px, (100% - 44px) / 2); }
+.co-card .trl .muted { margin-inline-start: 0; }
+.co-trl-remove { margin-block-start: 2px; }
+.co-trl-remove::after, .co-unlink::after, .co-addlink::after, .co-open::after { inset-block: min(-8px, (100% - 44px) / 2); }
+
+/* The Claude type: the band, then the link out and its removal. */
+.co-claude { background: var(--claude-soft); color: var(--fg); }
+.co-claude .ic { color: color-mix(in oklab, var(--claude) var(--ink), black); }
+.co-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 24px; min-height: 44px; padding-inline-start: 4px; }
+.co-none { margin: 0; padding: 9px 10px 0; color: var(--fg-3); line-height: 1.45; }
+.co-addlink { margin-inline-start: 10px; }
+.co-linkform { min-height: 44px; }
+.co-linkform .input { flex: 1 1 160px; }
+.co-linkform .input.bad { border-color: var(--bad); }
+.co-linkform .input.bad:focus { box-shadow: 0 0 0 4px var(--bad-bg); }
+.co-err { margin: 0; padding-inline: 4px; font-size: 0.8125rem; letter-spacing: 0.01em; color: var(--bad); }
+
+/* Edit mode: the facts' names with "להסיר", then the new fact's name and "+ שדה בליבה". */
+.co-fe-list { gap: 4px; }
+.co-fe { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.co-fe .ftext { flex: 1 1 auto; min-width: 0; }
+.co-remove { flex: none; align-self: center; color: var(--bad); }
+.co-remove::after { inset-block: min(-8px, (100% - 44px) / 2); }
+.co-add { min-height: 44px; padding-inline-start: 10px; }
+.co-add .btn { flex: none; }
+
+/* The card's small buttons (take the TRL, add readiness, add a fact, save or cancel the link): 44px targets. */
+.co-card .btn.sm { position: relative; }
+.co-card .btn.sm::after { content: ''; position: absolute; inset-inline: 0; inset-block: min(0px, (100% - 44px) / 2); }
+.co-trl-add { align-self: flex-start; margin-block: 7px; }
+
+@media (hover: hover) {
+  .co-from a:hover, .co-link:hover { text-decoration: underline; }
+}
+
+/* On a wide screen a label sits level with a marked field's tag. */
+@media (min-width: 901px) {
+  .core-row:has(> .co-cell > .co-marked:first-child) > .core-l { padding-block-start: 12px; }
+}
+
+@media (max-width: 900px) {
+  /* Nine 44px targets don't fit across a phone, so the scale takes two lines, 1 to 5 and then 6 to 9. Each button is
+     40px with a full 44px hit area; the rows and columns sit far enough apart that the hit areas never meet.
+     "עוד לא ידוע" takes the next line. */
+  .co-card .trl { display: grid; grid-template-columns: repeat(5, 40px); gap: 12px; justify-content: start; }
+  .co-card .trl-n { width: 40px; height: 40px; }
+  .co-card .trl-n::after { inset: -2px; }
+  .co-card .trl > :not(.trl-n) { grid-column: 1 / -1; justify-self: start; }
+}
+
+@media (prefers-contrast: more) {
+  .co-rows { box-shadow: 0 0 0 1px var(--line-strong); }
+  .co-from a { color: color-mix(in oklab, var(--accent-2) 75%, var(--fg)); } /* the band's fill gets darker here */
+  .co-card .qchip:not([aria-pressed="true"]) { box-shadow: inset 0 0 0 1px var(--line-strong); }
+  .co-tag { box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--fg); }
+  .co-note:not(:empty), .co-hint { color: var(--fg-2); }
+}

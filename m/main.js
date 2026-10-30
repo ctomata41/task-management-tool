@@ -1,15 +1,20 @@
 // The shell of the manual version: a floating sidebar on desktop; on phones a large title, a glass tab bar with Jarvis
-// in its middle, and a + button beside it. Routes: #/today, #/projects, #/project/:id, #/calendar, #/overview, #/outputs.
+// in its middle, and a + button beside it. Routes: #/today, #/projects, #/project/:id, #/calendar, #/overview, #/outputs,
+// and the project types, #/types and #/types/:id (under פרויקטים).
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
-import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
+import { html, Icon, Avatar, Sheet, Toasts, MenuLayer, cutSafe } from './ui.js';
 import { QuickAdd } from './parts.js';
-import { useStore, openSheet, handOver, person, isCommander, canSee, canSeeTask, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount } from './store.js';
+import { useStore, openSheet, handOver, person, isCommander, canSee, canSeeTask, commanderQueue, myProjects, personalProjects, myTasks, asksWaiting, asksReady, waitingCount, lib } from './store.js';
+import { typeById } from './card.js';
 import { Today } from './views/today.js';
 import { Projects, ProjectPage } from './views/projects.js';
+import { TypesPage } from './views/types.js';
 import { Overview } from './views/overview.js';
 import { Outputs, OutputSheetBody, NewOutputBody } from './views/outputs.js';
-import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, AskBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
+import { GateBody, ReturnBody, WeeklyBody, ResolveBody, AskBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
+import { NewProjectBody } from './views/newproject.js';
+import { ConfirmBody } from './views/confirm.js';
 import { Calendar, StageBody } from './views/calendar.js';
 import { JarvisScreen, JarvisTab, JarvisSide } from './views/jarvis.js';
 import { takeReturn } from './gcal.js';
@@ -71,6 +76,7 @@ const SHEETS = {
   meeting: { title: 'הקלטת פגישה', body: MeetingBody },
   who: { title: 'לראות כ…', body: WhoBody },
   add: { title: 'להוסיף', body: AddBody },
+  confirm: { title: 'איפה החומרים', body: ConfirmBody }, // { what: 'place', pid, to }: before a project changes place
 };
 
 function App() {
@@ -78,7 +84,8 @@ function App() {
   const r = useRoute();
   useScrollState();
   const cmd = isCommander();
-  const active = r.name === 'project' ? 'projects' : r.name;
+  // A project and the project types live under פרויקטים, so it stays the active tab and sidebar link.
+  const active = r.name === 'project' || r.name === 'types' ? 'projects' : r.name;
   const activeTab = r.name === 'outputs' ? 'projects' : active;
   // What waits for me today: my team tasks due or late, and every row of Today's מחכה לך (store.waitingCount: asks to
   // answer or to close, the order's moves as one row, stages ready to close, weekly updates). An ask that has its own
@@ -92,10 +99,15 @@ function App() {
   // to someone else's personal project, or an outside partner's link to a project they're not in, never names it,
   // not even to a screen reader.
   const shown = r.name === 'project' ? s.projects.find((p) => p.id === r.arg) : null;
-  const title = r.name === 'project' ? (shown && canSee(shown) ? shown.name : '') : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');
+  // The types page is the team's: an outside partner, whom it refuses, gets only its general title.
+  const type = r.name === 'types' && r.arg && person(s.me).role !== 'external' ? typeById(lib(), r.arg) : null;
+  const title = r.name === 'project' ? (shown && canSee(shown) ? shown.name : '')
+    : r.name === 'types' ? (type ? type.name : 'סוגי פרויקטים')
+      : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');
   let view;
   if (r.name === 'projects') view = html`<${Projects} />`;
   else if (r.name === 'project') view = html`<${ProjectPage} key=${r.arg} id=${r.arg} />`;
+  else if (r.name === 'types') view = html`<${TypesPage} key=${r.arg || ''} id=${r.arg || null} />`;
   else if (r.name === 'overview') view = html`<${Overview} />`;
   else if (r.name === 'outputs') view = html`<${Outputs} />`;
   else if (r.name === 'calendar') view = html`<${Calendar} />`;
@@ -116,13 +128,13 @@ function App() {
           <${Icon} name=${n.icon} /><span>${n.label}</span>${counts[n.id] ? html`<span class="side-count">${counts[n.id]}</span>` : null}</a>`)}
       </nav>
       ${mine.length ? html`<div class="side-projects"><div class="side-sub">הפרויקטים שלי</div>
-        ${mine.map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${p.name}</span></a>`)}</div>` : null}
+        ${mine.map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${cutSafe(p.name)}</span></a>`)}</div>` : null}
       ${personalProjects().length ? html`<div class="side-projects"><div class="side-sub">אישי</div>
-        ${personalProjects().map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${p.name}</span></a>`)}</div>` : null}
+        ${personalProjects().map((p) => html`<a class=${'side-proj' + (r.name === 'project' && r.arg === p.id ? ' on' : '')} href=${`#/project/${p.id}`}><i style=${`background:${p.color}`}></i><span>${cutSafe(p.name)}</span></a>`)}</div>` : null}
       <button type="button" class="side-me" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${32} /><div><strong>${me.name}</strong><span>${me.role === 'commander' ? 'מפקד' : me.role === 'external' ? me.org : me.title} · דמו</span></div></button>
     </aside>
     <div class="main">
-      <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
+      <header class="topbar"><div class="topbar-title">${cutSafe(title)}</div><div class="grow"></div>
         <span class="proto-badge" title="הנתונים נשמרים רק בדפדפן הזה">דמו · נתונים מקומיים</span>
         <${ThemeButton} />
         <button type="button" class="icon-btn mobile-only" aria-label="החלפת משתמש" onClick=${() => openSheet('who')}><${Avatar} id=${s.me} size=${30} /></button>
@@ -145,16 +157,17 @@ function App() {
   </div>`;
 }
 
-// The + button: a task in one line, or one of the bigger things.
+// The + button: a task in one line, or one of the bigger things. Outside partners never open a project.
 function AddBody() {
   const s = useStore();
   const go = handOver; // the + sheet closes and the chosen one opens (store.handOver)
+  const ext = person(s.me).role === 'external';
   return html`<div class="form add-sheet">
     <span class="lbl">משימה</span>
     <${QuickAdd} placeholder="מה צריך לעשות…" />
     <span class="lbl">או</span>
     <div class="add-grid">
-      <button type="button" class="add-opt" onClick=${() => go('newproject')}><${Icon} name="layers" size=${22} /><strong>פרויקט</strong><span class="muted small">צוות או אישי</span></button>
+      ${ext ? null : html`<button type="button" class="add-opt" onClick=${() => go('newproject')}><${Icon} name="layers" size=${22} /><strong>פרויקט</strong><span class="muted small">צוות או אישי</span></button>`}
       <button type="button" class="add-opt" onClick=${() => go('meeting')}><${Icon} name="mic" size=${22} /><strong>הקלטת פגישה</strong><span class="muted small">סיכום אוטומטי</span></button>
       ${myProjects().length ? html`<button type="button" class="add-opt" onClick=${(e) => go('newoutput', { project: (myProjects().find((p) => p.manager === s.me) || myProjects()[0]).id })}><${Icon} name="upload" size=${22} /><strong>תוצר</strong><span class="muted small">קישור, קובץ או מצביע</span></button>` : null}
     </div>
