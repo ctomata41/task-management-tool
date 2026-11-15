@@ -120,16 +120,17 @@ function Orb() {
   return html`<canvas class="jv-orb" ref=${ref} aria-hidden="true"></canvas>`;
 }
 
-// The middle of the phone's tab bar: a bigger orb than the icons around it, in colour.
-export function JarvisTab() {
-  return html`<button type="button" class="tab jv-mid" aria-label="ג׳ארביס" title="ג׳ארביס" onClick=${openJarvis}>
-    <span class="jv-ball" aria-hidden="true"><span class="jv-ball-in"></span></span></button>`;
+// The middle of the phone's tab bar: a bigger orb than the icons around it, in colour. It leads to Jarvis's screen
+// (views/hud.js); from there, the same orb opens the conversation.
+const go = (on) => (e) => { if (on) { e.preventDefault(); openJarvis(); } };
+export function JarvisTab({ on }) {
+  return html`<a class=${'tab jv-mid' + (on ? ' on' : '')} href="#/jarvis" aria-label="ג׳ארביס" title="ג׳ארביס" aria-current=${on ? 'page' : null} onClick=${go(on)}>
+    <span class="jv-ball" aria-hidden="true"><span class="jv-ball-in"></span></span></a>`;
 }
 
 // The way in on desktop, at the top of the sidebar.
-export function JarvisSide() {
-  return html`<button type="button" class="side-jv" onClick=${openJarvis}>
+export function JarvisSide({ on }) {
+  return html`<a class=${'side-jv' + (on ? ' on' : '')} href="#/jarvis" aria-current=${on ? 'page' : null} onClick=${go(on)}>
     <span class="jv-ball sm" aria-hidden="true"><span class="jv-ball-in"></span></span>
-    <span class="grow"><strong>ג׳ארביס</strong><span>עוד לא מחובר · בקרוב בקול</span></span></button>`;
+    <span class="grow"><strong>ג׳ארביס</strong><span>${on ? 'לדבר עם ג׳ארביס' : 'המסך הראשי'}</span></span></a>`;
 }
-
