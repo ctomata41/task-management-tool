@@ -46,7 +46,7 @@ export function SignIn() {
               <span class="avatar" style=${`width:44px;height:44px;font-size:19px;background:${p.color || COLORS[i % COLORS.length]}`}>${p.name.slice(0, 2)}</span>
               <strong>${p.name}</strong><span>${p.role || ''}</span></button>`)}</div>`
             : html`<div class="boot inline"><span class="spinner"></span></div>`}`}
-      <div class="signin-alt"><a href="?demo">לראות את נתוני הדמה</a><span aria-hidden="true">·</span><a href="/#/home">האפליקציה הקודמת</a></div>
+      <div class="signin-alt"><a href="?demo">לראות את נתוני הדמה</a><span aria-hidden="true">·</span><a href="../#/home">האפליקציה הקודמת</a></div>
     </div>
   </main>`;
 }

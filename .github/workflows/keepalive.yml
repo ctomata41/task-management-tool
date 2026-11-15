@@ -1,0 +1,31 @@
+# Keep-alive, twice a day: Supabase pauses a Free-plan project after a week with too little database activity, so a
+# quiet week would take the app down. Three light queries, straight to Supabase (the same ones api/keepalive.js runs on
+# Vercel). The key is the public anon key from app/config.js; without the team code, RLS returns no rows.
+# GitHub runs a schedule only from the repository's default branch.
+name: keepalive
+on:
+  schedule:
+    - cron: '0 4 * * *'
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      BASE: https://dtsxlaxonvldcdziozgp.supabase.co
+      KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0c3hsYXhvbnZsZGNkemlvemdwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE5MDMyODcsImV4cCI6MjEwNzQ3OTI4N30.hR-m1xJqwtkU4fzX62IPpqjsG2ydxWZ_ft0fufwotPQ
+    steps:
+      - name: Three light queries
+        run: |
+          fail=0
+          check() {
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' "$@") || code=000
+            echo "$code ${@: -1}"
+            [ "$code" = 200 ] || fail=1
+          }
+          check -X POST -d '{}' "$BASE/rest/v1/rpc/team_code_is_set"
+          check "$BASE/rest/v1/projects?select=id&limit=1"
+          check "$BASE/rest/v1/tasks?select=id&limit=1"
+          exit $fail

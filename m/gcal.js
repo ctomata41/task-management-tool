@@ -4,6 +4,7 @@
 // in this browser the card says what connecting needs; nothing here makes up events.
 import { useState, useEffect } from 'preact/hooks';
 import { api, setCreds, isMock } from '../app/api.js';
+import { fnUrl } from '../app/config.js';
 import { html, Icon, openMenu, parseDay, isoDay } from './ui.js';
 import { toast } from './store.js';
 
@@ -27,7 +28,7 @@ async function call(route, body = {}) {
   const a = auth();
   let res;
   try {
-    res = await fetch('/gcal/' + route, {
+    res = await fetch(fnUrl('gcal') + '/' + route, {
       method: 'POST', body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json', 'x-team-code': a.code, 'x-actor': a.me, 'x-gcal-device': device(a) },
     });
@@ -107,7 +108,7 @@ async function connect() {
   setCreds({ code: a.code, actor: a.me });
   try {
     const state = await api.rpc('gcal_state_create', { p_return: location.pathname });
-    location.href = '/gcal/start?state=' + encodeURIComponent(state);
+    location.href = fnUrl('gcal') + '/start?state=' + encodeURIComponent(state);
   } catch (e) {
     toast(e.message || 'לא הצלחתי להתחיל את החיבור', { ms: 6000 });
   }
@@ -159,7 +160,7 @@ export function GcalCard({ gc }) {
   const text = gc.state === 'error' ? gc.error : TEXT[gc.state];
   // /next/ asks for the team code only when this browser has none. A code the server turned down goes to the main app,
   // which checks it again, drops it and asks for the new one (someone no longer on the team picks again there).
-  const signin = gc.state === 'signin' ? '/next/' : gc.signin ? '/#/home' : '';
+  const signin = gc.state === 'signin' ? '../next/' : gc.signin ? '../#/home' : '';
   return html`<div class="gc-card" role="group" aria-label="יומן גוגל">
     <span class="gc-ic" aria-hidden="true"><${Icon} name="calendar" size=${20} /></span>
     <div class="gc-text"><strong>יומן גוגל אישי</strong><span>${text}</span></div>

@@ -352,7 +352,7 @@ new MutationObserver((records) => {
 }).observe(document.getElementById('app'), { childList: true, subtree: true });
 
 if ('serviceWorker' in navigator && !isMock && location.hostname !== 'localhost') {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register(new URL('../sw.js', import.meta.url)).catch(() => {}));
 }
 // A tap on a phone notification while the app is open: the service worker passes on where it leads.
 if ('serviceWorker' in navigator) {

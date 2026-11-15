@@ -117,9 +117,11 @@ npx http-server -c-1 .
 # http://localhost:8080/?mock   מסד מדומה בזיכרון, בלי לגעת בנתונים האמיתיים
 ```
 
-`?mock` מריץ את כל הכלי מול נתוני דוגמה בדפדפן בלבד. בלי `?mock` הכלי פונה ל-`/sb`, שעובד רק דרך Vercel.
+`?mock` מריץ את כל הכלי מול נתוני דוגמה בדפדפן בלבד. בלי `?mock` הכלי פונה ל-Supabase: דרך `/sb` בכתובת של Vercel, וישירות בכל מקום אחר.
 
 ## פריסה
+
+**GitHub Pages (מ-15/11/2026):** האתר מתפרסם גם ישר מהמאגר, מהענף `new-model` (Settings, Pages, Deploy from a branch, `new-model`, `/ (root)`), בכתובת https://ctomata41.github.io/task-management-tool/. כל מיזוג ל-`new-model` מתפרסם לבד תוך דקה או שתיים. בשביל זה כל הנתיבים באתר יחסיים, ומחוץ ל-Vercel האפליקציה פונה ל-Supabase ישירות (`app/config.js`: `API_BASE`, `fnUrl`). פונקציות השרת (`gcal`, `voice`, `mcp`, `push`) מחזירות כותרות CORS בשביל זה. ליומן גוגל מחוץ ל-Vercel צריך גם את הסודות `SITE_URL` ו-`GCAL_REDIRECT_URI` ואת אותה כתובת חזרה אצל גוגל. שמירת המסד ער: `.github/workflows/keepalive.yml` (רץ רק מענף ברירת המחדל של המאגר).
 
 הפרויקט ב-Vercel הוא `cto-tasks` (סטטי, בלי framework ובלי build, חוץ מהפונקציה ב-`api/`). כל פריסה מעלה את הקבצים כמו שהם. משימות ה-cron רצות רק בפריסת הייצור.
 

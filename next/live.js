@@ -4,6 +4,7 @@
 // (supabase/functions/mcp): what Claude reports shows up on the next refresh, and what people do here is what Claude
 // reads back.
 import { api, setCreds, isMock } from '../app/api.js';
+import { fnUrl } from '../app/config.js';
 import { sensitiveHits, textsIn } from '../app/guard.js';
 import { set, getState, setRemote, toast, person, project } from './store.js';
 
@@ -443,7 +444,7 @@ export const meName = () => person(getState().me).name;
 export async function voiceCall(route, body = {}) {
   let res;
   try {
-    res = await fetch('/voice/' + route, {
+    res = await fetch(fnUrl('voice') + '/' + route, {
       method: 'POST', body: JSON.stringify(body),
       headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
     });
@@ -456,7 +457,7 @@ export async function voiceCall(route, body = {}) {
 // The platform's own Claude (/mcp/brain/*, on once the team's Anthropic key is set): it writes and updates work plans
 // by itself, so a plan never waits for someone to open Claude.
 export async function brainCall(route, body = {}) {
-  const res = await fetch('/mcp/brain/' + route, {
+  const res = await fetch(fnUrl('mcp') + '/brain/' + route, {
     method: 'POST', body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me },
   });
@@ -490,7 +491,7 @@ const GCAL_ERR = {
 };
 function gcalDevice() { return (LS.get(GCAL_KEY) || {})[auth?.me] || ''; }
 async function gcalCall(route, body = {}) {
-  const res = await fetch('/gcal/' + route, {
+  const res = await fetch(fnUrl('gcal') + '/' + route, {
     method: 'POST', body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json', 'x-team-code': auth.code, 'x-actor': auth.me, 'x-gcal-device': gcalDevice() },
   });
@@ -530,7 +531,7 @@ export const gcal = {
   },
   async connect() {
     const state = await api.rpc('gcal_state_create', { p_return: location.pathname });
-    location.href = '/gcal/start?state=' + encodeURIComponent(state);
+    location.href = fnUrl('gcal') + '/start?state=' + encodeURIComponent(state);
   },
   async create(ev) {
     await guard({ title: ev.title, notes: ev.notes });
