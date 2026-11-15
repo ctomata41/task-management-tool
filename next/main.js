@@ -88,7 +88,7 @@ function App() {
     </aside>
     <div class="main">
       <header class="topbar"><div class="topbar-title">${title}</div><div class="grow"></div>
-        ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.startsWith("/next") ? location.pathname : null} title="כניסה עם קוד הצוות">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
+        ${s.mode === 'demo' ? html`<a class="proto-badge" href=${location.pathname.includes("/next") ? location.pathname : null} title="כניסה עם קוד הצוות">נתוני דמה · כניסה לנתונים האמיתיים</a>` : null}
         <${RecordingPill} />
         <button type="button" class="jv-btn" aria-label="לדבר עם ג׳ארביס" title="ג׳ארביס" onClick=${openJarvis}><span class="jv-dot" aria-hidden="true"></span>ג׳ארביס</button>
         <${ThemeButton} />
@@ -126,7 +126,7 @@ function WhoList() {
     return html`<div class="who-list">
       <div class="who-row on"><${Avatar} id=${s.me} size=${36} /><div class="grow"><strong>${person(s.me).name}</strong><span class="muted small">${person(s.me).role}</span></div></div>
       <button type="button" class="btn block" onClick=${() => { forgetPerson(); location.reload(); }}>החלפת משתמש</button>
-      <a class="btn block" href="/#/home">האפליקציה הקודמת</a>
+      <a class="btn block" href="../#/home">האפליקציה הקודמת</a>
       <a class="btn block" href="?demo">לראות את נתוני הדמה</a>
       <${ThemeChoice} />
       <p class="muted small">כאן רואים רק את הפרויקטים שבהם מובילים או שותפים. ההתחברות משותפת עם האפליקציה.</p></div>`;
@@ -138,7 +138,7 @@ function WhoList() {
 }
 
 // Outside /next/ (the artifact copy) and with ?demo or ?mock, the sample data needs no sign-in.
-const sample = /[?&](demo|mock)\b/.test(location.search) || !location.pathname.startsWith('/next');
+const sample = /[?&](demo|mock)\b/.test(location.search) || !location.pathname.includes('/next');
 if (!liveAuth() && !sample) {
   render(html`<${SignIn} />`, document.getElementById('app'));
 } else {

@@ -38,7 +38,7 @@ export function deviceLabel() {
 
 const withTimeout = (p, ms, msg) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(msg)), ms))]);
 async function registration() {
-  if (!(await navigator.serviceWorker.getRegistration())) await navigator.serviceWorker.register('/sw.js');
+  if (!(await navigator.serviceWorker.getRegistration())) await navigator.serviceWorker.register(new URL('../sw.js', import.meta.url));
   return withTimeout(navigator.serviceWorker.ready, 10000, 'רכיב הרקע של האפליקציה לא עלה. כדאי לרענן ולנסות שוב.');
 }
 // This device's subscription, without registering anything (for signing out).

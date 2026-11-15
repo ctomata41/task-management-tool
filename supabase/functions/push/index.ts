@@ -25,7 +25,14 @@ async function db(path: string, init: { method?: string; body?: unknown; prefer?
 }
 const rpc = (fn: string, args: Row = {}) => db(`rpc/${fn}`, { method: 'POST', body: args });
 const one = async (path: string): Promise<Row | null> => ((await db(path)) as Row[])[0] ?? null;
-const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+// The site may be served from another origin than this function (GitHub Pages), so the browser asks first.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-team-code, x-actor, x-client-info',
+  'Access-Control-Max-Age': '86400',
+};
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 // ---------- keys and the shared secret ----------
 let vapidKeys: Row | null = null;
@@ -221,6 +228,7 @@ async function onTest(endpoint: unknown) {
 }
 
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   try {
     const body: Row = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     if (req.method === 'GET' || body.action === 'key') return json({ publicKey: (await vapid()).publicKey });

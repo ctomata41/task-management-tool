@@ -11,27 +11,27 @@
   <script>
     // The control center is the site's home. The app is still here: any link into it carries a #/ route, and ?classic
     // or ?mock open it as well.
-    if (!location.hash && !/[?&](classic|mock)\b/.test(location.search)) location.replace('/next/');
+    if (!location.hash && !/[?&](classic|mock)\b/.test(location.search)) location.replace('next/');
   </script>
-  <script src="/app/theme.js"></script>
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-  <link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png" />
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <script src="./app/theme.js"></script>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="./icons/icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="משימות CTO" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <link rel="stylesheet" href="/app/styles.css" />
+  <link rel="stylesheet" href="./app/styles.css" />
   <script type="importmap">
-    { "imports": { "preact": "/app/lib/preact.js", "preact/hooks": "/app/lib/hooks.js", "htm": "/app/lib/htm.js" } }
+    { "imports": { "preact": "./app/lib/preact.js", "preact/hooks": "./app/lib/hooks.js", "htm": "./app/lib/htm.js" } }
   </script>
-  <link rel="modulepreload" href="/app/lib/preact.js" />
-  <link rel="modulepreload" href="/app/main.js" />
+  <link rel="modulepreload" href="./app/lib/preact.js" />
+  <link rel="modulepreload" href="./app/main.js" />
 </head>
 <body>
   <div id="app"><div class="boot"><span class="spinner"></span>טוען…</div></div>
   <noscript>צריך להפעיל JavaScript כדי להשתמש בכלי.</noscript>
-  <script type="module" src="/app/main.js"></script>
+  <script type="module" src="./app/main.js"></script>
 </body>
 </html>
