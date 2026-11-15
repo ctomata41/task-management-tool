@@ -1,5 +1,5 @@
 // The shell of the manual version: a floating sidebar on desktop; on phones a large title, a glass tab bar with Jarvis
-// in its middle, and a + button beside it. Routes: #/today, #/projects, #/project/:id, #/calendar, #/overview, #/outputs.
+// in its middle, and a + button beside it. Jarvis's screen (#/jarvis) is the home. Routes: #/jarvis, #/today, #/projects, #/project/:id, #/calendar, #/overview, #/outputs.
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { html, Icon, Avatar, Sheet, Toasts, MenuLayer } from './ui.js';
@@ -12,6 +12,7 @@ import { Outputs, OutputSheetBody, NewOutputBody } from './views/outputs.js';
 import { NewProjectBody, GateBody, ReturnBody, WeeklyBody, ResolveBody, AskBody, TaskBody, PartnerBody, WhoBody, MeetingBody } from './views/sheets.js';
 import { Calendar, StageBody } from './views/calendar.js';
 import { JarvisScreen, JarvisTab, JarvisSide } from './views/jarvis.js';
+import { Hud, LinkBody } from './views/hud.js';
 import { takeReturn } from './gcal.js';
 import { dayDiff } from './ui.js';
 
@@ -32,9 +33,9 @@ function useRoute() {
     window.addEventListener('hashchange', f);
     return () => window.removeEventListener('hashchange', f);
   }, []);
-  // With no route, the commander starts from the picture of the whole team (as switchTo does); everyone else from their day.
+  // With no route, everyone starts from Jarvis's screen (as switchTo does).
   const [, name, arg] = (hash || '').split('/');
-  return { name: name || (isCommander() ? 'overview' : 'today'), arg };
+  return { name: name || 'jarvis', arg };
 }
 
 // The large title gives way to a compact one in the bar once it scrolls under it.
@@ -71,6 +72,7 @@ const SHEETS = {
   meeting: { title: 'הקלטת פגישה', body: MeetingBody },
   who: { title: 'לראות כ…', body: WhoBody },
   add: { title: 'להוסיף', body: AddBody },
+  link: { title: 'חיבור של ג׳ארביס', body: LinkBody },
 };
 
 function App() {
@@ -92,13 +94,14 @@ function App() {
   // to someone else's personal project, or an outside partner's link to a project they're not in, never names it,
   // not even to a screen reader.
   const shown = r.name === 'project' ? s.projects.find((p) => p.id === r.arg) : null;
-  const title = r.name === 'project' ? (shown && canSee(shown) ? shown.name : '') : (NAV.find((n) => n.id === r.name)?.label || 'היום שלי');
+  const title = r.name === 'project' ? (shown && canSee(shown) ? shown.name : '') : (r.name === 'jarvis' ? 'ג׳ארביס' : NAV.find((n) => n.id === r.name)?.label || 'היום שלי');
   let view;
   if (r.name === 'projects') view = html`<${Projects} />`;
   else if (r.name === 'project') view = html`<${ProjectPage} key=${r.arg} id=${r.arg} />`;
   else if (r.name === 'overview') view = html`<${Overview} />`;
   else if (r.name === 'outputs') view = html`<${Outputs} />`;
   else if (r.name === 'calendar') view = html`<${Calendar} />`;
+  else if (r.name === 'jarvis') view = html`<${Hud} key=${s.me} />`;
   else view = html`<${Today} key=${s.me} />`;
   const me = person(s.me);
   const sh = s.sheet && SHEETS[s.sheet.kind];
@@ -106,11 +109,11 @@ function App() {
   // A task that is an ask is titled as one, for whoever may see it.
   const ask = s.sheet?.kind === 'task' && s.tasks.find((x) => x.id === s.sheet.id && x.ask && canSeeTask(x));
   const mine = myProjects().filter((p) => p.phase !== 'stopped' && p.phase !== 'done');
-  return html`<div class=${'shell m-app' + (s.reopening ? ' reopening' : '')}>
+  return html`<div class=${'shell m-app' + (s.reopening ? ' reopening' : '') + (r.name === 'jarvis' ? ' at-jarvis' : '')}>
     <aside class="sidebar">
       <div class="brand"><span class="logo-m"><${Icon} name="layers" size=${18} /></span><div><strong>צוות CTO</strong><span>פרויקטים ומשימות</span></div></div>
       <button type="button" class="btn btn-primary block new-task" onClick=${() => openSheet('add')}><${Icon} name="plus" size=${16} />חדש</button>
-      <${JarvisSide} />
+      <${JarvisSide} on=${r.name === 'jarvis'} />
       <nav class="side-nav" aria-label="ניווט">
         ${NAV.map((n) => html`<a class=${'side-link' + (active === n.id ? ' on' : '')} href=${`#/${n.id}`} aria-current=${active === n.id ? 'page' : null}>
           <${Icon} name=${n.icon} /><span>${n.label}</span>${counts[n.id] ? html`<span class="side-count">${counts[n.id]}</span>` : null}</a>`)}
@@ -131,7 +134,7 @@ function App() {
     </div>
     <nav class="tabbar m-tabbar" aria-label="ניווט">
       ${TABS.map((id) => {
-        if (id === 'jarvis') return html`<${JarvisTab} key="jarvis" />`;
+        if (id === 'jarvis') return html`<${JarvisTab} key="jarvis" on=${r.name === 'jarvis'} />`;
         const n = NAV.find((x) => x.id === id);
         return html`<a key=${id} class=${'tab' + (activeTab === id ? ' on' : '')} href=${`#/${id}`} aria-current=${activeTab === id ? 'page' : null}>
           <span class="tab-ic"><${Icon} name=${n.icon} size=${22} />${counts[id] ? html`<span class="tab-n">${counts[id]}</span>` : null}</span><span class="tab-l">${n.short || n.label}</span></a>`;

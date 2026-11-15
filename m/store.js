@@ -84,7 +84,7 @@ export function resetSample() { LS.del(KEY); set({ ...fresh(), sheet: null }); t
 // The commander starts from the picture of the whole team; everyone else from their own day. Either starts at the top,
 // also when the screen stays the same (no hashchange then). The last person's sheet, menu and toasts go with them, so
 // nothing they could undo or open runs as the next person.
-export function switchTo(id) { LS.set(ME_KEY, id); set({ me: id, sheet: null, menu: null, toasts: [] }); location.hash = isCommander(id) ? '#/overview' : '#/today'; window.scrollTo(0, 0); }
+export function switchTo(id) { LS.set(ME_KEY, id); set({ me: id, sheet: null, menu: null, toasts: [] }); location.hash = '#/jarvis'; window.scrollTo(0, 0); }
 
 // ---------- toasts and sheets ----------
 // Returns the toast's id, so an action can take back its own toast (dismissToast). One that offers an action (ביטול,
