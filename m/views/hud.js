@@ -180,7 +180,7 @@ export function Hud() {
       <section class="hud-core" aria-label="ג׳ארביס">
         <${Reactor} list=${list} n=${coreN} onTime=${onTime} />
         <button type="button" class="btn hud-talk" onClick=${openJarvis}><${Icon} name="mic" size=${17} />לדבר עם ג׳ארביס</button>
-        <span class="hud-voice">${voice.state === 'on' ? 'הקול מחובר' : `הקול עוד לא פעיל · ${on} מתוך ${linkable(list)} מערכות מחוברות`}</span>
+        <span class="hud-voice">${voice.state === 'on' ? 'הקול מחובר' : 'הקול עוד לא פעיל'} · ${on} מתוך ${linkable(list)} מערכות מחוברות</span>
         <div class="hud-gauges" role="group" aria-label="מדדים">
           <${Gauge} value=${lateN} of=${mine.length} label="באיחור" tone=${lateN ? 'bad' : ''} />
           <${Gauge} value=${todayN} of=${mine.length} label="להיום" />
