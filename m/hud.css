@@ -1,0 +1,191 @@
+/* Jarvis's home (m/views/hud.js): a heads-up display. One extra colour, --hud, for the lines of the display; everything
+   else comes from the app's tokens. The rings only turn (nothing a finger holds moves on a timer), panels and rows give
+   feedback on press, and with reduced motion the display stands still. */
+:root { --hud: #007a9c; --on-hud: #ffffff; --hud-glow: 0.1; }
+:root[data-theme="dark"] { --hud: #64d2ff; --on-hud: #00222e; --hud-glow: 0.2; }
+
+.hud { --hud-ink: color-mix(in oklab, var(--hud) var(--ink), black); gap: 16px; font-variant-numeric: tabular-nums; }
+/* The display's light, behind everything on this page only. */
+.m-app.at-jarvis .main {
+  background:
+    radial-gradient(60rem 34rem at 50% 14rem, color-mix(in srgb, var(--hud) calc(var(--hud-glow) * 100%), transparent), transparent 70%),
+    linear-gradient(color-mix(in srgb, var(--hud) 5%, transparent) 1px, transparent 1px) 0 0 / 100% 44px,
+    linear-gradient(90deg, color-mix(in srgb, var(--hud) 5%, transparent) 1px, transparent 1px) 0 0 / 44px 100%;
+}
+
+.hud-head { padding-top: 8px; }
+.hud-eyebrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; color: var(--hud-ink); font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.01em; }
+.hud-live { width: 7px; height: 7px; border-radius: 50%; background: var(--h-on); box-shadow: 0 0 0 3px color-mix(in srgb, var(--h-on) 25%, transparent); }
+.hud-say { margin: 6px 0 0; font-size: 1.0625rem; line-height: 1.4; color: var(--fg-2); max-width: 40rem; }
+
+.hud-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(340px, 430px) minmax(0, 1fr); grid-template-areas: "a core b" "a feed b"; grid-template-rows: auto 1fr; align-items: start; }
+.hud-core { grid-area: core; display: flex; flex-direction: column; align-items: center; gap: 10px; min-width: 0; }
+.hud-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.hud-col.a { grid-area: a; }
+.hud-col.b { grid-area: b; }
+.p-feed { grid-area: feed; }
+
+/* ---------- the reactor ---------- */
+.rx { position: relative; width: min(100%, 420px); aspect-ratio: 1; }
+.rx-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.rx-svg * { fill: none; vector-effect: non-scaling-stroke; }
+.rx-svg > circle:first-of-type { fill: url(#rx-glow); }
+.rx-tick { stroke: color-mix(in srgb, var(--hud) 45%, transparent); stroke-width: 1; }
+.rx-tick.big { stroke: var(--hud); stroke-width: 1.5; }
+.rx-orbit { stroke: color-mix(in srgb, var(--hud) 28%, transparent); stroke-width: 1; stroke-dasharray: 1 6; }
+.rx-arc { stroke: var(--hud); stroke-width: 5; opacity: 0.9; }
+.rx-arc.thin { stroke-width: 1.5; opacity: 0.55; }
+.rx-track { stroke: var(--fill-2); stroke-width: 3; }
+.rx-prog { stroke: var(--hud); stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--hud) 70%, transparent)); transition: stroke-dasharray 0.6s var(--spring); }
+.rx-svg .rx-core { fill: color-mix(in srgb, var(--hud) 9%, var(--surface)); stroke: color-mix(in srgb, var(--hud) 45%, transparent); stroke-width: 1; }
+.rx-core-in { stroke: color-mix(in srgb, var(--hud) 30%, transparent); stroke-width: 1; stroke-dasharray: 2 5; }
+.rx-link { stroke: color-mix(in srgb, var(--fg-3) 35%, transparent); stroke-width: 1.5; stroke-linecap: round; }
+.rx-link.s-on { stroke: var(--hud); stroke-dasharray: 3 5; filter: drop-shadow(0 0 3px var(--hud)); }
+.rx-link.s-setup { stroke: color-mix(in srgb, var(--h-risk) 75%, transparent); stroke-dasharray: 2 5; }
+.rx-link.s-blocked { stroke: color-mix(in srgb, var(--h-off) 75%, transparent); stroke-dasharray: 2 5; }
+.rx-spin { transform-origin: 0 0; }
+
+.rx-center { position: absolute; inset: 0; margin: auto; width: 41%; height: 41%; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; color: var(--fg); }
+.rx-center b { font-size: clamp(2.75rem, 13vw, 3.75rem); line-height: 1; font-weight: 250; letter-spacing: -0.03em; }
+.rx-center span { font-size: 0.8125rem; font-weight: 600; color: var(--hud-ink); letter-spacing: 0.01em; }
+.rx-center small { font-size: 0.6875rem; color: var(--fg-3); letter-spacing: 0.02em; }
+
+.rx-node { position: absolute; translate: -50% -50%; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; --c: var(--s-todo);
+  color: color-mix(in oklab, var(--c) var(--ink), black); background: color-mix(in srgb, var(--c) 14%, var(--surface)); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c) 55%, transparent); }
+.rx-node::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; }
+.rx-node.s-on { --c: var(--hud); box-shadow: inset 0 0 0 1.5px var(--hud), 0 0 14px color-mix(in srgb, var(--hud) 55%, transparent); }
+.rx-node.s-setup { --c: var(--h-risk); }
+.rx-node.s-blocked { --c: var(--h-off); }
+.rx-node.s-off, .rx-node.s-never { color: var(--fg-3); }
+.rx-node.s-never { box-shadow: inset 0 0 0 1px var(--line-strong); opacity: 0.7; }
+
+.hud-talk { height: 46px; padding: 0 22px; border-radius: 999px; gap: 8px; font-size: 1rem; font-weight: 600; background: var(--hud); color: var(--on-hud); box-shadow: 0 6px 22px color-mix(in srgb, var(--hud) 35%, transparent); margin-top: -4px; }
+.hud-voice { font-size: 0.75rem; color: var(--fg-3); letter-spacing: 0.01em; text-align: center; }
+
+.hud-gauges { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%; margin-top: 6px; padding: 12px 6px; border-radius: var(--r-card); background: var(--surface); box-shadow: var(--hud-edge, none); }
+.hud-gauge { --c: var(--hud); display: grid; justify-items: center; gap: 4px; min-width: 0; }
+.hud-gauge.bad { --c: var(--h-off); }
+.hud-gauge.ok { --c: var(--h-on); }
+.hud-gauge svg { grid-area: 1 / 1; width: 52px; height: 52px; }
+.hud-gauge circle { fill: none; stroke-width: 3; }
+.g-track { stroke: var(--fill-2); }
+.g-val { stroke: var(--c); stroke-linecap: round; transition: stroke-dasharray 0.6s var(--spring); }
+.hud-gauge b { grid-area: 1 / 1; align-self: center; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.01em; color: color-mix(in oklab, var(--c) var(--ink), black); }
+.hud-gauge:not(.bad, .ok) b { color: var(--fg); }
+.hud-gauge span { font-size: 0.75rem; color: var(--fg-2); letter-spacing: 0.01em; text-align: center; }
+
+/* ---------- panels ---------- */
+:root[data-theme="dark"] .hud { --hud-edge: inset 0 0 0 0.5px color-mix(in srgb, var(--hud) 26%, transparent); }
+.hud-panel { position: relative; min-width: 0; padding: 12px 6px 6px; border-radius: var(--r-card); background: var(--surface); box-shadow: var(--hud-edge, none); }
+.hud-panel > header { display: flex; align-items: center; gap: 8px; padding: 0 10px 6px; }
+.hud-panel > header::before { content: ""; width: 3px; height: 14px; border-radius: 2px; background: var(--hud); }
+.hud-panel h2 { font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.02em; color: var(--hud-ink); flex: 1; }
+.hud-n { font-size: 0.8125rem; font-weight: 600; color: var(--fg-3); letter-spacing: 0.04em; }
+.p-att > header::before { background: var(--h-off); }
+.p-att h2 { color: color-mix(in oklab, var(--h-off) var(--ink), black); }
+.p-wait > header::before { background: var(--s-waiting); }
+.p-wait h2 { color: color-mix(in oklab, var(--s-waiting) var(--ink), black); }
+
+.hud-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 12px; color: var(--fg); text-align: start; text-decoration: none; }
+.hud-row .grow, .sys .grow, .hud-day .grow { min-width: 0; display: flex; flex-direction: column; text-align: start; }
+.hud-row strong, .hud-day strong { font-size: 0.9375rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-row .grow > span, .hud-day .grow > span { font-size: 0.75rem; color: var(--fg-2); letter-spacing: 0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud-row > .ic { color: var(--fg-3); flex: none; }
+.hud-row time { font-size: 0.6875rem; color: var(--fg-3); white-space: nowrap; letter-spacing: 0.01em; }
+.hud-ic { --c: var(--hud); flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 15%, transparent); color: color-mix(in oklab, var(--c) var(--ink), black); }
+.hud-ic.bad { --c: var(--h-off); }
+.hud-ic.warn { --c: var(--h-risk); }
+.p-wait .hud-ic { --c: var(--s-waiting); }
+.hud-more { display: flex; align-items: center; justify-content: center; gap: 2px; padding: 8px; font-size: 0.8125rem; font-weight: 600; color: var(--hud-ink); text-decoration: none; border-radius: 12px; }
+.hud-quiet { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px 12px; font-size: 0.875rem; color: var(--fg-2); }
+.hud-quiet .ic { color: var(--h-on); }
+.hud-foot { margin: 0; padding: 8px 10px 6px; font-size: 0.6875rem; line-height: 1.4; color: var(--fg-3); letter-spacing: 0.01em; }
+
+.hud-sys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 0 4px; }
+.sys { --c: var(--s-todo); display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px; border-radius: 12px; background: var(--fill); color: var(--fg); text-align: start; }
+.sys strong { font-size: 0.875rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sys .grow > span { display: flex; align-items: center; gap: 5px; font-size: 0.75rem; color: var(--fg-2); letter-spacing: 0.01em; white-space: nowrap; }
+.sys-ic { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--c) 16%, var(--surface)); color: color-mix(in oklab, var(--c) var(--ink), black); }
+.sys-ic.lg { width: 52px; height: 52px; }
+.sys-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c); flex: none; }
+:is(.sys, .sys-ic).s-on { --c: var(--h-on); }
+.sys.s-on .sys-ic, .sys-ic.lg.s-on { --c: var(--hud); }
+:is(.sys, .sys-ic).s-setup { --c: var(--h-risk); }
+:is(.sys, .sys-ic).s-blocked { --c: var(--h-off); }
+.sys.s-never strong { color: var(--fg-2); }
+
+.hud-day { list-style: none; margin: 0; padding: 0 4px; display: flex; flex-direction: column; }
+.hud-day li { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-radius: 12px; }
+.hud-day time { flex: none; width: 3.25rem; font-size: 0.75rem; font-weight: 600; color: var(--hud-ink); letter-spacing: 0.01em; }
+.hud-day li.k-stuck time { color: var(--bad); }
+.hud-day button.grow { color: inherit; border-radius: 8px; }
+.hud-feed { display: flex; flex-direction: column; }
+
+/* ---------- one system's sheet ---------- */
+.link-sheet { gap: 14px; }
+.link-top { display: flex; align-items: center; gap: 14px; }
+.link-top .grow { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.link-top h3 { font-size: 1.375rem; letter-spacing: -0.015em; }
+.link-note { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--fill); font-size: 0.9375rem; line-height: 1.45; }
+.link-dl { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.link-dl dt { display: flex; align-items: center; gap: 6px; font-size: 0.8125rem; font-weight: 600; color: var(--fg-2); letter-spacing: 0.01em; }
+.link-dl dd { margin: 3px 0 0; font-size: 1rem; line-height: 1.45; }
+
+/* ---------- the ways in ---------- */
+a.side-jv, a.jv-mid { text-decoration: none; }
+.side-jv.on { background: color-mix(in srgb, var(--hud) 14%, transparent); }
+.side-jv.on .grow span { color: var(--hud-ink, var(--fg-2)); }
+.m-tabbar .jv-mid.on .jv-ball { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--hud), 0 4px 18px color-mix(in srgb, var(--hud) 50%, transparent); }
+
+/* ---------- response ---------- */
+.rx-center, .rx-node, .hud-talk, .sys, .hud-more { transition: transform 0.44s var(--spring), background-color 0.2s, box-shadow 0.2s, opacity 0.2s; }
+.rx-center:active, .hud-talk:active, .sys:active, .hud-more:active { transform: scale(0.95); transition-duration: 0.08s; }
+.rx-node:active { transform: scale(0.9); transition-duration: 0.08s; }
+.hud-row, .hud-day button.grow { transition: background-color 0.3s; }
+.hud-row:active, .hud-day li:has(button:active) { background: var(--press); transition-duration: 0s; }
+@media (hover: hover) {
+  .hud-row:hover, .hud-day li:has(button:hover), .hud-more:hover { background: var(--hover); }
+  .sys:hover { background: var(--fill-2); }
+  .rx-node:hover { background: color-mix(in srgb, var(--c) 26%, var(--surface)); }
+  .hud-talk:hover { filter: brightness(1.08); }
+}
+
+/* ---------- motion: the display comes up, then only turns ---------- */
+@media (prefers-reduced-motion: no-preference) {
+  .rx-spin { animation: rxturn 50s linear infinite; }
+  .rx-spin.slow { animation-duration: 240s; }
+  .rx-spin.back { animation-duration: 80s; animation-direction: reverse; }
+  .rx-link.s-on { animation: rxflow 1.6s linear infinite; }
+  .rx-node { animation: hudpop 0.5s var(--spring) both; animation-delay: calc(120ms + var(--i) * 35ms); }
+  .rx-svg, .rx-center { animation: hudpop 0.6s var(--spring) both; }
+  .hud-panel, .hud-gauges { animation: hudrise 0.5s var(--spring) both; }
+  .hud-col.a .hud-panel { animation-delay: 60ms; }
+  .hud-col.b .hud-panel { animation-delay: 120ms; }
+  .p-feed { animation-delay: 180ms; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rx-node, .rx-svg, .rx-center, .hud-panel, .hud-gauges { animation: hudfade 0.25s ease both; }
+}
+@keyframes rxturn { to { transform: rotate(360deg); } }
+@keyframes rxflow { to { stroke-dashoffset: -16; } }
+@keyframes hudpop { from { opacity: 0; scale: 0.82; } }
+@keyframes hudrise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes hudfade { from { opacity: 0; } }
+
+@media (prefers-contrast: more) {
+  .hud-panel, .hud-gauges, .sys { box-shadow: 0 0 0 1px var(--line-strong); }
+  .rx-orbit, .rx-tick { stroke: var(--hud); }
+  .hud-row .grow > span, .sys .grow > span, .hud-gauge span { color: var(--fg); }
+}
+
+@media (min-width: 901px) and (max-width: 1240px) {
+  .hud-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "core core" "a b" "feed feed"; }
+}
+@media (max-width: 900px) {
+  .hud { gap: 12px; }
+  .hud-head h1 { font-size: 2rem; }
+  .hud-grid { grid-template-columns: minmax(0, 1fr); grid-template-areas: "core" "a" "b" "feed"; gap: 12px; }
+  .hud-col { gap: 12px; }
+  .rx { width: min(100%, 370px); }
+  .m-app.at-jarvis .main { background-position: 50% 0, 0 0, 0 0; }
+}

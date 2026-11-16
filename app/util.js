@@ -1,14 +1,15 @@
-// Shared constants and helpers: statuses, dates (Hebrew), sorting, quick-add parsing.
+// Shared constants and helpers: statuses, dates (Hebrew), ages, sorting, quick-add parsing.
 
 export const STATUSES = [
   { id: 'todo', label: 'לא התחיל', color: 'var(--s-todo)' },
   { id: 'in_progress', label: 'בתהליך', color: 'var(--s-progress)' },
   { id: 'waiting', label: 'ממתין לאחר', color: 'var(--s-waiting)' },
   { id: 'blocked', label: 'תקוע', color: 'var(--s-blocked)' },
+  { id: 'review', label: 'לבדיקה', color: 'var(--s-review)' },
   { id: 'done', label: 'הושלם', color: 'var(--s-done)' },
 ];
 export const STATUS = Object.fromEntries(STATUSES.map((s) => [s.id, s]));
-const STATUS_RANK = { blocked: 0, in_progress: 1, waiting: 2, todo: 3, done: 4 };
+const STATUS_RANK = { blocked: 0, review: 1, in_progress: 2, waiting: 3, todo: 4, done: 5 };
 
 export const PRIORITIES = [
   { id: 'high', label: 'גבוהה', color: 'var(--p-high)' },
@@ -68,6 +69,37 @@ export function timeAgo(iso) {
   return d === 1 ? 'אתמול' : `לפני ${d} ימים`;
 }
 export function daysSince(iso) { return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000)); }
+// The work week is Sunday to Thursday. Waiting is counted in work hours: Friday and Saturday do not count,
+// so a decision opened on Thursday is not "late" on Sunday morning.
+const isWorkday = (d) => d.getDay() <= 4;
+export function workHoursSince(iso, now = new Date()) {
+  let t = new Date(iso);
+  if (!(t < now)) return 0;
+  let ms = 0;
+  while (t < now) {
+    const next = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 1);
+    const end = next < now ? next : now;
+    if (isWorkday(t)) ms += end - t;
+    t = next;
+  }
+  return ms / 3600000;
+}
+// Workdays from today until a date (0 = today, negative = late), not counting Friday and Saturday.
+export function workdaysUntil(due) {
+  const n = diffDays(today(), due);
+  if (n <= 0) return n;
+  let w = 0;
+  for (let i = 1; i <= n; i++) if (isWorkday(parse(addDays(today(), i)))) w++;
+  return w;
+}
+// How long something has been waiting: a calendar label, and a level by work hours. After one workday it shows
+// in amber, after two it escalates (the spec's escalation ladder) and shows in red.
+export function ageOf(iso) {
+  const h = Math.max(0, (Date.now() - new Date(iso).getTime()) / 3600000);
+  const work = workHoursSince(iso);
+  const label = h < 1 ? 'עכשיו' : h < 24 ? `${Math.floor(h)} שע׳` : Math.floor(h / 24) === 1 ? 'יום' : `${Math.floor(h / 24)} ימים`;
+  return { hours: h, work, label, level: work >= 48 ? 'bad' : work >= 24 ? 'warn' : 'ok' };
+}
 export const isOverdue = (t) => !!t.due && t.status !== 'done' && t.due < today();
 export function greeting() {
   const h = new Date().getHours();

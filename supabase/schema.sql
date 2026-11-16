@@ -1,6 +1,8 @@
 -- Snapshot of the database schema (Supabase Postgres, project "cto-tasks"), taken 13/10/2026.
 -- Reference only: the live database was built with Supabase migrations
 -- (init_schema, mvp_features, team_code_setup_flow, revoke_trigger_fn_exec, comment_mentions).
+-- Changes since this snapshot are in supabase/migrations/, applied in order on top of it
+-- (new_model: decisions, Claude tasks, commitments, ideas, meetings; redact_item; project_stage).
 -- No secrets here: the team code is chosen in the app on first launch and stored only as a SHA-256 hash.
 
 create extension if not exists pgcrypto with schema extensions;

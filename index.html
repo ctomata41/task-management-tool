@@ -5,30 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>משימות CTO</title>
   <meta name="description" content="כל הפרויקטים, המשימות והחסמים של צוות ה-CTO במקום אחד." />
-  <meta name="theme-color" content="#f3f5f8" media="(prefers-color-scheme: light)" />
-  <meta name="theme-color" content="#0e1117" media="(prefers-color-scheme: dark)" />
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
   <meta name="color-scheme" content="light dark" />
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-  <link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png" />
-  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <script>
+    // The control center is the site's home. The app is still here: any link into it carries a #/ route, and ?classic
+    // or ?mock open it as well.
+    if (!location.hash && !/[?&](classic|mock)\b/.test(location.search)) location.replace('next/');
+  </script>
+  <script src="./app/theme.js"></script>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml" />
+  <link rel="icon" href="./icons/icon-192.png" sizes="192x192" type="image/png" />
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-title" content="משימות CTO" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700&family=Rubik:wght@500;600;700&display=swap" />
-  <link rel="stylesheet" href="/app/styles.css" />
+  <link rel="stylesheet" href="./app/styles.css" />
   <script type="importmap">
-    { "imports": { "preact": "/app/lib/preact.js", "preact/hooks": "/app/lib/hooks.js", "htm": "/app/lib/htm.js" } }
+    { "imports": { "preact": "./app/lib/preact.js", "preact/hooks": "./app/lib/hooks.js", "htm": "./app/lib/htm.js" } }
   </script>
-  <link rel="modulepreload" href="/app/lib/preact.js" />
-  <link rel="modulepreload" href="/app/main.js" />
+  <link rel="modulepreload" href="./app/lib/preact.js" />
+  <link rel="modulepreload" href="./app/main.js" />
 </head>
 <body>
   <div id="app"><div class="boot"><span class="spinner"></span>טוען…</div></div>
   <noscript>צריך להפעיל JavaScript כדי להשתמש בכלי.</noscript>
-  <script type="module" src="/app/main.js"></script>
+  <script type="module" src="./app/main.js"></script>
 </body>
 </html>
